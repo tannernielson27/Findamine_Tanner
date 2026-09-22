@@ -4,6 +4,7 @@
  * Run: node scripts/upload-scene-images.mjs
  *
  * Requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY env vars.
+ * SCENE_IMAGE_DIR overrides the folder of resized PNGs to upload.
  * Creates a 'hero-scenes' bucket if it doesn't exist.
  */
 
@@ -21,7 +22,7 @@ if (!SUPABASE_URL || !SERVICE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 const BUCKET = "hero-scenes";
-const IMAGE_DIR = "../6-Apps/EdTech/Findamine/hero-images/resized";
+const IMAGE_DIR = process.env.SCENE_IMAGE_DIR || "../6-Apps/EdTech/Findamine/hero-images/resized";
 
 async function main() {
   // Create bucket if needed (public for CDN access)
