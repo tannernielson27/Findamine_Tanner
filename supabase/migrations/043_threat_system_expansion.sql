@@ -3,8 +3,55 @@
 --
 -- Adds tables for DBSCAN clustering, relabel tracking, and
 -- session-level scoring. Core tables (threat_scores,
--- threat_classifications, blocked_ips) already exist.
+-- threat_classifications, blocked_ips) were created outside the
+-- migration history on the original database; they are defined
+-- below (IF NOT EXISTS) so a fresh database replays cleanly.
+-- Columns are reconstructed from the app's reads and writes.
 -- ══════════════════════════════════════════════════════════════
+
+-- ─── Core threat tables ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.threat_scores (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id         TEXT,
+  ip_hash            TEXT,
+  threat_score       DECIMAL(5,2) NOT NULL,
+  classification     TEXT,
+  features           JSONB,
+  feature_importance JSONB,
+  created_at         TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ts_score ON public.threat_scores(threat_score DESC);
+CREATE INDEX IF NOT EXISTS idx_ts_created ON public.threat_scores(created_at DESC);
+ALTER TABLE public.threat_scores ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS public.threat_classifications (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id  TEXT,
+  ip_hash     TEXT,
+  attack_type TEXT NOT NULL,
+  severity    TEXT NOT NULL DEFAULT 'low',
+  notes       TEXT,
+  labeled_by  UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  created_at  TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tcl_session ON public.threat_classifications(session_id, created_at DESC);
+ALTER TABLE public.threat_classifications ENABLE ROW LEVEL SECURITY;
+
+-- ip_hash is unique: the cluster cron upserts on it (onConflict: "ip_hash").
+CREATE TABLE IF NOT EXISTS public.blocked_ips (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ip_hash     TEXT NOT NULL UNIQUE,
+  reason      TEXT,
+  blocked_by  UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  expires_at  TIMESTAMPTZ,
+  is_active   BOOLEAN NOT NULL DEFAULT true,
+  created_at  TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_bip_active ON public.blocked_ips(is_active, created_at DESC);
+ALTER TABLE public.blocked_ips ENABLE ROW LEVEL SECURITY;
 
 -- ─── threat_clusters: DBSCAN nightly clustering results ─────
 CREATE TABLE IF NOT EXISTS public.threat_clusters (
