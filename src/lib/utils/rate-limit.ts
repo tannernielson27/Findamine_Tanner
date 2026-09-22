@@ -8,15 +8,18 @@ import { ApiError } from "./api-auth";
  * Local dev: falls back to in-memory Map when UPSTASH_REDIS_REST_URL is not set.
  */
 
-// Support both naming conventions:
-// - UPSTASH_REDIS_KV_REST_API_URL / _TOKEN (Vercel Marketplace provisioned)
+// Support all naming conventions:
+// - UPSTASH_REDIS_KV_REST_API_URL / _TOKEN (Vercel Marketplace, prefixed)
 // - UPSTASH_REDIS_REST_URL / _TOKEN (manual / @upstash/redis default)
+// - KV_REST_API_URL / _TOKEN (Vercel Marketplace, unprefixed)
 const UPSTASH_URL =
   process.env.UPSTASH_REDIS_KV_REST_API_URL ||
-  process.env.UPSTASH_REDIS_REST_URL;
+  process.env.UPSTASH_REDIS_REST_URL ||
+  process.env.KV_REST_API_URL;
 const UPSTASH_TOKEN =
   process.env.UPSTASH_REDIS_KV_REST_API_TOKEN ||
-  process.env.UPSTASH_REDIS_REST_TOKEN;
+  process.env.UPSTASH_REDIS_REST_TOKEN ||
+  process.env.KV_REST_API_TOKEN;
 
 const USE_UPSTASH = !!(UPSTASH_URL && UPSTASH_TOKEN);
 
