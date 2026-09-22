@@ -8,6 +8,12 @@ import { trackEvent } from "@/lib/utils/track-event";
 import { enrollParticipant } from "@/lib/services/enrollment";
 import { redeemReferral } from "@/lib/services/referral";
 import { resolveSelfRegisterRole } from "@/lib/utils/registration";
+import { logger } from "@/lib/utils/logger";
+import {
+  buildAuthConfirmUrl,
+  resolveSiteUrl,
+  sendVerificationEmail,
+} from "@/lib/services/auth-emails";
 
 export const POST = withLogging("POST /api/v1/auth/register", async (request: NextRequest) => {
   const blocked = await botGuard(request);
@@ -42,26 +48,28 @@ export const POST = withLogging("POST /api/v1/auth/register", async (request: Ne
   }
   const userRole = resolved.role;
 
+  // Resolve before creating anything so a misconfigured deploy leaves no orphans.
+  const siteUrl = resolveSiteUrl(request.nextUrl.origin);
   const supabase = await createSupabaseServiceClient();
 
-  const { data: authData, error: authError } =
-    await supabase.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: false,
-    });
+  // generateLink creates the unconfirmed auth user and returns its one-time
+  // confirmation token without sending mail; we send the email ourselves.
+  const { data: link, error: authError } =
+    await supabase.auth.admin.generateLink({ type: "signup", email, password });
 
   if (authError) {
-    if (authError.message.includes("already")) {
+    if (authError.code === "email_exists" || authError.message.includes("already")) {
       throw new ApiError(409, "An account with this email already exists");
     }
     throw new ApiError(400, authError.message);
   }
 
+  const authUserId = link.user.id;
+
   const { data: user, error: userError } = await supabase
     .from("users")
     .insert({
-      auth_id: authData.user.id,
+      auth_id: authUserId,
       email,
       display_name: display_name || null,
       role: userRole,
@@ -71,8 +79,23 @@ export const POST = withLogging("POST /api/v1/auth/register", async (request: Ne
     .single();
 
   if (userError) {
-    await supabase.auth.admin.deleteUser(authData.user.id);
+    await supabase.auth.admin.deleteUser(authUserId);
     throw new ApiError(500, "Failed to create user profile");
+  }
+
+  const sent = await sendVerificationEmail({
+    to: email,
+    displayName: display_name || null,
+    confirmUrl: buildAuthConfirmUrl(siteUrl, link.properties.hashed_token, "signup", "/dashboard"),
+  });
+
+  if (!sent.success) {
+    // Without the email the account can never be confirmed; undo it so the
+    // person can simply try again.
+    logger.error("auth.register.email_failed", { error: sent.error });
+    await supabase.from("users").delete().eq("id", user.id);
+    await supabase.auth.admin.deleteUser(authUserId);
+    throw new ApiError(503, "We couldn't send your confirmation email. Please try again in a few minutes.");
   }
 
   // Adult players get the adult age band (themes, privacy defaults, export).
@@ -99,7 +122,7 @@ export const POST = withLogging("POST /api/v1/auth/register", async (request: Ne
         display_name: user.display_name,
         role: user.role,
       },
-      message: "Account created. Please check your email to verify.",
+      message: "Account created. Check your email for a confirmation link.",
     },
     { status: 201 }
   );

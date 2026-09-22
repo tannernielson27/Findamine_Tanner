@@ -16,7 +16,7 @@ import SchemePreview, { type SchemePreviewSubmission } from "@/components/privac
 import SchemeSwitch from "@/components/privacy/scheme-switch";
 import { schemeSelectionState, type Scheme, type SchemeSelectionState } from "@/lib/utils/scheme-selection";
 import {
-  fetchBaselineGate, fetchNormLine, fetchOverridePeople, postSchemeChoice,
+  fetchSurveyGate, fetchNormLine, fetchOverridePeople, postSchemeChoice,
   type NormLineData, type OverridePerson,
 } from "./privacy-page-data";
 
@@ -32,9 +32,11 @@ const OVERRIDE_CHOICES: { value: OverrideChoice; label: string }[] = [
   { value: "hidden", label: "Hidden" },
 ];
 
-// Baseline-survey gate (B2): the T1 timepoint must be answered after the
-// participant has seen the controls but before the first save.
-const GATE_TIMEPOINT = "T1";
+// Survey gate (B2): a pending check-in blocks Save. T1 is answered after the
+// participant has seen the controls but before the first save; T3 (day 42) is
+// answered with the controls in view before any end-of-study change. T1 wins
+// if both are somehow pending.
+const GATE_TIMEPOINTS = ["T1", "T3"] as const;
 const GATE_POLL_MS = 20_000;
 
 export default function PrivacySettingsPage() {
@@ -56,6 +58,8 @@ export default function PrivacySettingsPage() {
   // Set only when the trigger endpoint reports a still-answerable T1 delivery
   // for THIS user; non-participants never get one, so the gate never blocks them.
   const [gateDeliveryId, setGateDeliveryId] = useState<string | null>(null);
+  const [gateTimepoint, setGateTimepoint] = useState<string | null>(null);
+  const gateTimepointRef = useRef<string | null>(null);
 
   // ── Scheme preview / switch (S2, migration 060) and norm line (S5, 062) ──
   // All inert unless the participant holds a level on those dimensions.
@@ -120,8 +124,12 @@ export default function PrivacySettingsPage() {
         },
       });
       if (reason === "after_switch") return;
-      const gate = await fetchBaselineGate(GATE_TIMEPOINT);
-      if (gate) setGateDeliveryId(gate);
+      const gate = await fetchSurveyGate(GATE_TIMEPOINTS);
+      if (gate) {
+        gateTimepointRef.current = gate.timepoint;
+        setGateTimepoint(gate.timepoint);
+        setGateDeliveryId(gate.deliveryId);
+      }
     },
     []
   );
@@ -253,6 +261,7 @@ export default function PrivacySettingsPage() {
         treatment: treatmentRef.current,
         friction: frictionRef.current,
         scope: `survey_gate:${step}`,
+        gate_timepoint: gateTimepointRef.current,
         fields: [],
       },
     });
@@ -364,7 +373,7 @@ export default function PrivacySettingsPage() {
 
   /** Entry point for the Save button — may interpose the high-friction confirm. */
   function handleSave() {
-    if (gateDeliveryId) return; // baseline survey outstanding (B2)
+    if (gateDeliveryId) return; // check-in survey outstanding (B2: T1 or T3)
     const direction = classifyChange(diffVisibility(originalRef.current, currentRef.current));
     if (friction === "high" && (direction === "tighten" || direction === "mixed")) {
       clickCountRef.current += 1;
@@ -518,7 +527,7 @@ export default function PrivacySettingsPage() {
         </p>
       </div>
 
-      {/* Baseline-survey gate (B2): non-dismissable until T1 is submitted. */}
+      {/* Survey gate (B2): non-dismissable until the T1 or T3 check-in is submitted. */}
       {surveyGated && (
         <div
           role="status"
@@ -529,7 +538,9 @@ export default function PrivacySettingsPage() {
             One quick step first
           </p>
           <p className="text-xs text-violet-800 mb-3">
-            Before you set your privacy options, answer a short questionnaire about them.
+            {gateTimepoint === "T3"
+              ? "Before you change your privacy options, answer a short end-of-study check-in."
+              : "Before you set your privacy options, answer a short questionnaire about them."}{" "}
             It takes a couple of minutes, and your answers are private. Saving is turned on
             as soon as you finish.
           </p>

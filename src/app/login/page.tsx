@@ -1,35 +1,73 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import Link from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Compass } from "lucide-react";
 
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+type ResendState = "idle" | "sending" | "sent";
+
+function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [unconfirmed, setUnconfirmed] = useState(false);
+  const [resendState, setResendState] = useState<ResendState>("idle");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const linkInvalid = searchParams.get("error") === "link_invalid";
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    setUnconfirmed(false);
+    setResendState("idle");
     setLoading(true);
 
     const supabase = createSupabaseBrowserClient();
     const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
-      setError("Invalid email or password");
+      // Supabase checks the password before confirmation, so this code only
+      // appears for the right password on an unconfirmed account.
+      if (error.code === "email_not_confirmed") {
+        setUnconfirmed(true);
+        setError("Please confirm your email first. Check your inbox for the link we sent.");
+      } else {
+        setError("Invalid email or password");
+      }
       setLoading(false);
       return;
     }
 
     router.push("/dashboard");
     router.refresh();
+  }
+
+  async function handleResend() {
+    setResendState("sending");
+    try {
+      await fetch("/api/v1/auth/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      setResendState("sent");
+    } catch {
+      setResendState("idle");
+      setError("Couldn't reach the server. Please try again.");
+    }
   }
 
   return (
@@ -51,9 +89,31 @@ export default function LoginPage() {
         {/* Form card */}
         <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-6">
           <form onSubmit={handleLogin} className="space-y-4">
+            {linkInvalid && !error && (
+              <div className="rounded-xl bg-amber-50 border border-amber-100 p-3 text-sm text-amber-800">
+                That link is invalid or has expired. Sign in to request a new one, or reset your password.
+              </div>
+            )}
+
             {error && (
               <div className="rounded-xl bg-red-50 border border-red-100 p-3 text-sm text-red-700">
                 {error}
+                {unconfirmed && (
+                  <div className="mt-2">
+                    {resendState === "sent" ? (
+                      <span className="font-medium">A new confirmation link is on its way.</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleResend}
+                        disabled={resendState === "sending"}
+                        className="font-medium underline hover:no-underline disabled:opacity-50"
+                      >
+                        {resendState === "sending" ? "Sending..." : "Resend confirmation email"}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

@@ -80,7 +80,7 @@ export async function createDueDeliveriesForUser(
 
 export interface EventDeliveryResult {
   created: number;
-  /** Still-answerable deliveries for every survey scheduled on this event. */
+  /** Still-answerable deliveries for every active scheduled survey (event or time). */
   pending: PendingDelivery[];
 }
 
@@ -118,7 +118,9 @@ export async function createEventDeliveriesForUser(
     const have = await getExistingSurveyIds(supabase, userId);
     const created = await insertDeliveries(supabase, dedupeBySurvey(matched, have), userId);
 
-    const surveyIds = matched.map((s) => s.survey_id);
+    // Report every active scheduled survey, not just this event's: time-triggered
+    // check-ins (T3) gate the privacy page too once they are delivered.
+    const surveyIds = [...new Set(schedules.map((s) => s.survey_id))];
     const { data: deliveries } = await supabase
       .from("survey_deliveries")
       .select("id, survey_id, status, expires_at")

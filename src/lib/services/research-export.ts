@@ -23,6 +23,7 @@ import {
 } from "@/lib/utils/settings-error";
 import { loadStorylineColumns } from "@/lib/services/storyline-export";
 import { fetchAllByIds, fetchAllRows } from "@/lib/utils/paginate";
+import { preT3Index, T3_TIMEPOINT, type IndexPoint } from "@/lib/utils/pre-t3-index";
 
 export type ExportFormat = "csv" | "tsv" | "json";
 
@@ -294,6 +295,7 @@ export async function generateResearchExport(config: ExportConfig): Promise<stri
   const indexT0 = new Map<string, number>();
   const indexFinal = new Map<string, number>();
   const finalAt = new Map<string, string>();
+  const indexSeriesByUser = new Map<string, IndexPoint[]>(); // ascending, for the pre-T3 cutoff
   // Full visibility map per snapshot is kept so the ideal-audience block
   // (migration 058) can be paired with the settings in force at submission.
   const snapshotsByUser = new Map<string, TimedVisibility[]>();
@@ -324,6 +326,8 @@ export async function generateResearchExport(config: ExportConfig): Promise<stri
     // Snapshots are ascending, so the last seen per user is the final value.
     indexFinal.set(s.user_id, Number(s.index_value));
     finalAt.set(s.user_id, s.created_at);
+    if (!indexSeriesByUser.has(s.user_id)) indexSeriesByUser.set(s.user_id, []);
+    indexSeriesByUser.get(s.user_id)!.push({ created_at: s.created_at, index: Number(s.index_value) });
   }
 
   // Privacy events → change/tighten/loosen/abandon/view/touch counts,
@@ -395,6 +399,8 @@ export async function generateResearchExport(config: ExportConfig): Promise<stri
   // Timepoints carrying the ideal-audience block, and each user's settings error there.
   const idealTps = new Set<string>();
   const settingsErrorByUserTp = new Map<string, Map<string, SettingsErrorResult>>();
+  // When each participant's T3 check-in was first delivered (the outcome cutoff).
+  const t3DeliveredAt = new Map<string, string>();
 
   if (surveyIds.length > 0) {
     const { data: questions } = await supabase
@@ -416,12 +422,12 @@ export async function generateResearchExport(config: ExportConfig): Promise<stri
 
     // Delivery status per (user, timepoint): prefer the most-complete state.
     const statusRank: Record<string, number> = { submitted: 4, opened: 3, expired: 2, pending: 1 };
-    const deliveries = await fetchAllByIds<{ survey_id: string; user_id: string; status: string }>(
+    const deliveries = await fetchAllByIds<{ survey_id: string; user_id: string; status: string; created_at: string }>(
       userIds,
       (ids, from, to) =>
         supabase
           .from("survey_deliveries")
-          .select("survey_id, user_id, status")
+          .select("survey_id, user_id, status, created_at")
           .in("user_id", ids)
           .in("survey_id", surveyIds)
           .order("user_id", { ascending: true })
@@ -430,6 +436,10 @@ export async function generateResearchExport(config: ExportConfig): Promise<stri
     for (const d of deliveries) {
       const tp = surveyTimepoint.get(d.survey_id);
       if (!tp) continue;
+      if (tp === T3_TIMEPOINT && d.created_at) {
+        const prev = t3DeliveredAt.get(d.user_id);
+        if (!prev || d.created_at < prev) t3DeliveredAt.set(d.user_id, d.created_at);
+      }
       if (!statusByUserTp.has(d.user_id)) statusByUserTp.set(d.user_id, new Map());
       const cur = statusByUserTp.get(d.user_id)!.get(tp);
       if (!cur || (statusRank[d.status] || 0) > (statusRank[cur] || 0)) {
@@ -529,6 +539,7 @@ export async function generateResearchExport(config: ExportConfig): Promise<stri
     "minion_count",
     "privacy_index_t0",
     "privacy_index_final",
+    "privacy_index_pre_t3",
     "privacy_changes_count",
     "tighten_count",
     "loosen_count",
@@ -598,6 +609,10 @@ export async function generateResearchExport(config: ExportConfig): Promise<stri
       num(minionCount.get(userId) || 0),
       indexT0.has(userId) ? num(indexT0.get(userId), 4) : "",
       indexFinal.has(userId) ? num(indexFinal.get(userId), 4) : "",
+      num(
+        preT3Index(indexSeriesByUser.get(userId) ?? [], t3DeliveredAt.get(userId), enrollment?.enrolled_at) ?? undefined,
+        4
+      ),
       num(changeCount.get(userId) || 0),
       num(tightenCount.get(userId) || 0),
       num(loosenCount.get(userId) || 0),

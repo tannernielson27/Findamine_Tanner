@@ -21,10 +21,38 @@ function getResend(): Resend {
 const FROM_ADDRESS = process.env.EMAIL_FROM || "findamine <noreply@findamine.app>";
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://findamine.app";
 
-interface SendResult {
+export interface SendResult {
   success: boolean;
   id?: string;
   error?: string;
+}
+
+/**
+ * Send one transactional email. Never throws: a missing key or a provider
+ * error comes back as { success: false } so callers decide how to recover.
+ */
+export async function sendEmail(opts: { to: string; subject: string; html: string }): Promise<SendResult> {
+  try {
+    const { data, error } = await getResend().emails.send({
+      from: FROM_ADDRESS,
+      to: opts.to,
+      subject: opts.subject,
+      html: opts.html,
+    });
+
+    if (error) {
+      console.error("Email send error:", error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, id: data?.id };
+  } catch (err) {
+    console.error("Email service error:", err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "Failed to send email",
+    };
+  }
 }
 
 /**
@@ -39,9 +67,7 @@ export async function sendConsentVerificationEmail(opts: {
 }): Promise<SendResult> {
   const verifyUrl = `${SITE_URL}/api/v1/consent/coppa/verify?token=${opts.verificationToken}&child_id=${opts.childId}`;
 
-  try {
-    const { data, error } = await getResend().emails.send({
-      from: FROM_ADDRESS,
+  return sendEmail({
       to: opts.parentEmail,
       subject: `Verify your child's findamine account`,
       html: `
@@ -88,19 +114,5 @@ export async function sendConsentVerificationEmail(opts: {
           </p>
         </div>
       `,
-    });
-
-    if (error) {
-      console.error("Email send error:", error);
-      return { success: false, error: error.message };
-    }
-
-    return { success: true, id: data?.id };
-  } catch (err) {
-    console.error("Email service error:", err);
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : "Failed to send email",
-    };
-  }
+  });
 }

@@ -9,9 +9,16 @@ vi.mock("@/lib/supabase/server", async () => {
   };
 });
 
-import { redeemReferral, awardReferralPoints, REFERRAL_FRACTION } from "@/lib/services/referral";
+import {
+  redeemReferral,
+  awardReferralPoints,
+  REFERRAL_FRACTION,
+  RECRUIT_BONUS,
+  WELCOME_BONUS,
+} from "@/lib/services/referral";
 
 const VISIBLE = { display_name: "everyone", total_score: "class" };
+const SHARE_100 = Math.round(100 * REFERRAL_FRACTION);
 
 describe("referral economy against the Supabase double", () => {
   let db: SupabaseDouble;
@@ -30,6 +37,8 @@ describe("referral economy against the Supabase double", () => {
     });
   });
 
+  const recruiterLedger = () => db.where("points_ledger", (r) => r.user_id === "rec");
+
   it("links a minion to the recruiter once, case-insensitively, and never to themselves", async () => {
     expect(await redeemReferral("rec", "ABCD2345")).toEqual({ ok: false, reason: "self_referral" });
     expect(await redeemReferral("min", "nope")).toEqual({ ok: false, reason: "invalid_code" });
@@ -44,35 +53,52 @@ describe("referral economy against the Supabase double", () => {
     expect(db.table("minion_links")).toHaveLength(1);
   });
 
-  it("pays the recruiter the fraction while their gated fields are visible", async () => {
+  it("gives the new minion a one-time welcome bonus that is not counted as referral earnings", async () => {
     await redeemReferral("min", "ABCD2345");
-    await awardReferralPoints("min", 100, "find-1", "hunt-1");
+    await redeemReferral("min", "WXYZ6789"); // refused, so no second bonus
 
-    const ledger = db.where("points_ledger", (r) => r.user_id === "rec");
-    expect(ledger).toHaveLength(1);
-    expect(ledger[0].amount).toBe(Math.round(100 * REFERRAL_FRACTION));
-    expect(ledger[0].source_type).toBe("referral");
-    expect(ledger[0].hunt_id).toBe("hunt-1");
-
-    const paid = db.where("behavioral_events", (e) => e.event_type === "referral_bonus_paid");
-    expect(paid).toHaveLength(1);
-    expect(paid[0].payload).toMatchObject({
-      amount: 15, minion_id: "min", eligible: true, referral_gate: "gated", forfeit_notice: "shown",
-      would_have_forfeited: false,
-    });
+    const welcome = db.where("points_ledger", (r) => r.user_id === "min");
+    expect(welcome).toHaveLength(1);
+    expect(welcome[0]).toMatchObject({ amount: WELCOME_BONUS, source_type: "bonus" });
   });
 
-  it("forfeits (logs, does not pay) when the recruiter hides a gated field", async () => {
+  it("adds the recruit bonus to the first find only, then pays the plain share", async () => {
+    await redeemReferral("min", "ABCD2345");
+    await awardReferralPoints("min", 100, "find-1", "hunt-1");
+    await awardReferralPoints("min", 100, "find-2", "hunt-1");
+
+    const ledger = recruiterLedger();
+    expect(ledger.map((r) => r.amount)).toEqual([SHARE_100 + RECRUIT_BONUS, SHARE_100]);
+    expect(ledger.every((r) => r.source_type === "referral" && r.hunt_id === "hunt-1")).toBe(true);
+
+    const paid = db.where("behavioral_events", (e) => e.event_type === "referral_bonus_paid");
+    expect(paid).toHaveLength(2);
+    expect(paid[0].payload).toMatchObject({
+      amount: SHARE_100 + RECRUIT_BONUS, share: SHARE_100, recruit_bonus: RECRUIT_BONUS,
+      minion_id: "min", eligible: true, referral_gate: "gated", forfeit_notice: "shown",
+      would_have_forfeited: false,
+    });
+    expect(paid[1].payload).toMatchObject({ amount: SHARE_100, recruit_bonus: 0 });
+  });
+
+  it("forfeits the whole first-find award (share + bonus) when the recruiter hides a gated field", async () => {
     await redeemReferral("min", "ABCD2345");
     const rec = db.table("users").find((u) => u.id === "rec")!;
     rec.profile_visibility = { display_name: "everyone", total_score: "nobody" };
 
     await awardReferralPoints("min", 100, "find-2", "hunt-1");
-    expect(db.where("points_ledger", (r) => r.user_id === "rec")).toHaveLength(0);
+    expect(recruiterLedger()).toHaveLength(0);
     const forfeits = db.where("behavioral_events", (e) => e.event_type === "referral_bonus_forfeited");
     expect(forfeits).toHaveLength(1);
     expect(forfeits[0].user_id).toBe("rec");
-    expect(forfeits[0].payload).toMatchObject({ amount: 15, eligible: false, referral_gate: "gated" });
+    expect(forfeits[0].payload).toMatchObject({
+      amount: SHARE_100 + RECRUIT_BONUS, recruit_bonus: RECRUIT_BONUS, eligible: false, referral_gate: "gated",
+    });
+
+    // The bonus is offered once: becoming visible later earns the share only.
+    rec.profile_visibility = { ...VISIBLE };
+    await awardReferralPoints("min", 100, "find-3", "hunt-1");
+    expect(recruiterLedger().map((r) => r.amount)).toEqual([SHARE_100]);
   });
 
   it("under the ungated switch it pays anyway and records what the gate would have done", async () => {
@@ -82,7 +108,7 @@ describe("referral economy against the Supabase double", () => {
     rec.metadata = { dim_referral_gate: "ungated", dim_forfeit_notice: "silent" };
 
     await awardReferralPoints("min", 40, "find-3", "hunt-1");
-    expect(db.where("points_ledger", (r) => r.user_id === "rec")).toHaveLength(1);
+    expect(recruiterLedger()).toHaveLength(1);
     expect(db.where("behavioral_events", (e) => e.event_type === "referral_bonus_forfeited")).toHaveLength(0);
     const paid = db.where("behavioral_events", (e) => e.event_type === "referral_bonus_paid");
     expect(paid[0].payload).toMatchObject({
@@ -90,11 +116,12 @@ describe("referral economy against the Supabase double", () => {
     });
   });
 
-  it("does nothing for a minion nobody recruited, or for zero points", async () => {
+  it("does nothing for a minion nobody recruited, or for zero points, and keeps the bonus unclaimed", async () => {
     await awardReferralPoints("min", 100, "find-1", "hunt-1");
     await redeemReferral("min", "ABCD2345");
     await awardReferralPoints("min", 0, "find-1", "hunt-1");
-    expect(db.table("points_ledger")).toHaveLength(0);
+    expect(recruiterLedger()).toHaveLength(0);
     expect(db.where("behavioral_events", (e) => String(e.event_type).startsWith("referral_bonus"))).toHaveLength(0);
+    expect(db.table("minion_links")[0].first_score_bonus_at ?? null).toBeNull();
   });
 });

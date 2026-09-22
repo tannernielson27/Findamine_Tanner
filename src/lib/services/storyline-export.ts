@@ -1,5 +1,5 @@
 /**
- * Cohort-2 storyline columns for the participants export (C2, C3, D2, D3).
+ * Storyline columns for the participants export (C2, C3, D1, D2, D3).
  *
  * Each storyline's columns appear only when its dimension is among the
  * study's assigned dimensions, so a cohort-1 export is unchanged. The
@@ -231,6 +231,78 @@ export function summarizeNorms(exposures: readonly NormExposureLite[], events: r
   ];
 }
 
+// ── D1 / S3: referral gate and forfeit notice ──────────────
+
+export interface ReferralEventLite {
+  user_id: string;
+  event_type: string;
+  payload: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export const REFERRAL_EVENT_TYPES = [
+  "referral_bonus_paid",
+  "referral_bonus_forfeited",
+  "forfeit_notice_viewed",
+] as const;
+
+export const REFERRAL_HEADERS = [
+  "referral_awards_paid",
+  "referral_points_paid",
+  "referral_awards_forfeited",
+  "referral_points_forfeited",
+  "recruit_bonus_outcome",
+  "first_forfeit_at",
+  "forfeit_notice_views",
+  "first_forfeit_notice_view_at",
+  "loosen_saves_7d_after_first_forfeit",
+  "tighten_saves_7d_after_first_forfeit",
+];
+
+const payloadNumber = (r: ReferralEventLite, key: string): number => {
+  const v = r.payload?.[key];
+  return typeof v === "number" && Number.isFinite(v) ? v : 0;
+};
+
+/** One recruiter's referral outcomes. `rows` and `events` ascending by created_at. Pure. */
+export function summarizeReferral(rows: readonly ReferralEventLite[], events: readonly PrivacyEventLite[]): string[] {
+  const paid = rows.filter((r) => r.event_type === "referral_bonus_paid");
+  const forfeited = rows.filter((r) => r.event_type === "referral_bonus_forfeited");
+  const views = rows.filter((r) => r.event_type === "forfeit_notice_viewed");
+  const bonus = rows.find(
+    (r) => r.event_type !== "forfeit_notice_viewed" && payloadNumber(r, "recruit_bonus") > 0
+  );
+  const firstForfeit = forfeited[0]?.created_at ?? null;
+
+  let loosen = 0;
+  let tighten = 0;
+  if (firstForfeit) {
+    const start = new Date(firstForfeit).getTime();
+    for (const e of events) {
+      if (e.event_type !== "privacy_change") continue;
+      const t = new Date(e.created_at).getTime();
+      if (t < start || t >= start + 7 * DAY_MS) continue;
+      const deltas = (Array.isArray(e.metadata?.deltas) ? e.metadata.deltas : []) as FieldDelta[];
+      const direction = metaString(e, "direction") ?? classifyChange(deltas);
+      if (direction === "loosen") loosen++;
+      else if (direction === "tighten") tighten++;
+    }
+  }
+
+  return [
+    String(paid.length),
+    String(paid.reduce((sum, r) => sum + payloadNumber(r, "amount"), 0)),
+    String(forfeited.length),
+    String(forfeited.reduce((sum, r) => sum + payloadNumber(r, "amount"), 0)),
+    bonus ? (bonus.event_type === "referral_bonus_paid" ? "paid" : "forfeited") : "",
+    firstForfeit ?? "",
+    String(views.length),
+    views[0]?.created_at ?? "",
+    firstForfeit ? String(loosen) : "",
+    firstForfeit ? String(tighten) : "",
+  ];
+}
+
 // ── Loader ──────────────────────────────────────────────────
 
 export interface StorylineColumns {
@@ -267,10 +339,13 @@ export async function loadStorylineColumns(
     notices: dimensionNames.has("notice_style"),
     checkins: dimensionNames.has("privacy_checkin"),
     norms: dimensionNames.has("norm_line"),
+    referral: dimensionNames.has("forfeit_notice") || dimensionNames.has("referral_gate"),
   };
-  if (!on.scheme && !on.notices && !on.checkins && !on.norms) return { headers: [], valuesFor: () => [] };
+  if (!on.scheme && !on.notices && !on.checkins && !on.norms && !on.referral) {
+    return { headers: [], valuesFor: () => [] };
+  }
 
-  const [events, selections, notices, checkins, exposures] = await Promise.all([
+  const [events, selections, notices, checkins, exposures, referrals] = await Promise.all([
     rowsOf<PrivacyEventLite>((from, to) =>
       supabase
         .from("privacy_events")
@@ -323,6 +398,18 @@ export async function loadStorylineColumns(
               .range(from, to)
         : null
     ),
+    rowsOf<ReferralEventLite>(
+      on.referral
+        ? (from, to) =>
+            supabase
+              .from("behavioral_events")
+              .select("user_id, event_type, payload, created_at")
+              .in("user_id", userIds)
+              .in("event_type", [...REFERRAL_EVENT_TYPES])
+              .order("created_at", { ascending: true })
+              .range(from, to)
+        : null
+    ),
   ]);
 
   const g = {
@@ -331,6 +418,7 @@ export async function loadStorylineColumns(
     notices: groupByUser(notices),
     checkins: groupByUser(checkins),
     exposures: groupByUser(exposures),
+    referrals: groupByUser(referrals),
   };
 
   return {
@@ -339,6 +427,7 @@ export async function loadStorylineColumns(
       ...(on.notices ? NOTICE_HEADERS : []),
       ...(on.checkins ? CHECKIN_HEADERS : []),
       ...(on.norms ? NORM_HEADERS : []),
+      ...(on.referral ? REFERRAL_HEADERS : []),
     ],
     valuesFor: (uid) => {
       const ev = g.events.get(uid) ?? [];
@@ -347,6 +436,7 @@ export async function loadStorylineColumns(
         ...(on.notices ? summarizeNotices(g.notices.get(uid) ?? [], ev) : []),
         ...(on.checkins ? summarizeCheckins(g.checkins.get(uid) ?? [], ev) : []),
         ...(on.norms ? summarizeNorms(g.exposures.get(uid) ?? [], ev) : []),
+        ...(on.referral ? summarizeReferral(g.referrals.get(uid) ?? [], ev) : []),
       ];
     },
   };

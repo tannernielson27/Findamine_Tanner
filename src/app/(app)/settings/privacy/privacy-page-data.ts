@@ -35,17 +35,35 @@ export async function fetchOverridePeople(myId: string): Promise<OverridePerson[
   return [...found.values()];
 }
 
-interface PendingTriggerDelivery {
+export interface PendingTriggerDelivery {
   delivery_id: string;
   survey_id: string;
   timepoint: string | null;
 }
 
+export interface SurveyGate {
+  deliveryId: string;
+  timepoint: string;
+}
+
+/** The first pending delivery whose timepoint gates Save, in `timepoints` order. Pure. */
+export function pickSurveyGate(
+  pending: readonly PendingTriggerDelivery[],
+  timepoints: readonly string[]
+): SurveyGate | null {
+  for (const tp of timepoints) {
+    const hit = pending.find((p) => p.timepoint === tp);
+    if (hit) return { deliveryId: hit.delivery_id, timepoint: tp };
+  }
+  return null;
+}
+
 /**
  * Fire the privacy_view survey trigger (B2) and return the still-answerable
- * delivery id for `timepoint`, which gates Save. Non-participants get none.
+ * delivery that gates Save (T1 before first save, T3 at the end of the study).
+ * Non-participants get none.
  */
-export async function fetchBaselineGate(timepoint: string): Promise<string | null> {
+export async function fetchSurveyGate(timepoints: readonly string[]): Promise<SurveyGate | null> {
   try {
     const res = await fetch("/api/v1/surveys/trigger", {
       method: "POST",
@@ -54,7 +72,7 @@ export async function fetchBaselineGate(timepoint: string): Promise<string | nul
     });
     if (!res.ok) return null;
     const data = (await res.json()) as { pending?: PendingTriggerDelivery[] };
-    return (data.pending || []).find((p) => p.timepoint === timepoint)?.delivery_id ?? null;
+    return pickSurveyGate(data.pending || [], timepoints);
   } catch {
     return null;
   }

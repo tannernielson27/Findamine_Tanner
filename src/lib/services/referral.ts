@@ -10,9 +10,14 @@ import { randomInt } from "crypto";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { trackEvent } from "@/lib/utils/track-event";
 import { canViewField } from "@/lib/utils/privacy";
+import { RECRUIT_BONUS, WELCOME_BONUS } from "@/lib/utils/referral-rewards";
 
 /** Share of a minion's score awarded to their recruiter. Calibration knob. */
 export const REFERRAL_FRACTION = 0.15;
+
+export { RECRUIT_BONUS, WELCOME_BONUS };
+
+type ServiceClient = Awaited<ReturnType<typeof createSupabaseServiceClient>>;
 
 /**
  * Fields a recruiter must keep visible (at "class" or better) to collect
@@ -163,16 +168,40 @@ export async function redeemReferral(
       return { ok: false, reason: "insert_failed" };
     }
 
+    // Joining a crew is rewarded once (one recruiter per minion).
+    await supabase.from("points_ledger").insert({
+      user_id: minionUserId,
+      amount: WELCOME_BONUS,
+      source_type: "bonus",
+      source_id: null,
+      hunt_id: null,
+      description: `Welcome bonus for joining a crew (+${WELCOME_BONUS})`,
+    });
+
     await trackEvent({
       userId: minionUserId,
       eventType: "referral_redeemed",
-      payload: { recruiter_id: recruiterId, code: normalized },
+      payload: { recruiter_id: recruiterId, code: normalized, welcome_bonus: WELCOME_BONUS },
     });
 
     return { ok: true, recruiterId };
   } catch {
     return { ok: false, reason: "error" };
   }
+}
+
+/**
+ * Claim the one-time recruit bonus for a minion. The conditional update only
+ * matches while the stamp is empty, so exactly one concurrent caller wins.
+ */
+async function claimRecruitBonus(supabase: ServiceClient, minionUserId: string): Promise<number> {
+  const { data } = await supabase
+    .from("minion_links")
+    .update({ first_score_bonus_at: new Date().toISOString() })
+    .eq("minion_id", minionUserId)
+    .is("first_score_bonus_at", null)
+    .select("id");
+  return data && data.length > 0 ? RECRUIT_BONUS : 0;
 }
 
 /** Award a recruiter their share when a minion scores. Fire-and-forget. */
@@ -183,17 +212,20 @@ export async function awardReferralPoints(
   huntId: string | null
 ): Promise<void> {
   try {
-    const amount = computeReferralPoints(basePoints);
-    if (amount <= 0) return;
+    const share = computeReferralPoints(basePoints);
+    if (share <= 0) return;
 
     const supabase = await createSupabaseServiceClient();
 
     const { data: link } = await supabase
       .from("minion_links")
-      .select("recruiter_id")
+      .select("recruiter_id, first_score_bonus_at")
       .eq("minion_id", minionUserId)
       .maybeSingle();
     if (!link) return;
+
+    const recruitBonus = link.first_score_bonus_at ? 0 : await claimRecruitBonus(supabase, minionUserId);
+    const amount = share + recruitBonus;
 
     // Disclosure gate: the reward only flows while the recruiter's gated fields
     // are visible. A forfeited bonus is logged (not paid) so the social page can
@@ -212,6 +244,8 @@ export async function awardReferralPoints(
     );
     const base = {
       amount,
+      share,
+      recruit_bonus: recruitBonus,
       minion_id: minionUserId,
       source_id: sourceId,
       hunt_id: huntId,
@@ -237,7 +271,9 @@ export async function awardReferralPoints(
       source_type: "referral",
       source_id: sourceId,
       hunt_id: huntId,
-      description: `Referral bonus from a minion's score (+${amount})`,
+      description: recruitBonus
+        ? `Recruit bonus: your minion's first find (+${amount})`
+        : `Referral bonus from a minion's score (+${amount})`,
     });
 
     await trackEvent({

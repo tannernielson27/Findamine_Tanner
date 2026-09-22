@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import StreakDisplay from "@/components/gamification/streak-display";
 import { buildKudosRecipients, type RecipientGroup } from "@/lib/social/recipients";
+import { RECRUIT_BONUS, WELCOME_BONUS } from "@/lib/utils/referral-rewards";
 
 interface Friend {
   id: string;
@@ -116,16 +117,18 @@ export default function SocialPage() {
 
   const handleShare = async () => {
     if (!referral?.code) return;
-    const text = `Join my crew on findamine! Enter my code ${referral.code} under Social → Redeem and we team up — I earn a little every time you score.`;
+    // The register page reads ?ref= and redeems the code at signup.
+    const link = `${window.location.origin}/register?ref=${encodeURIComponent(referral.code)}`;
+    const text = `Join my crew on findamine! Sign up with my link and you start with ${WELCOME_BONUS} bonus points.`;
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
-        await navigator.share({ title: "Join me on findamine", text });
+        await navigator.share({ title: "Join me on findamine", text, url: link });
         return;
       } catch {
         /* user cancelled — fall through to copy */
       }
     }
-    navigator.clipboard?.writeText(referral.code).then(() => {
+    navigator.clipboard?.writeText(link).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     }).catch(() => {});
@@ -185,8 +188,9 @@ export default function SocialPage() {
               <div className="max-w-md">
                 <h2 className="font-[family-name:var(--font-display)] text-2xl font-bold">Recruit &amp; earn</h2>
                 <p className="text-sm text-white/85 mt-1">
-                  Share your code. Whoever joins with it becomes part of your crew — and
-                  you earn a share of points every time they score.
+                  Share your invite link. Friends who join with it start with {WELCOME_BONUS} bonus
+                  points and become part of your crew. You earn {RECRUIT_BONUS} points when they
+                  finish their first find, plus a share every time they score.
                 </p>
                 {referral?.code && (
                   <div className="mt-4 flex items-center gap-2">
@@ -197,7 +201,7 @@ export default function SocialPage() {
                       onClick={handleShare}
                       className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-brand-dark shadow-sm transition-transform active:scale-95 hover:bg-white/90"
                     >
-                      {copied ? "Copied!" : "Share code"}
+                      {copied ? "Link copied!" : "Share invite link"}
                     </button>
                   </div>
                 )}
