@@ -26,8 +26,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Admin/researcher: list all surveys with question counts + schedule info so
-    // the authoring UI can show what's ready to activate at a glance.
-    if (["admin", "researcher", "teacher"].includes(user.role)) {
+    // the authoring UI can show what's ready to activate at a glance. Same roles
+    // as create/edit, so nobody sees a list they can't act on.
+    if (["admin", "researcher"].includes(user.role)) {
       const { data } = await supabase
         .from("surveys")
         .select(
@@ -50,12 +51,15 @@ export async function POST(request: NextRequest) {
     requireRole(user, "admin", "researcher");
 
     const body = await request.json();
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    if (!title) throw new ApiError(400, "Title is required");
+
     const supabase = await createSupabaseServiceClient();
 
     const { data, error } = await supabase
       .from("surveys")
       .insert({
-        title: body.title,
+        title,
         description: body.description || null,
         questions: body.questions || [],
         target_roles: body.target_roles || [],

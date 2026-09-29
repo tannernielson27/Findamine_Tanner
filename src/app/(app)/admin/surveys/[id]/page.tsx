@@ -4,6 +4,13 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Plus, Trash2, ArrowUp, ArrowDown } from "lucide-react";
+import {
+  nextItemCode,
+  optionsToText,
+  scaleConfigForType,
+  textToOptions,
+  type ScaleConfig,
+} from "@/lib/utils/survey-authoring";
 
 const QUESTION_TYPES = [
   { value: "likert_5", label: "Likert (1–5)" },
@@ -13,14 +20,6 @@ const QUESTION_TYPES = [
   { value: "free_text", label: "Free text" },
 ];
 
-interface ScaleConfig {
-  min?: number;
-  max?: number;
-  min_label?: string;
-  max_label?: string;
-  step?: number;
-}
-
 interface EditQ {
   item_code: string;
   question_text: string;
@@ -29,7 +28,8 @@ interface EditQ {
   reverse_coded: boolean;
   required: boolean;
   scale_config: ScaleConfig;
-  options: string[];
+  /** One option per line; "value | label" keeps a stored label distinct from its value. */
+  optionsText: string;
 }
 
 interface SurveyMeta {
@@ -39,23 +39,16 @@ interface SurveyMeta {
   status: string;
 }
 
-function normalizeOptions(options: unknown): string[] {
-  if (!Array.isArray(options)) return [];
-  return options.map((o) =>
-    o && typeof o === "object" && "value" in o ? String((o as { value: unknown }).value) : String(o)
-  );
-}
-
-function blankQuestion(index: number): EditQ {
+function blankQuestion(existing: EditQ[]): EditQ {
   return {
-    item_code: `item_${index + 1}`,
+    item_code: nextItemCode(existing.map((q) => q.item_code.trim())),
     question_text: "",
     question_type: "likert_5",
     subscale: "",
     reverse_coded: false,
     required: true,
     scale_config: { min: 1, max: 5, min_label: "Strongly disagree", max_label: "Strongly agree" },
-    options: [],
+    optionsText: "",
   };
 }
 
@@ -66,18 +59,30 @@ export default function SurveyEditorPage() {
   const surveyId = params.id;
 
   const [meta, setMeta] = useState<SurveyMeta | null>(null);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [questions, setQuestions] = useState<EditQ[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   useEffect(() => {
     if (!surveyId) return;
+    const getJson = (url: string) =>
+      fetch(url).then(async (r) => {
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(body.error || `Request failed (${r.status})`);
+        return body;
+      });
     Promise.all([
-      fetch(`/api/v1/surveys/${surveyId}`).then((r) => (r.ok ? r.json() : null)),
-      fetch(`/api/v1/surveys/${surveyId}/questions`).then((r) => (r.ok ? r.json() : { questions: [] })),
+      getJson(`/api/v1/surveys/${surveyId}`),
+      getJson(`/api/v1/surveys/${surveyId}/questions`),
     ])
       .then(([surveyData, qData]) => {
-        if (surveyData?.survey) setMeta(surveyData.survey);
+        const survey: SurveyMeta = surveyData.survey;
+        setMeta(survey);
+        setTitle(survey.title);
+        setDescription(survey.description ?? "");
         const loaded: EditQ[] = (qData.questions || []).map((q: Record<string, unknown>) => ({
           item_code: String(q.item_code ?? ""),
           question_text: String(q.question_text ?? ""),
@@ -86,11 +91,12 @@ export default function SurveyEditorPage() {
           reverse_coded: Boolean(q.reverse_coded),
           required: q.required === undefined ? true : Boolean(q.required),
           scale_config: (q.scale_config as ScaleConfig) || {},
-          options: normalizeOptions(q.options),
+          optionsText: optionsToText(q.options),
         }));
         setQuestions(loaded);
       })
-      .catch(() => setQuestions([]));
+      // Don't fall back to an empty editor: saving it would wipe the real questions.
+      .catch((err: Error) => setLoadError(`Could not load this survey: ${err.message}`));
   }, [surveyId]);
 
   function update(i: number, patch: Partial<EditQ>) {
@@ -112,8 +118,22 @@ export default function SurveyEditorPage() {
     });
   }
 
+  function changeType(i: number, questionType: string) {
+    setQuestions((prev) => {
+      if (!prev) return prev;
+      const next = [...prev];
+      next[i] = {
+        ...next[i],
+        question_type: questionType,
+        scale_config: scaleConfigForType(questionType, next[i].scale_config),
+      };
+      return next;
+    });
+    setMessage(null);
+  }
+
   function addQuestion() {
-    setQuestions((prev) => [...(prev || []), blankQuestion((prev || []).length)]);
+    setQuestions((prev) => [...(prev || []), blankQuestion(prev || [])]);
   }
 
   function removeQuestion(i: number) {
@@ -131,10 +151,32 @@ export default function SurveyEditorPage() {
     });
   }
 
+  async function saveDetails(): Promise<string | null> {
+    if (!meta) return null;
+    const nextDescription = description.trim() || null;
+    if (title.trim() === meta.title && nextDescription === (meta.description ?? null)) return null;
+    if (!title.trim()) return "Title is required.";
+    const res = await fetch(`/api/v1/surveys/${surveyId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: title.trim(), description: nextDescription }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) return body.error || "Failed to save title and description.";
+    setMeta(body.survey);
+    return null;
+  }
+
   async function save() {
     if (!questions) return;
     setSaving(true);
     setMessage(null);
+    const detailsError = await saveDetails();
+    if (detailsError) {
+      setSaving(false);
+      setMessage({ kind: "err", text: detailsError });
+      return;
+    }
     const payload = {
       questions: questions.map((q) => ({
         item_code: q.item_code.trim(),
@@ -144,7 +186,7 @@ export default function SurveyEditorPage() {
         reverse_coded: q.reverse_coded,
         required: q.required,
         scale_config: isScale(q.question_type) ? q.scale_config : {},
-        options: q.question_type === "multiple_choice" ? q.options.filter((o) => o.trim()) : [],
+        options: q.question_type === "multiple_choice" ? textToOptions(q.optionsText) : [],
       })),
     };
     const res = await fetch(`/api/v1/surveys/${surveyId}/questions`, {
@@ -159,6 +201,19 @@ export default function SurveyEditorPage() {
       const err = await res.json().catch(() => ({}));
       setMessage({ kind: "err", text: err.error || "Failed to save." });
     }
+  }
+
+  if (loadError) {
+    return (
+      <main className="mx-auto max-w-3xl px-4 py-4">
+        <Link href="/admin/surveys" className="text-sm text-brand hover:underline mb-4 inline-block">
+          &larr; Surveys
+        </Link>
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {loadError}
+        </div>
+      </main>
+    );
   }
 
   if (questions === null) {
@@ -186,6 +241,32 @@ export default function SurveyEditorPage() {
           </span>
         )}
       </div>
+      <div className="mb-5 grid gap-3">
+        <label className="text-xs text-gray-500">
+          Title
+          <input
+            value={title}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              setMessage(null);
+            }}
+            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+          />
+        </label>
+        <label className="text-xs text-gray-500">
+          Description (optional, shown to participants)
+          <textarea
+            value={description}
+            onChange={(e) => {
+              setDescription(e.target.value);
+              setMessage(null);
+            }}
+            rows={2}
+            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+          />
+        </label>
+      </div>
+
       <p className="text-sm text-gray-500 mb-2">
         Each item&apos;s <code className="text-xs">item_code</code> keys the stored answer, and{" "}
         <code className="text-xs">subscale</code> groups items for scoring (e.g. all fatigue items
@@ -234,7 +315,7 @@ export default function SurveyEditorPage() {
                 Type
                 <select
                   value={q.question_type}
-                  onChange={(e) => update(i, { question_type: e.target.value })}
+                  onChange={(e) => changeType(i, e.target.value)}
                   className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-sky-500 focus:outline-none"
                 >
                   {QUESTION_TYPES.map((t) => (
@@ -294,12 +375,12 @@ export default function SurveyEditorPage() {
 
             {q.question_type === "multiple_choice" && (
               <label className="mt-3 block text-xs text-gray-500">
-                Options (one per line)
+                Options (one per line; use &ldquo;value | label&rdquo; to store a code different from the text shown)
                 <textarea
-                  value={q.options.join("\n")}
-                  onChange={(e) => update(i, { options: e.target.value.split("\n") })}
-                  rows={3}
-                  placeholder={"Option A\nOption B\nOption C"}
+                  value={q.optionsText}
+                  onChange={(e) => update(i, { optionsText: e.target.value })}
+                  rows={4}
+                  placeholder={"Option A\nOption B\nnobody | Only me"}
                   className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-sky-500 focus:outline-none"
                 />
               </label>
@@ -333,7 +414,7 @@ export default function SurveyEditorPage() {
           disabled={saving}
           className="rounded-md bg-brand px-6 py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-50"
         >
-          {saving ? "Saving..." : "Save questions"}
+          {saving ? "Saving..." : "Save survey"}
         </button>
         {message && (
           <span className={`text-sm ${message.kind === "ok" ? "text-green-600" : "text-red-600"}`}>

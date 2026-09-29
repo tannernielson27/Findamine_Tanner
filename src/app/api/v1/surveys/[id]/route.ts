@@ -9,7 +9,7 @@ export async function GET(
   try {
     const { id } = await params;
     const user = await getAuthUser(request);
-    requireRole(user, "admin", "researcher", "teacher");
+    requireRole(user, "admin", "researcher");
 
     const supabase = await createSupabaseServiceClient();
 
@@ -41,6 +41,15 @@ export async function PUT(
     const updates: Record<string, unknown> = {};
     for (const f of ["title", "description", "questions", "status", "target_roles"]) {
       if (body[f] !== undefined) updates[f] = body[f];
+    }
+    if (updates.title !== undefined) {
+      const title = typeof updates.title === "string" ? updates.title.trim() : "";
+      if (!title) throw new ApiError(400, "Title is required");
+      updates.title = title;
+    }
+    if (updates.description !== undefined) {
+      const description = typeof updates.description === "string" ? updates.description.trim() : "";
+      updates.description = description || null;
     }
 
     const { data, error } = await supabase

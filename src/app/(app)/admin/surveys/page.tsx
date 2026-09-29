@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 interface Survey {
   id: string;
@@ -36,7 +37,13 @@ function timepointLabel(s: Survey): string | null {
   return sched.trigger_type;
 }
 
+async function errorFrom(res: Response, fallback: string): Promise<string> {
+  const body = await res.json().catch(() => ({}));
+  return typeof body.error === "string" ? `${fallback} ${body.error}` : fallback;
+}
+
 export default function AdminSurveysPage() {
+  const router = useRouter();
   const [surveys, setSurveys] = useState<Survey[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -75,13 +82,14 @@ export default function AdminSurveysPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: newTitle.trim(), target_roles: ["teen", "adult", "parent", "teacher", "hunt_creator"] }),
     });
-    setCreating(false);
     if (res.ok) {
-      setNewTitle("");
-      load();
-    } else {
-      setError("Failed to create survey.");
+      const data = await res.json();
+      // Straight into the editor: a new survey is empty until it has questions.
+      router.push(`/admin/surveys/${data.survey.id}`);
+      return;
     }
+    setCreating(false);
+    setError(await errorFrom(res, "Failed to create survey."));
   }
 
   async function setStatus(s: Survey, status: string) {
@@ -100,7 +108,7 @@ export default function AdminSurveysPage() {
     });
     setBusyId(null);
     if (res.ok) load();
-    else setError("Failed to update status.");
+    else setError(await errorFrom(res, "Failed to update status."));
   }
 
   return (
