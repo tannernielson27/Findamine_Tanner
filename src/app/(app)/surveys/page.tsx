@@ -43,7 +43,7 @@ export default function SurveysPage() {
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
       <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold text-gray-900 flex items-center gap-2 mb-1">
-        <ClipboardList className="w-6 h-6 text-brand" />
+        <ClipboardList aria-hidden="true" className="w-6 h-6 text-brand" />
         Surveys
       </h1>
       <p className="text-sm text-gray-500 mb-6">
@@ -53,7 +53,7 @@ export default function SurveysPage() {
 
       {deliveries.length === 0 ? (
         <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-8 text-center">
-          <CheckCircle2 className="w-10 h-10 text-green-500 mx-auto mb-3" />
+          <CheckCircle2 aria-hidden="true" className="w-10 h-10 text-green-500 mx-auto mb-3" />
           <p className="font-semibold text-gray-900">You&apos;re all caught up</p>
           <p className="text-sm text-gray-500 mt-1">
             There are no surveys waiting for you right now. We&apos;ll let you know when the next
@@ -68,7 +68,7 @@ export default function SurveysPage() {
               <li key={d.id}>
                 <Link
                   href={`/surveys/${d.id}`}
-                  className="group flex items-center gap-4 rounded-2xl bg-white border border-gray-100 shadow-sm p-5 hover:border-brand/40 hover:shadow-md transition-all"
+                  className="group flex items-center gap-4 rounded-2xl bg-white border border-gray-100 shadow-sm p-5 hover:border-brand/40 hover:shadow-md transition-colors"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
@@ -76,7 +76,7 @@ export default function SurveysPage() {
                         {d.surveys?.title || "Survey"}
                       </p>
                       {d.status === "opened" && (
-                        <span className="text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+                        <span className="shrink-0 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
                           In progress
                         </span>
                       )}
@@ -87,12 +87,12 @@ export default function SurveysPage() {
                       </p>
                     )}
                     {dl !== null && (
-                      <p className="text-xs text-gray-400 mt-1">
+                      <p className="text-xs text-gray-500 mt-1">
                         {dl === 0 ? "Closes today" : `${dl} day${dl === 1 ? "" : "s"} left`}
                       </p>
                     )}
                   </div>
-                  <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-brand transition-colors shrink-0" />
+                  <ChevronRight aria-hidden="true" className="w-5 h-5 text-gray-300 group-hover:text-brand transition-colors shrink-0" />
                 </Link>
               </li>
             );

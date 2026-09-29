@@ -99,7 +99,7 @@ export function PrivacyNoticeToast({ notice, onClose }: PrivacyNoticeToastProps)
             <a
               href={notice.link.href}
               onClick={handleLink}
-              className="mt-1 inline-block text-xs font-semibold text-sky-700 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 rounded"
+              className="mt-1 inline-flex min-h-11 items-center text-xs font-semibold text-sky-700 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-700 rounded"
             >
               {notice.link.label}
             </a>
@@ -109,7 +109,7 @@ export function PrivacyNoticeToast({ notice, onClose }: PrivacyNoticeToastProps)
           type="button"
           onClick={handleClose}
           aria-label="Dismiss privacy notice"
-          className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+          className="-m-2 flex h-11 w-11 shrink-0 items-center justify-center rounded text-gray-600 hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-700"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />

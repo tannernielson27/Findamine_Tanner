@@ -40,7 +40,7 @@ export default function PrivacyFirstChoiceGate() {
     >
       <div className="w-full max-w-md rounded-2xl bg-white shadow-xl p-6">
         <div className="flex items-center gap-2 mb-3">
-          <SlidersHorizontal className="w-6 h-6 text-brand" />
+          <SlidersHorizontal aria-hidden="true" className="w-6 h-6 text-brand" />
           <h2 id="privacy-choice-title" className="text-lg font-bold text-gray-900">
             Choose your privacy settings
           </h2>
@@ -55,7 +55,7 @@ export default function PrivacyFirstChoiceGate() {
         </p>
         <button
           onClick={() => router.push("/settings/privacy")}
-          className="w-full rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark transition"
+          className="min-h-11 w-full rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark transition"
         >
           Choose my settings
         </button>

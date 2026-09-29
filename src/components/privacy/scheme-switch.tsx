@@ -30,7 +30,7 @@ export default function SchemeSwitch({ current, busy, error, onOpen, onCancel, o
           setOpen(true);
           onOpen();
         }}
-        className="mt-3 text-xs text-sky-700 underline underline-offset-2 hover:text-sky-900"
+        className="mt-3 inline-flex min-h-11 items-center text-xs text-sky-700 underline underline-offset-2 hover:text-sky-900"
       >
         Change how your privacy controls work
       </button>
@@ -58,7 +58,7 @@ export default function SchemeSwitch({ current, busy, error, onOpen, onCancel, o
               onChange={() => setPicked(s)}
               className="mt-0.5 accent-sky-600"
             />
-            <span>
+            <span className="min-w-0 break-words">
               <span className="block font-medium text-gray-900">{SCHEME_COPY[s].title}</span>
               <span className="text-gray-600">{SCHEME_COPY[s].blurb}</span>
             </span>
@@ -75,7 +75,7 @@ export default function SchemeSwitch({ current, busy, error, onOpen, onCancel, o
           type="button"
           disabled={!picked || busy}
           onClick={() => picked && onConfirm(picked)}
-          className="rounded-lg bg-brand px-4 py-1.5 text-xs font-medium text-white hover:bg-brand-dark transition disabled:opacity-50"
+          className="min-h-11 rounded-lg bg-brand px-4 py-1.5 text-xs font-medium text-white hover:bg-brand-dark transition disabled:opacity-50"
         >
           {busy ? "Switching..." : "Switch controls"}
         </button>
@@ -87,7 +87,7 @@ export default function SchemeSwitch({ current, busy, error, onOpen, onCancel, o
             setPicked(null);
             onCancel();
           }}
-          className="rounded-lg border border-gray-200 px-4 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 transition"
+          className="min-h-11 rounded-lg border border-gray-200 px-4 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 transition"
         >
           Cancel
         </button>

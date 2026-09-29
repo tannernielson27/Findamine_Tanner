@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { ChevronDown } from "lucide-react";
 
 interface Analytics {
   analytics_available: boolean;
@@ -17,6 +18,12 @@ interface Analytics {
 interface HuntAnalyticsProps {
   huntId: string;
   compact?: boolean;
+}
+
+function scoreBarClass(score: number): string {
+  if (score >= 70) return "bg-success";
+  if (score >= 40) return "bg-warning";
+  return "bg-error";
 }
 
 export default function HuntAnalytics({ huntId, compact = false }: HuntAnalyticsProps) {
@@ -36,15 +43,15 @@ export default function HuntAnalytics({ huntId, compact = false }: HuntAnalytics
 
   if (!data.analytics_available) {
     return (
-      <div className="text-[11px] text-gray-400 mt-2">
+      <p className="mt-2 text-sm tabular-nums text-themed-muted">
         {data.total_plays} play{data.total_plays !== 1 ? "s" : ""} — analytics unlock at 5 completions
-      </div>
+      </p>
     );
   }
 
   if (compact) {
     return (
-      <div className="flex items-center gap-3 text-[11px] text-gray-500 mt-1">
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 text-sm tabular-nums text-themed-muted">
         <span>{data.total_plays} plays</span>
         <span>avg {data.avg_score} pts</span>
         <span>{data.completion_rate}% finish</span>
@@ -53,58 +60,48 @@ export default function HuntAnalytics({ huntId, compact = false }: HuntAnalytics
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-3 mt-4">
+    <section className="mt-4 rounded-xl border border-themed-border bg-surface px-4 py-1 shadow-[var(--shadow-card)]">
       <button
+        type="button"
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between text-xs"
+        aria-expanded={expanded}
+        className="flex min-h-11 w-full items-center justify-between gap-2 py-2 text-left"
       >
-        <span className="font-medium text-gray-700">
+        <span className="min-w-0 text-sm font-medium tabular-nums text-themed-text">
           Performance: {data.total_plays} plays · avg {data.avg_score} pts · {data.completion_rate}% finish rate
         </span>
-        <span className="text-gray-400">{expanded ? "▲" : "▼"}</span>
+        <ChevronDown
+          className={`w-5 h-5 shrink-0 text-themed-muted transition-transform ${expanded ? "rotate-180" : ""}`}
+          aria-hidden="true"
+        />
       </button>
 
       {expanded && (
-        <div className="mt-3 space-y-3">
+        <div className="mt-2 mb-3 space-y-4">
           {/* Summary stats */}
-          <div className="grid grid-cols-4 gap-2 text-center text-xs">
-            <div className="rounded bg-gray-50 p-2">
-              <div className="font-bold text-gray-700">{data.total_plays}</div>
-              <div className="text-gray-500">Plays</div>
-            </div>
-            <div className="rounded bg-gray-50 p-2">
-              <div className="font-bold text-gray-700">{data.avg_score}</div>
-              <div className="text-gray-500">Avg Score</div>
-            </div>
-            <div className="rounded bg-gray-50 p-2">
-              <div className="font-bold text-gray-700">{data.completion_rate}%</div>
-              <div className="text-gray-500">Finish Rate</div>
-            </div>
-            <div className="rounded bg-gray-50 p-2">
-              <div className="font-bold text-gray-700">{data.avg_duration_min}m</div>
-              <div className="text-gray-500">Avg Time</div>
-            </div>
+          <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
+            <Stat value={data.total_plays} label="Plays" />
+            <Stat value={data.avg_score} label="Avg Score" />
+            <Stat value={`${data.completion_rate}%`} label="Finish Rate" />
+            <Stat value={`${data.avg_duration_min}m`} label="Avg Time" />
           </div>
 
           {/* Stop-level breakdown */}
           {data.stops && data.stops.length > 0 && (
             <div>
-              <p className="text-[11px] font-medium text-gray-500 mb-1">Per-Stop Performance</p>
-              <div className="space-y-1">
+              <p className="mb-1 text-sm font-medium text-themed-muted">Per-Stop Performance</p>
+              <div className="space-y-1.5">
                 {data.stops.map((stop, i) => (
-                  <div key={stop.find_id} className="flex items-center gap-2 text-[11px]">
-                    <span className="w-6 text-gray-400">#{i + 1}</span>
-                    <div className="flex-1 bg-gray-100 rounded-full h-2">
+                  <div key={stop.find_id} className="flex items-center gap-2 text-sm tabular-nums">
+                    <span className="w-7 shrink-0 text-themed-muted">#{i + 1}</span>
+                    <div className="h-2 min-w-0 flex-1 rounded-full bg-themed-bg">
                       <div
-                        className="h-2 rounded-full transition-all"
-                        style={{
-                          width: `${stop.avg_score}%`,
-                          backgroundColor: stop.avg_score >= 70 ? "#22c55e" : stop.avg_score >= 40 ? "#f59e0b" : "#ef4444",
-                        }}
+                        className={`h-2 rounded-full ${scoreBarClass(stop.avg_score)}`}
+                        style={{ width: `${stop.avg_score}%` }}
                       />
                     </div>
-                    <span className="w-12 text-right text-gray-600">{stop.avg_score} pts</span>
-                    <span className="w-16 text-right text-gray-400">{stop.avg_hints} hints</span>
+                    <span className="w-14 shrink-0 text-right text-themed-text">{stop.avg_score} pts</span>
+                    <span className="w-20 shrink-0 text-right text-themed-muted">{stop.avg_hints} hints</span>
                   </div>
                 ))}
               </div>
@@ -113,19 +110,28 @@ export default function HuntAnalytics({ huntId, compact = false }: HuntAnalytics
 
           {/* Hardest/easiest */}
           {data.hardest_stop && data.easiest_stop && data.stops && data.stops.length > 2 && (
-            <div className="flex gap-3 text-[11px]">
-              <div className="flex-1 rounded bg-red-50 p-2">
-                <span className="text-red-600 font-medium">Hardest stop:</span>
-                <span className="text-red-500 ml-1">#{data.stops.findIndex(s => s.find_id === data.hardest_stop!.find_id) + 1} ({data.hardest_stop.avg_score} pts avg)</span>
+            <div className="flex flex-col gap-2 text-sm tabular-nums sm:flex-row">
+              <div className="flex-1 rounded-lg bg-error/10 p-2">
+                <span className="font-medium text-error">Hardest stop:</span>
+                <span className="ml-1 text-themed-text">#{data.stops.findIndex(s => s.find_id === data.hardest_stop!.find_id) + 1} ({data.hardest_stop.avg_score} pts avg)</span>
               </div>
-              <div className="flex-1 rounded bg-green-50 p-2">
-                <span className="text-green-600 font-medium">Easiest stop:</span>
-                <span className="text-green-500 ml-1">#{data.stops.findIndex(s => s.find_id === data.easiest_stop!.find_id) + 1} ({data.easiest_stop.avg_score} pts avg)</span>
+              <div className="flex-1 rounded-lg bg-secondary/10 p-2">
+                <span className="font-medium text-secondary">Easiest stop:</span>
+                <span className="ml-1 text-themed-text">#{data.stops.findIndex(s => s.find_id === data.easiest_stop!.find_id) + 1} ({data.easiest_stop.avg_score} pts avg)</span>
               </div>
             </div>
           )}
         </div>
       )}
+    </section>
+  );
+}
+
+function Stat({ value, label }: { value: number | string | undefined; label: string }) {
+  return (
+    <div className="rounded-lg bg-themed-bg p-2">
+      <div className="font-[family-name:var(--font-display)] text-lg font-bold tabular-nums text-themed-text">{value}</div>
+      <div className="text-sm text-themed-muted">{label}</div>
     </div>
   );
 }

@@ -57,19 +57,19 @@ export interface ThemeTokens {
 
 export const THEME_TOKENS: Record<AgeBand, ThemeTokens> = {
   primary: {
-    colorPrimary: "#F59E0B",      // Amber
-    colorPrimaryLight: "#FDE68A",
-    colorPrimaryDark: "#D97706",
-    colorSecondary: "#EF4444",     // Red
-    colorAccent: "#10B981",        // Emerald
-    colorBackground: "#FFFBEB",    // Warm cream
+    colorPrimary: "#B45309",      // Amber
+    colorPrimaryLight: "#FEF3C7",
+    colorPrimaryDark: "#92400E",
+    colorSecondary: "#B42318",     // Red
+    colorAccent: "#047857",        // Emerald
+    colorBackground: "#FAF7F0",    // Trail paper
     colorSurface: "#FFFFFF",
-    colorText: "#1C1917",
-    colorTextSecondary: "#78716C",
-    colorBorder: "#FDE68A",
-    colorSuccess: "#22C55E",
-    colorWarning: "#F97316",
-    colorError: "#EF4444",
+    colorText: "#1C2430",
+    colorTextSecondary: "#5B6472",
+    colorBorder: "#E6E0D4",
+    colorSuccess: "#2F6B55",
+    colorWarning: "#B45309",
+    colorError: "#B42318",
 
     fontFamily: "'Nunito', 'Comic Sans MS', sans-serif",
     fontSizeBase: "18px",
@@ -98,19 +98,19 @@ export const THEME_TOKENS: Record<AgeBand, ThemeTokens> = {
   },
 
   intermediate: {
-    colorPrimary: "#0EA5E9",      // Sky blue
-    colorPrimaryLight: "#BAE6FD",
-    colorPrimaryDark: "#0284C7",
-    colorSecondary: "#14B8A6",     // Teal
-    colorAccent: "#F59E0B",        // Amber
-    colorBackground: "#F0F9FF",    // Light blue tint
+    colorPrimary: "#0369A1",      // Sky blue
+    colorPrimaryLight: "#E0F2FE",
+    colorPrimaryDark: "#075985",
+    colorSecondary: "#0F766E",     // Teal
+    colorAccent: "#B45309",        // Amber
+    colorBackground: "#FAF7F0",    // Trail paper
     colorSurface: "#FFFFFF",
-    colorText: "#1E293B",
-    colorTextSecondary: "#64748B",
-    colorBorder: "#E2E8F0",
-    colorSuccess: "#22C55E",
-    colorWarning: "#F97316",
-    colorError: "#EF4444",
+    colorText: "#1C2430",
+    colorTextSecondary: "#5B6472",
+    colorBorder: "#E6E0D4",
+    colorSuccess: "#2F6B55",
+    colorWarning: "#B45309",
+    colorError: "#B42318",
 
     fontFamily: "'Inter', system-ui, sans-serif",
     fontSizeBase: "16px",
@@ -123,7 +123,7 @@ export const THEME_TOKENS: Record<AgeBand, ThemeTokens> = {
 
     borderRadius: "8px",
     borderRadiusLg: "12px",
-    touchTarget: "36px",
+    touchTarget: "44px",
     spacing: "10px",
     cardPadding: "12px",
 
@@ -139,23 +139,23 @@ export const THEME_TOKENS: Record<AgeBand, ThemeTokens> = {
   },
 
   teen: {
-    colorPrimary: "#6366F1",      // Indigo
-    colorPrimaryLight: "#C7D2FE",
-    colorPrimaryDark: "#4F46E5",
-    colorSecondary: "#0F766E",     // Dark teal
-    colorAccent: "#EC4899",        // Pink
-    colorBackground: "#F8FAFC",    // Cool gray
+    colorPrimary: "#C2410C",      // Trail-blaze orange
+    colorPrimaryLight: "#FDE7DA",
+    colorPrimaryDark: "#9A3412",
+    colorSecondary: "#2F6B55",     // Juniper
+    colorAccent: "#1A6FA6",        // Sky pin (links, map)
+    colorBackground: "#FAF7F0",    // Trail paper
     colorSurface: "#FFFFFF",
-    colorText: "#0F172A",
-    colorTextSecondary: "#475569",
-    colorBorder: "#E2E8F0",
-    colorSuccess: "#16A34A",
-    colorWarning: "#EA580C",
-    colorError: "#DC2626",
+    colorText: "#1C2430",
+    colorTextSecondary: "#5B6472",
+    colorBorder: "#E6E0D4",
+    colorSuccess: "#2F6B55",
+    colorWarning: "#B45309",
+    colorError: "#B42318",
 
     fontFamily: "'DM Sans', 'Inter', system-ui, sans-serif",
-    fontSizeBase: "15px",
-    fontSizeSm: "13px",
+    fontSizeBase: "16px",
+    fontSizeSm: "14px",
     fontSizeLg: "18px",
     fontSizeXl: "22px",
     fontSizeHeading: "26px",
@@ -164,7 +164,7 @@ export const THEME_TOKENS: Record<AgeBand, ThemeTokens> = {
 
     borderRadius: "6px",
     borderRadiusLg: "10px",
-    touchTarget: "36px",
+    touchTarget: "44px",
     spacing: "8px",
     cardPadding: "12px",
 
@@ -180,23 +180,23 @@ export const THEME_TOKENS: Record<AgeBand, ThemeTokens> = {
   },
 
   adult: {
-    colorPrimary: "#1E40AF",      // Navy blue
-    colorPrimaryLight: "#DBEAFE",
-    colorPrimaryDark: "#1E3A8A",
-    colorSecondary: "#374151",     // Gray
-    colorAccent: "#059669",        // Green
-    colorBackground: "#FFFFFF",
+    colorPrimary: "#C2410C",      // Trail-blaze orange
+    colorPrimaryLight: "#FDE7DA",
+    colorPrimaryDark: "#9A3412",
+    colorSecondary: "#2F6B55",     // Juniper
+    colorAccent: "#1A6FA6",        // Sky pin (links, map)
+    colorBackground: "#FAF7F0",
     colorSurface: "#FFFFFF",
-    colorText: "#111827",
-    colorTextSecondary: "#6B7280",
-    colorBorder: "#E5E7EB",
-    colorSuccess: "#059669",
-    colorWarning: "#D97706",
-    colorError: "#DC2626",
+    colorText: "#1C2430",
+    colorTextSecondary: "#5B6472",
+    colorBorder: "#E6E0D4",
+    colorSuccess: "#2F6B55",
+    colorWarning: "#B45309",
+    colorError: "#B42318",
 
     fontFamily: "'Inter', system-ui, sans-serif",
-    fontSizeBase: "14px",
-    fontSizeSm: "12px",
+    fontSizeBase: "16px",
+    fontSizeSm: "14px",
     fontSizeLg: "16px",
     fontSizeXl: "20px",
     fontSizeHeading: "24px",
@@ -205,7 +205,7 @@ export const THEME_TOKENS: Record<AgeBand, ThemeTokens> = {
 
     borderRadius: "6px",
     borderRadiusLg: "8px",
-    touchTarget: "32px",
+    touchTarget: "44px",
     spacing: "8px",
     cardPadding: "10px",
 
@@ -250,7 +250,9 @@ export function tokensToCssVars(tokens: ThemeTokens): Record<string, string> {
     "--border-radius": tokens.borderRadius,
     "--border-radius-lg": tokens.borderRadiusLg,
     "--touch-target": tokens.touchTarget,
-    "--spacing": tokens.spacing,
+    // Not "--spacing": Tailwind v4 uses that as its spacing unit, so emitting
+    // it here silently scaled every p-/m-/w-/gap- utility 2–3×.
+    "--band-spacing": tokens.spacing,
     "--card-padding": tokens.cardPadding,
     "--nav-icon-size": tokens.navIconSize,
     "--animation-duration": tokens.animationDuration,

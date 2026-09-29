@@ -132,9 +132,9 @@ export default function TakeSurveyPage() {
   if (loadError && !data) {
     return (
       <main className="mx-auto max-w-2xl px-4 py-10 text-center">
-        <AlertCircle className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+        <AlertCircle aria-hidden="true" className="w-10 h-10 text-gray-300 mx-auto mb-3" />
         <p className="text-gray-700">{loadError}</p>
-        <Link href="/surveys" className="inline-block mt-4 text-sm font-medium text-brand hover:underline">
+        <Link href="/surveys" className="inline-flex min-h-11 items-center mt-4 text-sm font-medium text-brand hover:underline">
           Back to surveys
         </Link>
       </main>
@@ -156,14 +156,14 @@ export default function TakeSurveyPage() {
   if (submitted) {
     return (
       <main className="mx-auto max-w-2xl px-4 py-10 text-center">
-        <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-3" />
+        <CheckCircle2 aria-hidden="true" className="w-12 h-12 text-green-500 mx-auto mb-3" />
         <h1 className="font-[family-name:var(--font-display)] text-xl font-bold text-gray-900">
           Thank you!
         </h1>
         <p className="text-sm text-gray-500 mt-1">Your response has been recorded.</p>
         <button
           onClick={() => router.push("/surveys")}
-          className="inline-block mt-5 rounded-xl bg-brand px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark transition-all"
+          className="inline-block min-h-11 mt-5 rounded-xl bg-brand px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark transition-colors"
         >
           Back to surveys
         </button>
@@ -177,14 +177,14 @@ export default function TakeSurveyPage() {
     <main className="mx-auto max-w-2xl px-4 py-6">
       <Link
         href="/surveys"
-        className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 mb-4"
+        className="inline-flex min-h-11 items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 mb-4"
       >
-        <ArrowLeft className="w-4 h-4" />
+        <ArrowLeft aria-hidden="true" className="w-4 h-4" />
         Surveys
       </Link>
 
-      <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold text-gray-900 flex items-center gap-2 mb-1">
-        <ClipboardList className="w-6 h-6 text-brand" />
+      <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold text-gray-900 flex items-center gap-2 mb-1 break-words">
+        <ClipboardList aria-hidden="true" className="w-6 h-6 shrink-0 text-brand" />
         {data.survey?.title || "Survey"}
       </h1>
       {data.survey?.description && (
@@ -210,13 +210,13 @@ export default function TakeSurveyPage() {
 
           {missing.size > 0 && (
             <p className="text-sm text-red-600 flex items-center gap-1.5">
-              <AlertCircle className="w-4 h-4" />
+              <AlertCircle aria-hidden="true" className="w-4 h-4 shrink-0" />
               Please answer the highlighted question{missing.size === 1 ? "" : "s"} before submitting.
             </p>
           )}
           {loadError && (
             <p className="text-sm text-red-600 flex items-center gap-1.5">
-              <AlertCircle className="w-4 h-4" />
+              <AlertCircle aria-hidden="true" className="w-4 h-4 shrink-0" />
               {loadError}
             </p>
           )}
@@ -224,7 +224,7 @@ export default function TakeSurveyPage() {
           <button
             onClick={handleSubmit}
             disabled={submitting}
-            className="w-full rounded-xl bg-brand px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark disabled:opacity-50 transition-all"
+            className="w-full rounded-xl bg-brand px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark disabled:opacity-50 transition-colors"
           >
             {submitting ? "Submitting..." : "Submit response"}
           </button>
@@ -256,9 +256,9 @@ function QuestionCard({
       }`}
     >
       <p className="text-sm font-medium text-gray-900 mb-3">
-        <span className="text-gray-400 mr-1.5">{index}.</span>
+        <span className="text-gray-500 mr-1.5">{index}.</span>
         {q.question_text}
-        {q.required && <span className="text-red-400 ml-1" aria-hidden>*</span>}
+        {q.required && <span className="text-red-600 ml-1" aria-hidden>*</span>}
       </p>
       <QuestionInput q={q} value={value} onChange={onChange} />
     </div>
@@ -287,6 +287,7 @@ function QuestionInput({
         <div
           role="radiogroup"
           aria-label={q.question_text}
+          aria-required={q.required}
           className="grid gap-1.5"
           style={{ gridTemplateColumns: `repeat(${points.length}, minmax(0, 1fr))` }}
         >
@@ -299,7 +300,7 @@ function QuestionInput({
                 role="radio"
                 aria-checked={active}
                 onClick={() => onChange(n)}
-                className={`rounded-lg border py-2.5 text-sm font-medium transition ${
+                className={`min-h-11 rounded-lg border py-2.5 text-sm font-medium transition ${
                   active
                     ? "border-brand bg-brand text-white shadow-sm"
                     : "border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-300 hover:bg-gray-100"
@@ -310,9 +311,9 @@ function QuestionInput({
             );
           })}
         </div>
-        <div className="flex justify-between text-[11px] text-gray-400 mt-1.5 px-0.5">
+        <div className="flex justify-between gap-2 text-xs text-gray-500 mt-1.5 px-0.5">
           <span>{minLabel}</span>
-          <span>{maxLabel}</span>
+          <span className="text-right">{maxLabel}</span>
         </div>
       </div>
     );
@@ -321,7 +322,7 @@ function QuestionInput({
   if (q.question_type === "multiple_choice") {
     const opts = normalizeOptions(q.options);
     return (
-      <div role="radiogroup" aria-label={q.question_text} className="space-y-2">
+      <div role="radiogroup" aria-label={q.question_text} aria-required={q.required} className="space-y-2">
         {opts.map((o) => {
           const active = value === o.value;
           return (
@@ -331,7 +332,7 @@ function QuestionInput({
               role="radio"
               aria-checked={active}
               onClick={() => onChange(o.value)}
-              className={`flex w-full items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left text-sm transition ${
+              className={`flex min-h-11 w-full items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left text-sm break-words transition ${
                 active
                   ? "border-brand bg-brand/5 text-gray-900"
                   : "border-gray-200 bg-gray-50 text-gray-700 hover:border-gray-300 hover:bg-gray-100"
@@ -365,7 +366,7 @@ function QuestionInput({
           step={step}
           value={current}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="w-full accent-brand"
+          className="min-h-11 w-full accent-brand"
           aria-label={q.question_text}
         />
         <div className="text-center text-sm font-medium text-gray-700 mt-1">{current}</div>
@@ -380,7 +381,8 @@ function QuestionInput({
       onChange={(e) => onChange(e.target.value)}
       rows={3}
       aria-label={q.question_text}
-      className="block w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition-all"
+      aria-required={q.required}
+      className="block w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition-colors"
       placeholder="Type your answer..."
     />
   );

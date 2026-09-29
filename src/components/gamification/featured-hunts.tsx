@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { TrendingUp } from "lucide-react";
 
 interface FeaturedHunt {
   hunt_id: string;
@@ -35,25 +36,26 @@ export default function FeaturedHunts() {
   if (featured.length === 0) return null;
 
   return (
-    <div className="mb-4">
-      <h3 className="text-xs font-semibold text-gray-500 mb-2">Featured Hunts</h3>
-      <div className="flex gap-2 overflow-x-auto">
+    <section aria-labelledby="featured-heading">
+      <h2 id="featured-heading" className="mb-2 text-sm font-semibold text-themed-muted">Featured hunts</h2>
+      <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 [overscroll-behavior-x:contain]">
         {featured.map((f) => (
           <Link
             key={f.hunt_id}
             href={`/browse/${f.hunt_id}`}
-            className="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 hover:border-amber-300 transition w-48"
+            className="w-60 shrink-0 rounded-xl border border-themed-border bg-surface px-4 py-3 transition-colors hover:border-brand/40"
           >
-            <div className="flex items-center gap-1 mb-0.5">
-              <span className="text-[10px] text-amber-600 font-medium">⭐ {f.feature_type}</span>
-            </div>
-            <p className="text-xs font-medium text-gray-900 truncate">{f.hunts?.title}</p>
+            <span className="inline-flex items-center gap-1 text-xs font-semibold capitalize text-brand-dark">
+              <TrendingUp className="w-3.5 h-3.5" aria-hidden="true" />
+              {f.feature_type}
+            </span>
+            <p className="mt-1 truncate font-[family-name:var(--font-display)] text-base font-semibold text-themed-text">{f.hunts?.title}</p>
             {f.curator_comment && (
-              <p className="text-[10px] text-amber-700 mt-0.5">{f.curator_comment}</p>
+              <p className="mt-0.5 text-sm tabular-nums text-themed-muted">{f.curator_comment}</p>
             )}
           </Link>
         ))}
       </div>
-    </div>
+    </section>
   );
 }

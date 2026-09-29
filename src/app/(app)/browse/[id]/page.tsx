@@ -1,11 +1,16 @@
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { ArrowLeft, Clock, Flag, Play, Users } from "lucide-react";
 import Leaderboard from "@/components/social/leaderboard";
 import HuntAnalytics from "@/components/hunts/hunt-analytics";
 import HuntRating from "@/components/hunts/hunt-rating";
 import HuntMap from "@/components/hunts/hunt-map";
 import { StopList } from "@/components/hunts/stop-detail-modal";
+import { AudienceIcon, formatPlayMode } from "../hunt-meta";
+
+const PILL_CLASS =
+  "inline-flex items-center gap-1.5 rounded-full border border-themed-border bg-surface px-3 py-1 text-sm text-themed-text";
 
 export default async function HuntDetailPage({
   params,
@@ -30,15 +35,53 @@ export default async function HuntDetailPage({
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-4">
-      <Link href="/browse" className="text-sm text-brand hover:underline mb-4 inline-block">
-        &larr; Back to browse
+      <Link
+        href="/browse"
+        className="mb-2 inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-link transition-colors hover:text-link-dark hover:underline"
+      >
+        <ArrowLeft className="w-4 h-4" aria-hidden="true" />
+        Back to browse
       </Link>
 
-      <h1 className="text-xl font-bold text-gray-900 mb-2">{hunt.title}</h1>
+      <header className="mb-6">
+        <h1 className="mb-2 font-[family-name:var(--font-display)] text-2xl font-bold text-themed-text text-balance sm:text-3xl">
+          {hunt.title}
+        </h1>
 
-      {hunt.description && (
-        <p className="text-gray-600 mb-6">{hunt.description}</p>
-      )}
+        {hunt.description && (
+          <p className="mb-4 text-base text-themed-muted">{hunt.description}</p>
+        )}
+
+        <ul className="mb-5 flex flex-wrap gap-2" aria-label="Hunt details">
+          <li className={`${PILL_CLASS} capitalize`}>
+            <AudienceIcon audience={hunt.target_audience} className="w-4 h-4 text-secondary" />
+            {hunt.target_audience}
+          </li>
+          <li className={PILL_CLASS}>
+            <Users className="w-4 h-4 text-secondary" aria-hidden="true" />
+            {formatPlayMode(hunt.play_mode)}
+          </li>
+          {hunt.estimated_duration_min && (
+            <li className={`${PILL_CLASS} tabular-nums`}>
+              <Clock className="w-4 h-4 text-secondary" aria-hidden="true" />
+              ~{hunt.estimated_duration_min} min
+            </li>
+          )}
+          <li className={`${PILL_CLASS} tabular-nums`}>
+            <Flag className="w-4 h-4 text-secondary" aria-hidden="true" />
+            {finds.length} stop{finds.length !== 1 ? "s" : ""}
+          </li>
+        </ul>
+
+        {/* The screen's one primary action */}
+        <Link
+          href={`/play/${hunt.id}`}
+          className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand px-6 text-base font-semibold text-white transition-colors hover:bg-brand-dark sm:w-auto"
+        >
+          <Play className="w-5 h-5" aria-hidden="true" />
+          Start Hunt
+        </Link>
+      </header>
 
       {/* Hunt map */}
       <HuntMap
@@ -52,36 +95,14 @@ export default async function HuntDetailPage({
         })).filter((s: { lat: number; lng: number }) => s.lat !== 0 && s.lng !== 0)}
       />
 
-      <div className="flex flex-wrap gap-3 mb-8">
-        <span className="rounded-full bg-sky-50 px-3 py-1 text-sm text-sky-700">
-          {hunt.target_audience}
-        </span>
-        <span className="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-600">
-          {hunt.play_mode.replace(/_/g, " ")}
-        </span>
-        {hunt.estimated_duration_min && (
-          <span className="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-600">
-            ~{hunt.estimated_duration_min} min
-          </span>
-        )}
-        <span className="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-600">
-          {finds.length} stop{finds.length !== 1 ? "s" : ""}
-        </span>
-      </div>
-
       {finds.length > 0 && (
-        <div className="mb-8">
-          <h2 className="text-sm font-semibold text-gray-900 mb-2">Stops — click for details</h2>
+        <section aria-labelledby="stops-heading" className="mb-8">
+          <h2 id="stops-heading" className="mb-2 font-[family-name:var(--font-display)] text-lg font-semibold text-themed-text">
+            Stops — click for details
+          </h2>
           <StopList finds={finds} />
-        </div>
+        </section>
       )}
-
-      <Link
-        href={`/play/${hunt.id}`}
-        className="inline-block bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors px-6 py-3 text-sm font-medium mb-8"
-      >
-        Start Hunt
-      </Link>
 
       {/* Hunt rating */}
       <HuntRating huntId={hunt.id} />

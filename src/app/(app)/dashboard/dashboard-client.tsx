@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import InsightsPanel from "@/components/hunts/insights-panel";
 import StreakDisplay from "@/components/gamification/streak-display";
 import FeaturedHunts from "@/components/gamification/featured-hunts";
-import { Map, Users, Award, Heart, Compass, ChevronRight } from "lucide-react";
+import { Map, Users, Award, Heart, Compass, ChevronRight, MapPin } from "lucide-react";
 
 interface DashboardUser {
   id: string;
@@ -26,7 +26,9 @@ const GREETINGS = [
 
 export default function DashboardClient({ user }: { user: DashboardUser }) {
   const [counts, setCounts] = useState({ hunts: 0, teams: 0, badges: 0 });
-  const greeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
+  // Rotate by day, not Math.random: a random pick differs between the server
+  // render and hydration.
+  const greeting = GREETINGS[new Date().getDate() % GREETINGS.length];
 
   useEffect(() => {
     async function loadCounts() {
@@ -51,65 +53,59 @@ export default function DashboardClient({ user }: { user: DashboardUser }) {
   }, []);
 
   return (
-    <main className="mx-auto max-w-4xl px-4 py-6">
-      {/* Welcome header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold text-themed-text">
-            {user.display_name ? `Hey, ${user.display_name}!` : "Hey there!"}
-          </h1>
-          <p className="font-[family-name:var(--font-handwritten)] text-lg text-themed-muted mt-0.5">
-            {greeting} <Compass className="w-4 h-4 inline text-brand" />
-          </p>
+    <main>
+      {/* Welcome header: the screen's one topo band */}
+      <header className="fm-topo border-b border-themed-border">
+        <div className="mx-auto flex max-w-4xl flex-wrap items-end justify-between gap-3 px-4 pt-8 pb-6">
+          <div className="min-w-0">
+            <h1 className="font-[family-name:var(--font-display)] text-3xl font-bold text-themed-text text-balance">
+              {user.display_name ? `Hey, ${user.display_name}!` : "Hey there!"}
+            </h1>
+            <p className="font-[family-name:var(--font-handwritten)] text-xl text-brand-dark mt-1">
+              {greeting} <Compass className="w-4 h-4 inline" aria-hidden="true" />
+            </p>
+          </div>
+          <StreakDisplay />
         </div>
-        <StreakDisplay />
+      </header>
+
+      <div className="mx-auto max-w-4xl px-4 py-6 space-y-8">
+        {/* Primary action */}
+        <section
+          aria-labelledby="next-hunt-heading"
+          className="flex flex-col gap-4 rounded-xl border border-themed-border bg-surface p-5 shadow-[var(--shadow-card)] sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="min-w-0">
+            <h2 id="next-hunt-heading" className="font-[family-name:var(--font-display)] text-xl font-semibold text-themed-text">
+              Find your next hunt
+            </h2>
+            <p className="mt-1 text-base text-themed-muted">
+              Pick a trail nearby, follow the clues, and score points at every stop.
+            </p>
+          </div>
+          <Link
+            href="/browse"
+            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-brand px-5 text-base font-semibold text-white transition-colors hover:bg-brand-dark"
+          >
+            <MapPin className="w-5 h-5" aria-hidden="true" />
+            Browse hunts
+          </Link>
+        </section>
+
+        {/* Featured hunts */}
+        <FeaturedHunts />
+
+        {/* Shortcuts */}
+        <nav aria-label="Your stuff" className="grid gap-3 sm:grid-cols-2">
+          <DashboardCard title="My Hunts" description="Create and manage hunts" count={counts.hunts} href="/dashboard/hunts" icon={Map} />
+          <DashboardCard title="My Teams" description="View your teams" count={counts.teams} href="/dashboard/teams" icon={Users} />
+          <DashboardCard title="Badges" description="Achievements earned" count={counts.badges} href="/dashboard/badges" icon={Award} />
+          <DashboardCard title="Social" description="Friends and kudos" count={0} href="/dashboard/social" icon={Heart} />
+        </nav>
+
+        {/* Hunt creator insights */}
+        {["teacher", "hunt_creator", "admin", "researcher"].includes(user.role) && <InsightsPanel />}
       </div>
-
-      {/* Featured hunts */}
-      <FeaturedHunts />
-
-      {/* Quick action cards */}
-      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4 mb-6">
-        <DashboardCard
-          title="My Hunts"
-          description="Create and manage hunts"
-          count={counts.hunts}
-          href="/dashboard/hunts"
-          icon={Map}
-          gradient="from-sky-400 to-blue-500"
-        />
-        <DashboardCard
-          title="My Teams"
-          description="View your teams"
-          count={counts.teams}
-          href="/dashboard/teams"
-          icon={Users}
-          gradient="from-violet-400 to-purple-500"
-        />
-        <DashboardCard
-          title="Badges"
-          description="Achievements earned"
-          count={counts.badges}
-          href="/dashboard/badges"
-          icon={Award}
-          gradient="from-amber-400 to-orange-500"
-        />
-        <DashboardCard
-          title="Social"
-          description="Friends and kudos"
-          count={0}
-          href="/dashboard/social"
-          icon={Heart}
-          gradient="from-rose-400 to-pink-500"
-        />
-      </div>
-
-      {/* Hunt creator insights */}
-      {["teacher", "hunt_creator", "admin", "researcher"].includes(user.role) && (
-        <div className="mt-2">
-          <InsightsPanel />
-        </div>
-      )}
     </main>
   );
 }
@@ -120,38 +116,33 @@ function DashboardCard({
   count,
   href,
   icon: Icon,
-  gradient,
 }: {
   title: string;
   description: string;
   count: number;
   href: string;
-  icon: React.ComponentType<{ className?: string }>;
-  gradient: string;
+  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" }>;
 }) {
   return (
     <Link
       href={href}
-      className="group block rounded-2xl bg-white border border-gray-100/80 p-4 hover:shadow-lg hover:-translate-y-1 transition-all duration-300"
+      className="group flex min-h-16 items-center gap-4 rounded-xl border border-themed-border bg-surface px-4 py-3 transition-colors hover:border-secondary/40 hover:bg-themed-bg"
     >
-      <div className="flex items-start justify-between mb-3">
-        <div className={`inline-flex rounded-xl bg-gradient-to-br ${gradient} p-2.5 text-white shadow-sm group-hover:scale-110 transition-transform`}>
-          <Icon className="w-5 h-5" />
-        </div>
-        {count > 0 && (
-          <span className="font-[family-name:var(--font-display)] text-2xl font-bold text-brand">
-            {count}
-          </span>
-        )}
-      </div>
-      <h3 className="font-[family-name:var(--font-display)] font-semibold text-sm text-gray-900 group-hover:text-brand transition-colors">
-        {title}
-      </h3>
-      <p className="text-xs text-gray-500 mt-0.5">{description}</p>
-      <div className="mt-2 flex items-center text-xs text-brand opacity-0 group-hover:opacity-100 transition-opacity">
-        <span>Open</span>
-        <ChevronRight className="w-3 h-3 ml-0.5" />
-      </div>
+      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-secondary/10 text-secondary">
+        <Icon className="w-5 h-5" aria-hidden="true" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-[family-name:var(--font-display)] text-base font-semibold text-themed-text">
+          {title}
+        </span>
+        <span className="block text-sm text-themed-muted">{description}</span>
+      </span>
+      {count > 0 && (
+        <span className="font-[family-name:var(--font-display)] text-xl font-bold tabular-nums text-themed-text">
+          {count}
+        </span>
+      )}
+      <ChevronRight className="w-5 h-5 shrink-0 text-themed-muted transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
     </Link>
   );
 }

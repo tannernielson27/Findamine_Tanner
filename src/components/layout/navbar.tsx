@@ -57,10 +57,10 @@ export default function Navbar({ user }: NavbarProps) {
     : [];
 
   return (
-    <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-themed-border shadow-sm">
-      <div className="mx-auto max-w-6xl flex items-center justify-between px-4 h-12">
+    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-themed-border">
+      <div className="mx-auto max-w-6xl flex items-center justify-between gap-3 px-4 h-14">
         {/* Logo */}
-        <Link href={user ? "/dashboard" : "/"} className="flex items-center gap-2 group">
+        <Link href={user ? "/dashboard" : "/"} className="flex shrink-0 items-center gap-2 rounded-lg group">
           <Image
             src="/logo-findamine.png"
             alt="findamine"
@@ -71,8 +71,8 @@ export default function Navbar({ user }: NavbarProps) {
           />
         </Link>
 
-        {/* Desktop nav */}
-        <nav className="hidden sm:flex items-center gap-1">
+        {/* Desktop nav: lg+ only; below that the creator/admin set collides with the account controls */}
+        <nav aria-label="Main" className="hidden lg:flex min-w-0 items-center gap-1">
           {navLinks.map((link) => {
             const Icon = link.icon;
             const active = pathname === link.href || (link.href !== "/dashboard" && pathname.startsWith(link.href));
@@ -80,13 +80,14 @@ export default function Navbar({ user }: NavbarProps) {
               <Link
                 key={link.href}
                 href={link.href}
-                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                aria-current={active ? "page" : undefined}
+                className={`flex h-10 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-sm transition-colors ${
                   active
-                    ? "bg-brand/10 text-brand font-semibold"
-                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                    ? "bg-brand-light text-brand-dark font-semibold"
+                    : "text-themed-muted hover:bg-themed-bg hover:text-themed-text"
                 }`}
               >
-                <Icon className="w-4 h-4" />
+                <Icon className="w-4 h-4" aria-hidden="true" />
                 {link.label}
               </Link>
             );
@@ -94,32 +95,34 @@ export default function Navbar({ user }: NavbarProps) {
         </nav>
 
         {/* Right side */}
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1">
           {user ? (
             <>
               <SurveyNudge />
               <NotificationBell />
               <Link
                 href="/settings"
-                className="hidden sm:flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm text-gray-600 hover:bg-gray-100 transition-colors"
+                aria-label="Settings"
+                className="hidden lg:flex h-10 items-center gap-1.5 rounded-lg px-2 text-sm text-themed-muted hover:bg-themed-bg hover:text-themed-text transition-colors"
               >
                 {user.avatar_url ? (
                   <Image src={user.avatar_url} alt="" width={20} height={20} className="rounded-full" />
                 ) : (
-                  <div className="w-5 h-5 rounded-full bg-brand/20 flex items-center justify-center">
-                    <span className="text-[10px] font-bold text-brand">
+                  <div className="w-7 h-7 rounded-full bg-brand-light flex items-center justify-center">
+                    <span className="text-xs font-bold text-brand-dark">
                       {(user.display_name || "?")[0].toUpperCase()}
                     </span>
                   </div>
                 )}
-                <span className="max-w-[100px] truncate">{user.display_name || "Profile"}</span>
+                <span className="hidden lg:inline max-w-[120px] truncate">{user.display_name || "Profile"}</span>
               </Link>
               <button
                 onClick={handleLogout}
-                className="hidden sm:flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                className="hidden lg:flex h-10 w-10 items-center justify-center rounded-lg text-themed-muted hover:text-themed-text hover:bg-themed-bg transition-colors"
                 title="Sign out"
+                aria-label="Sign out"
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut className="w-4 h-4" aria-hidden="true" />
               </button>
             </>
           ) : (
@@ -140,7 +143,7 @@ export default function Navbar({ user }: NavbarProps) {
           {user && (
             <button
               onClick={() => setMenuOpen(!menuOpen)}
-              className="sm:hidden p-1.5 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors"
+              className="lg:hidden flex h-11 w-11 items-center justify-center rounded-lg text-themed-text hover:bg-themed-bg transition-colors"
               aria-label="Navigation menu"
               aria-expanded={menuOpen}
             >
@@ -152,7 +155,7 @@ export default function Navbar({ user }: NavbarProps) {
 
       {/* Mobile dropdown */}
       {menuOpen && user && (
-        <nav className="sm:hidden border-t border-themed-border bg-white px-3 py-2 space-y-0.5">
+        <nav aria-label="Main" className="lg:hidden border-t border-themed-border bg-white px-3 py-2 space-y-0.5">
           {navLinks.map((link) => {
             const Icon = link.icon;
             const active = pathname === link.href || (link.href !== "/dashboard" && pathname.startsWith(link.href));
@@ -161,31 +164,32 @@ export default function Navbar({ user }: NavbarProps) {
                 key={link.href}
                 href={link.href}
                 onClick={() => setMenuOpen(false)}
-                className={`flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm transition-colors ${
+                aria-current={active ? "page" : undefined}
+                className={`flex min-h-11 items-center gap-2.5 rounded-lg px-3 text-base transition-colors ${
                   active
-                    ? "bg-brand/10 text-brand font-semibold"
-                    : "text-gray-700 hover:bg-gray-50"
+                    ? "bg-brand-light text-brand-dark font-semibold"
+                    : "text-themed-text hover:bg-themed-bg"
                 }`}
               >
-                <Icon className="w-4 h-4" />
+                <Icon className="w-5 h-5" aria-hidden="true" />
                 {link.label}
               </Link>
             );
           })}
-          <hr className="my-1.5 border-gray-100" />
+          <hr className="my-1.5 border-themed-border" />
           <Link
             href="/settings"
             onClick={() => setMenuOpen(false)}
-            className="flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+            className="flex min-h-11 items-center gap-2.5 rounded-lg px-3 text-base text-themed-text hover:bg-themed-bg"
           >
-            <Settings className="w-4 h-4" />
+            <Settings className="w-5 h-5" aria-hidden="true" />
             {user.display_name || "Profile"}
           </Link>
           <button
             onClick={() => { setMenuOpen(false); handleLogout(); }}
-            className="flex items-center gap-2.5 w-full text-left rounded-lg px-3 py-2.5 text-sm text-gray-500 hover:bg-gray-50"
+            className="flex min-h-11 items-center gap-2.5 w-full text-left rounded-lg px-3 text-base text-themed-muted hover:bg-themed-bg"
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className="w-5 h-5" aria-hidden="true" />
             Sign out
           </button>
         </nav>

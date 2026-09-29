@@ -2,12 +2,12 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Award } from "lucide-react";
+import { Award, Lock, Star } from "lucide-react";
 
 interface BadgeProgress {
   id: string;
   code: string;
-  display_name: string;
+  name: string;
   description: string;
   category: string;
   icon_url: string | null;
@@ -44,89 +44,90 @@ export default function BadgesPage() {
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-6">
-      <Link href="/dashboard" className="text-sm text-brand hover:underline mb-4 inline-block">
+      <Link href="/dashboard" className="inline-flex min-h-11 items-center text-sm font-medium text-link hover:text-link-dark hover:underline">
         &larr; Dashboard
       </Link>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Award className="w-6 h-6 text-amber-500" />
+      <header className="flex flex-wrap items-end justify-between gap-3 mb-6">
+        <div className="min-w-0">
+          <h1 className="font-[family-name:var(--font-display)] text-3xl font-bold text-themed-text flex items-center gap-2 text-balance">
+            <Award className="w-7 h-7 text-brand-dark" aria-hidden="true" />
             My Badges
           </h1>
-          <p className="font-[family-name:var(--font-handwritten)] text-lg text-themed-muted">
+          <p className="mt-1 text-base tabular-nums text-themed-muted">
             {earnedCount} of {badges.length} earned
           </p>
         </div>
-        <div className="flex rounded-xl border border-gray-200 text-sm overflow-hidden">
+        <div role="group" aria-label="Filter badges" className="flex rounded-lg border border-themed-border bg-surface text-sm overflow-hidden">
           {(["all", "earned", "locked"] as const).map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
-              className={`px-4 py-1.5 capitalize transition-colors ${
+              aria-pressed={filter === f}
+              className={`min-h-11 px-4 font-medium capitalize transition-colors ${
                 filter === f
-                  ? "bg-brand text-white"
-                  : "text-gray-600 hover:bg-gray-50"
+                  ? "bg-themed-text text-surface"
+                  : "text-themed-muted hover:bg-themed-bg hover:text-themed-text"
               }`}
             >
               {f}
             </button>
           ))}
         </div>
-      </div>
+      </header>
 
       {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {[...Array(9)].map((_, i) => (
-            <div key={i} className="h-28 bg-gray-100 rounded-2xl animate-pulse" />
+            <div key={i} className="h-24 bg-themed-bg border border-themed-border rounded-xl animate-pulse" />
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-2xl border-2 border-dashed border-gray-200 p-16 text-center">
-          <div className="text-4xl mb-3">🔒</div>
-          <p className="font-[family-name:var(--font-display)] font-semibold text-gray-500">
+        <div className="rounded-xl border border-dashed border-themed-border p-12 text-center">
+          <Lock className="mx-auto mb-3 w-8 h-8 text-themed-muted" aria-hidden="true" />
+          <p className="font-[family-name:var(--font-display)] text-base font-semibold text-themed-text">
             {filter === "earned" ? "No badges earned yet" : "No badges to show"}
           </p>
-          <p className="font-[family-name:var(--font-handwritten)] text-lg text-gray-400 mt-1">
+          <p className="font-[family-name:var(--font-handwritten)] text-lg text-themed-muted mt-1">
             Keep exploring to unlock achievements!
           </p>
         </div>
       ) : (
         categories.map((category) => (
-          <div key={category} className="mb-8">
-            <h2 className="font-[family-name:var(--font-display)] text-sm font-semibold text-themed-muted uppercase tracking-wider mb-3">
+          <section key={category} className="mb-8">
+            <h2 className="text-sm font-semibold text-themed-muted uppercase tracking-wider mb-3">
               {category.replace(/_/g, " ")}
             </h2>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {filtered
                 .filter((b) => b.category === category)
                 .map((badge) => (
                   <div
                     key={badge.id}
-                    className={`rounded-2xl border p-4 transition-all duration-300 ${
+                    className={`rounded-xl border p-4 ${
                       badge.earned
-                        ? "border-brand-light bg-gradient-to-br from-white to-brand-light/20 shadow-sm hover:shadow-md hover:-translate-y-0.5"
-                        : "border-gray-200 bg-white opacity-50"
+                        ? "border-themed-border bg-surface shadow-[var(--shadow-card)]"
+                        : "border-dashed border-themed-border bg-themed-bg"
                     }`}
                   >
                     <div className="flex items-start gap-3">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl shrink-0 ${
-                        badge.earned ? "bg-gradient-to-br from-amber-100 to-amber-200 shadow-sm" : "bg-gray-100"
+                      <div className={`w-12 h-12 rounded-lg flex items-center justify-center shrink-0 ${
+                        badge.earned ? "bg-brand-light text-brand-dark" : "bg-surface border border-themed-border text-themed-muted"
                       }`}>
                         {badge.icon_url ? (
-                          <img src={badge.icon_url} alt="" className="w-8 h-8" />
+                          <img src={badge.icon_url} alt="" className={`w-8 h-8 ${badge.earned ? "" : "opacity-50 grayscale"}`} />
                         ) : badge.earned ? (
-                          "⭐"
+                          <Star className="w-6 h-6" aria-hidden="true" />
                         ) : (
-                          "🔒"
+                          <Lock className="w-5 h-5" aria-hidden="true" />
                         )}
                       </div>
                       <div className="min-w-0">
-                        <p className={`font-[family-name:var(--font-display)] text-sm font-semibold ${badge.earned ? "text-gray-900" : "text-gray-400"}`}>
-                          {badge.display_name}
+                        <p className={`font-[family-name:var(--font-display)] text-base font-semibold ${badge.earned ? "text-themed-text" : "text-themed-muted"}`}>
+                          {badge.name}
                         </p>
-                        <p className="text-xs text-gray-500 mt-0.5">{badge.description}</p>
+                        <p className="text-sm text-themed-muted mt-0.5">{badge.description}</p>
                         {badge.earned && badge.earned_at && (
-                          <p className="text-[10px] text-brand font-medium mt-1.5">
+                          <p className="text-sm text-secondary font-medium mt-1.5">
                             Earned {new Date(badge.earned_at).toLocaleDateString()}
                           </p>
                         )}
@@ -135,7 +136,7 @@ export default function BadgesPage() {
                   </div>
                 ))}
             </div>
-          </div>
+          </section>
         ))
       )}
     </main>

@@ -151,17 +151,17 @@ export default function NotificationBell() {
             void fetchNotifications();
           }
         }}
-        className="relative p-1.5 rounded-md text-gray-600 hover:bg-gray-100"
+        className="relative flex h-10 w-10 items-center justify-center rounded-lg text-themed-muted hover:bg-themed-bg hover:text-themed-text"
         aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
         aria-expanded={open}
         aria-haspopup="true"
       >
         {/* Bell icon */}
-        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <svg className="h-5 w-5" aria-hidden="true" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
         </svg>
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-500 text-[8px] font-bold text-white">
+          <span className="absolute top-1 right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-error px-1 text-[10px] font-bold leading-none text-white">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
@@ -169,13 +169,13 @@ export default function NotificationBell() {
 
       {/* Dropdown */}
       {open && (
-        <div className="absolute right-0 mt-2 w-80 rounded-lg border border-gray-200 bg-white shadow-lg z-50">
+        <div className="absolute right-0 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-xl border border-themed-border bg-white shadow-lg z-50">
           <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5">
             <h4 className="text-sm font-semibold text-gray-900">Notifications</h4>
             {unreadCount > 0 && (
               <button
                 onClick={handleMarkAllRead}
-                className="text-xs text-sky-600 hover:underline"
+                className="text-xs text-link hover:underline"
               >
                 Mark all read
               </button>

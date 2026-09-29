@@ -546,7 +546,7 @@ export default function PrivacySettingsPage() {
           </p>
           <Link
             href={`/surveys/${gateDeliveryId}`}
-            className="inline-block rounded-lg bg-violet-600 px-4 py-2 text-xs font-semibold text-white hover:bg-violet-700 transition"
+            className="inline-flex min-h-11 items-center rounded-lg bg-violet-600 px-4 py-2 text-xs font-semibold text-white hover:bg-violet-700 transition"
           >
             Answer the questionnaire
           </Link>
@@ -580,7 +580,7 @@ export default function PrivacySettingsPage() {
           </p>
           <button
             onClick={revealControls}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 transition"
+            className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 transition"
           >
             Show advanced privacy controls
           </button>
@@ -603,7 +603,7 @@ export default function PrivacySettingsPage() {
                     isActive ? "border-sky-400 bg-sky-50 ring-2 ring-sky-200" : "border-gray-200 hover:border-gray-300"
                   }`}
                 >
-                  <span className="text-2xl block mb-1">{info.icon}</span>
+                  <span aria-hidden="true" className="text-2xl block mb-1">{info.icon}</span>
                   <span className="text-xs font-medium text-gray-900">{info.label}</span>
                   <p className="text-xs text-gray-600 mt-0.5">{info.description}</p>
                 </button>
@@ -638,13 +638,13 @@ export default function PrivacySettingsPage() {
                         key={level}
                         onClick={() => setCategoryVisibility(cat.key, level)}
                         aria-pressed={currentLevel === level}
-                        className={`flex-1 rounded px-2 py-2 text-xs transition ${
+                        className={`min-h-11 min-w-0 flex-1 break-words rounded px-2 py-2 text-xs transition ${
                           currentLevel === level
                             ? "bg-sky-100 text-sky-800 border border-sky-300"
                             : "bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100"
                         }`}
                       >
-                        {info.icon} {info.label}
+                        <span aria-hidden="true">{info.icon}</span> {info.label}
                       </button>
                     );
                   })}
@@ -674,13 +674,13 @@ export default function PrivacySettingsPage() {
                       key={level}
                       onClick={() => setFieldVisibility(field.key, level)}
                       aria-pressed={visibility[field.key] === level}
-                      className={`flex-1 rounded px-1.5 py-1.5 text-xs transition ${
+                      className={`min-h-11 min-w-0 flex-1 break-words rounded px-1.5 py-1.5 text-xs transition ${
                         visibility[field.key] === level
                           ? "bg-sky-100 text-sky-800 border border-sky-300"
                           : "bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100"
                       }`}
                     >
-                      {info.icon} {info.label}
+                      <span aria-hidden="true">{info.icon}</span> {info.label}
                     </button>
                   );
                 })}
@@ -711,7 +711,7 @@ export default function PrivacySettingsPage() {
                   const active = Object.keys(rules).length;
                   return (
                     <details key={person.id} className="rounded border border-gray-200 bg-gray-50 p-2">
-                      <summary className="cursor-pointer text-xs font-medium text-gray-800">
+                      <summary className="min-h-11 cursor-pointer py-3 text-xs font-medium text-gray-800 break-words">
                         {person.name}{" "}
                         <span className="text-gray-500">({person.kind === "minion" ? "crew" : "friend"})</span>
                         {active > 0 && (
@@ -727,15 +727,15 @@ export default function PrivacySettingsPage() {
                             current === "nobody" ? "hidden" : current ? "see" : "inherit";
                           return (
                             <div key={field.key} className="flex items-center justify-between gap-2">
-                              <span className="text-xs text-gray-700">{field.label}</span>
-                              <div className="flex gap-1" role="group" aria-label={`${person.name}: ${field.label}`}>
+                              <span className="min-w-0 break-words text-xs text-gray-700">{field.label}</span>
+                              <div className="flex shrink-0 gap-1" role="group" aria-label={`${person.name}: ${field.label}`}>
                                 {OVERRIDE_CHOICES.map((c) => (
                                   <button
                                     key={c.value}
                                     type="button"
                                     aria-pressed={choice === c.value}
                                     onClick={() => setOverride(person.id, field.key, c.value)}
-                                    className={`rounded px-2 py-1 text-xs transition ${
+                                    className={`min-h-11 rounded px-2 py-1 text-xs transition ${
                                       choice === c.value
                                         ? "bg-sky-100 text-sky-800 border border-sky-300"
                                         : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-100"
@@ -780,11 +780,11 @@ export default function PrivacySettingsPage() {
               onClick={handleSave}
               disabled={saving || unsetCount > 0 || surveyGated}
               title={surveyGated ? "Complete the questionnaire first" : undefined}
-              className="bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors px-6 py-2 text-sm font-medium disabled:opacity-50"
+              className="min-h-11 bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors px-6 py-2 text-sm font-medium disabled:opacity-50"
             >
               {saving ? "Saving..." : "Save Privacy Settings"}
             </button>
-            {saved && <span className="text-xs text-green-600">Saved!</span>}
+            {saved && <span className="text-xs text-green-700">Saved!</span>}
           </div>
           {selection?.canSwitch && (
             <SchemeSwitch
@@ -827,13 +827,13 @@ export default function PrivacySettingsPage() {
             <div className="flex flex-col gap-2">
               <button
                 onClick={confirmCancel}
-                className="w-full rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-dark transition"
+                className="min-h-11 w-full rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-dark transition"
               >
                 Keep sharing
               </button>
               <button
                 onClick={confirmAccept}
-                className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-xs font-medium text-gray-500 hover:bg-gray-50 transition"
+                className="min-h-11 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-xs font-medium text-gray-500 hover:bg-gray-50 transition"
               >
                 Hide it anyway
               </button>

@@ -41,14 +41,14 @@ export default async function DebriefPage() {
     <main className="mx-auto max-w-2xl px-4 py-6">
       <Link
         href="/settings"
-        className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 mb-4"
+        className="inline-flex min-h-11 items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 mb-4"
       >
-        <ArrowLeft className="w-4 h-4" />
+        <ArrowLeft aria-hidden="true" className="w-4 h-4" />
         Settings
       </Link>
 
       <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold text-gray-900 flex items-center gap-2 mb-4">
-        <BookOpen className="w-6 h-6 text-brand" />
+        <BookOpen aria-hidden="true" className="w-6 h-6 shrink-0 text-brand" />
         About this research study
       </h1>
 
@@ -106,7 +106,7 @@ export default async function DebriefPage() {
 
 function DimensionDisclosure({ dimension }: { dimension: ConditionDimension }) {
   return (
-    <li className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-2">
+    <li className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-2 break-words">
       <p className="font-semibold text-gray-900">{dimension.label}</p>
       {dimension.description && <p className="text-xs text-gray-600">{dimension.description}</p>}
       {dimension.levels.length > 0 && (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { Camera, ChevronDown, ChevronUp, Mic, RotateCcw, Square } from "lucide-react";
 
 interface ChallengeInputProps {
   challengeType: string;
@@ -125,7 +126,7 @@ function MultipleChoice({
   return (
     <div>
       {question && (
-        <p className="text-sm text-gray-700 mb-3">{question}</p>
+        <p className="text-base text-themed-text mb-3">{question}</p>
       )}
       <div className="space-y-2 mb-4" role="radiogroup" aria-label={question || "Answer options"}>
         {options.map((option, idx) => {
@@ -138,13 +139,13 @@ function MultipleChoice({
               aria-checked={isSelected}
               onClick={() => onAnswerChange(option)}
               disabled={disabled}
-              className={`w-full text-left rounded-lg border-2 px-4 py-3 text-sm transition-colors ${
+              className={`flex min-h-12 w-full items-center text-left rounded-lg border-2 px-4 py-3 text-base transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 ${
                 isSelected
-                  ? "border-sky-500 bg-sky-50 text-sky-800 font-medium"
-                  : "border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50"
+                  ? "border-link bg-link/10 text-themed-text font-semibold"
+                  : "border-themed-border bg-surface text-themed-text hover:border-link/50 hover:bg-themed-bg"
               } disabled:opacity-50`}
             >
-              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-bold mr-3" aria-hidden="true">
+              <span className={`inline-flex shrink-0 items-center justify-center w-7 h-7 rounded-full text-sm font-bold mr-3 ${isSelected ? "bg-link text-white" : "bg-themed-bg text-themed-muted"}`} aria-hidden="true">
                 {letter}
               </span>
               {option}
@@ -155,7 +156,7 @@ function MultipleChoice({
       <button
         onClick={onSubmit}
         disabled={!answer || disabled}
-        className="w-full rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+        className="flex min-h-12 w-full items-center justify-center rounded-lg bg-brand px-4 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50"
       >
         Submit Answer
       </button>
@@ -185,7 +186,7 @@ function NumericEntry({
   return (
     <div>
       {question && (
-        <p className="text-sm text-gray-700 mb-3">{question}</p>
+        <p className="text-base text-themed-text mb-3">{question}</p>
       )}
       <div className="flex gap-2 mb-4">
         <input
@@ -196,17 +197,17 @@ function NumericEntry({
           placeholder={placeholder}
           disabled={disabled}
           aria-label={question || "Enter your numeric answer"}
-          className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-50"
+          className="min-h-12 min-w-0 flex-1 tabular-nums rounded-lg border border-themed-border bg-surface px-3 py-2 text-base text-themed-text placeholder:text-themed-muted focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand disabled:opacity-50"
           onKeyDown={(e) => e.key === "Enter" && onSubmit()}
         />
         {unit && (
-          <span className="flex items-center text-sm text-gray-500 px-2">{unit}</span>
+          <span className="flex items-center text-base text-themed-muted px-2">{unit}</span>
         )}
       </div>
       <button
         onClick={onSubmit}
         disabled={!answer || disabled}
-        className="w-full rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+        className="flex min-h-12 w-full items-center justify-center rounded-lg bg-brand px-4 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50"
       >
         Submit Answer
       </button>
@@ -250,31 +251,31 @@ function SortingOrdering({
 
   return (
     <div>
-      <p className="text-sm text-gray-700 mb-3">{question}</p>
+      <p className="text-base text-themed-text mb-3">{question}</p>
       <div className="space-y-2 mb-4">
         {order.map((item, idx) => (
           <div
             key={item}
-            className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm"
+            className="flex items-center gap-2 rounded-lg border border-themed-border bg-surface py-1 pl-4 pr-1 text-base text-themed-text"
           >
-            <span className="text-gray-500 font-mono text-xs w-5">{idx + 1}.</span>
-            <span className="flex-1">{item}</span>
-            <div className="flex flex-col gap-0.5">
+            <span className="text-themed-muted text-sm font-semibold tabular-nums w-6">{idx + 1}.</span>
+            <span className="min-w-0 flex-1">{item}</span>
+            <div className="flex shrink-0 gap-1">
               <button
                 onClick={() => moveItem(idx, idx - 1)}
                 disabled={idx === 0 || disabled}
-                className="text-gray-500 hover:text-gray-700 disabled:opacity-20 text-xs leading-none"
+                className="flex h-11 w-11 items-center justify-center rounded-lg text-themed-muted transition-colors hover:bg-themed-bg hover:text-themed-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-30"
                 aria-label="Move up"
               >
-                ▲
+                <ChevronUp className="h-5 w-5" aria-hidden="true" />
               </button>
               <button
                 onClick={() => moveItem(idx, idx + 1)}
                 disabled={idx === order.length - 1 || disabled}
-                className="text-gray-500 hover:text-gray-700 disabled:opacity-20 text-xs leading-none"
+                className="flex h-11 w-11 items-center justify-center rounded-lg text-themed-muted transition-colors hover:bg-themed-bg hover:text-themed-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-30"
                 aria-label="Move down"
               >
-                ▼
+                <ChevronDown className="h-5 w-5" aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -283,7 +284,7 @@ function SortingOrdering({
       <button
         onClick={onSubmit}
         disabled={!answer || disabled}
-        className="w-full rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+        className="flex min-h-12 w-full items-center justify-center rounded-lg bg-brand px-4 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50"
       >
         Submit Order
       </button>
@@ -330,30 +331,31 @@ function PhotoObservation({
 
   return (
     <div>
-      <p className="text-sm text-gray-700 mb-3">{question}</p>
+      <p className="text-base text-themed-text mb-3">{question}</p>
 
       {/* Photo capture */}
       {preview ? (
-        <div className="mb-3">
-          <img src={preview} alt="Your observation" className="rounded-lg max-h-48 mx-auto mb-2" />
+        <div className="mb-3 text-center">
+          <img src={preview} alt="Your observation" className="rounded-xl max-h-48 mx-auto mb-2" />
           <button
             onClick={() => { setPreview(null); onAnswerChange(observation); }}
-            className="text-xs text-gray-500 hover:text-gray-600"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-link transition-colors hover:text-link-dark hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50"
           >
+            <RotateCcw className="h-4 w-4" aria-hidden="true" />
             Retake photo
           </button>
         </div>
       ) : (
-        <label className="flex items-center justify-center rounded-lg border-2 border-dashed border-gray-300 p-6 mb-3 cursor-pointer hover:border-sky-400 hover:bg-sky-50/50 transition-colors">
+        <label className="flex min-h-32 items-center justify-center rounded-xl border-2 border-dashed border-themed-border bg-surface p-6 mb-3 cursor-pointer transition-colors hover:border-link hover:bg-link/5 focus-within:ring-2 focus-within:ring-brand focus-within:ring-offset-2">
           <div className="text-center">
-            <div className="text-2xl mb-1">📷</div>
-            <p className="text-sm text-gray-500">Tap to take a photo</p>
+            <Camera className="mx-auto mb-2 h-8 w-8 text-link" aria-hidden="true" />
+            <p className="text-base font-semibold text-themed-text">Tap to take a photo</p>
           </div>
           <input
             type="file"
             accept="image/*"
             capture="environment"
-            className="hidden"
+            className="sr-only"
             onChange={handlePhoto}
             disabled={disabled}
           />
@@ -368,13 +370,13 @@ function PhotoObservation({
         rows={3}
         disabled={disabled}
         aria-label="Describe what you observe"
-        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-50 mb-3 resize-y"
+        className="w-full rounded-lg border border-themed-border bg-surface px-3 py-2 text-base text-themed-text placeholder:text-themed-muted focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand disabled:opacity-50 mb-3 resize-y"
       />
 
       <button
         onClick={onSubmit}
         disabled={!observation.trim() || disabled}
-        className="w-full rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+        className="flex min-h-12 w-full items-center justify-center rounded-lg bg-brand px-4 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50"
       >
         Submit Observation
       </button>
@@ -476,9 +478,9 @@ function SketchDraw({
 
   return (
     <div>
-      <p className="text-sm text-gray-700 mb-3">{question}</p>
+      <p className="text-base text-themed-text mb-3">{question}</p>
 
-      <div className="rounded-lg border-2 border-gray-200 overflow-hidden mb-2">
+      <div className="rounded-xl border-2 border-themed-border overflow-hidden mb-2">
         <canvas
           ref={canvasRef}
           width={400}
@@ -495,15 +497,15 @@ function SketchDraw({
         />
       </div>
 
-      <div className="flex justify-between items-center mb-3">
+      <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
         <button
           onClick={clearCanvas}
           disabled={disabled}
-          className="text-xs text-gray-500 hover:text-gray-600"
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-link transition-colors hover:text-link-dark hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50"
         >
           Clear drawing
         </button>
-        <span className="text-xs text-gray-500">
+        <span className="text-sm text-themed-muted" aria-live="polite">
           {hasDrawn ? "Drawing captured" : "Draw with your finger or mouse"}
         </span>
       </div>
@@ -511,14 +513,14 @@ function SketchDraw({
       <button
         onClick={onSubmit}
         disabled={(!hasDrawn && !answer) || disabled}
-        className="w-full rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+        className="flex min-h-12 w-full items-center justify-center rounded-lg bg-brand px-4 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50"
       >
         Submit Drawing
       </button>
 
       {/* Keyboard alternative: text description */}
-      <div className="mt-3 border-t border-gray-200 pt-3">
-        <p className="text-xs text-gray-500 mb-1">Can&apos;t draw? Describe your answer instead:</p>
+      <div className="mt-3 border-t border-themed-border pt-3">
+        <p className="text-sm text-themed-muted mb-1">Can&apos;t draw? Describe your answer instead:</p>
         <textarea
           value={answer.startsWith("[sketch:") ? "" : answer}
           onChange={(e) => onAnswerChange(e.target.value)}
@@ -526,7 +528,7 @@ function SketchDraw({
           rows={2}
           disabled={disabled}
           aria-label="Text alternative for drawing"
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-xs focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-50 resize-y"
+          className="w-full rounded-lg border border-themed-border bg-surface px-3 py-2 text-base text-themed-text placeholder:text-themed-muted focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand disabled:opacity-50 resize-y"
         />
       </div>
     </div>
@@ -619,53 +621,55 @@ function AudioResponse({
 
   return (
     <div>
-      <p className="text-sm text-gray-700 mb-3">{question}</p>
+      <p className="text-base text-themed-text mb-3">{question}</p>
 
       {permissionError && (
-        <div className="rounded-lg bg-red-50 border border-red-200 p-3 mb-3">
-          <p className="text-sm text-red-700">
+        <div className="rounded-lg bg-error/10 border border-error/30 p-3 mb-3" role="alert">
+          <p className="text-base text-error">
             Microphone access denied. Please enable microphone permissions in your browser settings.
           </p>
         </div>
       )}
 
-      <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 mb-3 text-center">
+      <div className="rounded-xl border border-themed-border bg-themed-bg p-4 mb-3 text-center">
         {recording ? (
           <div>
             <div className="flex items-center justify-center gap-2 mb-3">
-              <span className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
-              <span className="text-sm font-medium text-red-700">Recording</span>
-              <span className="text-sm text-gray-500 font-mono">{formatTime(duration)}</span>
+              <span className="w-3 h-3 rounded-full bg-error animate-pulse" aria-hidden="true" />
+              <span className="text-base font-semibold text-error">Recording</span>
+              <span className="text-base text-themed-muted tabular-nums">{formatTime(duration)}</span>
             </div>
             <button
               onClick={stopRecording}
-              className="rounded-full bg-red-600 px-6 py-2 text-sm font-medium text-white hover:bg-red-700"
+              className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-error px-6 text-base font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error focus-visible:ring-offset-2 sm:w-auto"
             >
+              <Square className="h-4 w-4" aria-hidden="true" />
               Stop Recording
             </button>
           </div>
         ) : audioUrl ? (
           <div>
             <audio src={audioUrl} controls className="mx-auto mb-3 w-full max-w-xs" />
-            <p className="text-xs text-gray-500 mb-2">Duration: {formatTime(duration)}</p>
+            <p className="text-sm text-themed-muted tabular-nums mb-2">Duration: {formatTime(duration)}</p>
             <button
               onClick={resetRecording}
-              className="text-xs text-gray-500 hover:text-gray-600"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-link transition-colors hover:text-link-dark hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50"
             >
+              <RotateCcw className="h-4 w-4" aria-hidden="true" />
               Record again
             </button>
           </div>
         ) : (
           <div>
-            <div className="text-3xl mb-2">🎙️</div>
+            <Mic className="mx-auto mb-2 h-8 w-8 text-link" aria-hidden="true" />
             <button
               onClick={startRecording}
               disabled={disabled || permissionError}
-              className="rounded-full bg-sky-600 px-6 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+              className="inline-flex min-h-12 w-full items-center justify-center rounded-lg border-2 border-brand bg-surface px-6 text-base font-semibold text-brand-dark transition-colors hover:bg-brand-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50 sm:w-auto"
             >
               Start Recording
             </button>
-            <p className="text-xs text-gray-500 mt-2">Tap to record your spoken answer</p>
+            <p className="text-sm text-themed-muted mt-2">Tap to record your spoken answer</p>
           </div>
         )}
       </div>
@@ -673,7 +677,7 @@ function AudioResponse({
       <button
         onClick={onSubmit}
         disabled={!audioUrl || disabled}
-        className="w-full rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+        className="flex min-h-12 w-full items-center justify-center rounded-lg bg-brand px-4 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50"
       >
         Submit Recording
       </button>
@@ -708,23 +712,24 @@ function TextInput({
           disabled={disabled}
           rows={5}
           aria-label="Your answer"
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-50 mb-3 resize-y"
+          className="w-full rounded-lg border border-themed-border bg-surface px-3 py-2 text-base text-themed-text placeholder:text-themed-muted focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand disabled:opacity-50 mb-3 resize-y"
         />
       ) : (
         <input
+          type="text"
           value={answer}
           onChange={(e) => onAnswerChange(e.target.value)}
           placeholder="Your answer..."
           disabled={disabled}
           aria-label="Your answer"
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 disabled:opacity-50 mb-3"
+          className="min-h-12 w-full rounded-lg border border-themed-border bg-surface px-3 py-2 text-base text-themed-text placeholder:text-themed-muted focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand disabled:opacity-50 mb-3"
           onKeyDown={(e) => e.key === "Enter" && onSubmit()}
         />
       )}
       <button
         onClick={onSubmit}
         disabled={!answer || disabled}
-        className="w-full rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+        className="flex min-h-12 w-full items-center justify-center rounded-lg bg-brand px-4 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50"
       >
         Submit
       </button>

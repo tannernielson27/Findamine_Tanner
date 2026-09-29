@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Star } from "lucide-react";
 
 interface HuntRatingProps {
   huntId: string;
@@ -47,40 +48,47 @@ export default function HuntRating({ huntId }: HuntRatingProps) {
   const displayRating = hoverRating || userRating;
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-3 mt-4">
+    <section className="mt-4 rounded-xl border border-themed-border bg-surface p-4 shadow-[var(--shadow-card)]">
       {/* Average rating display */}
-      <div className="flex items-center gap-2 mb-2">
-        <div className="flex">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="flex" aria-hidden="true">
           {[1, 2, 3, 4, 5].map((star) => (
-            <span key={star} className={`text-sm ${avgRating && star <= Math.round(avgRating) ? "text-amber-400" : "text-gray-200"}`}>
-              ★
-            </span>
+            <Star
+              key={star}
+              className={`w-4 h-4 ${avgRating && star <= Math.round(avgRating) ? "fill-current text-warning" : "text-themed-border"}`}
+            />
           ))}
         </div>
         {avgRating ? (
-          <span className="text-xs text-gray-500">{avgRating} ({totalRatings} rating{totalRatings !== 1 ? "s" : ""})</span>
+          <span className="text-sm tabular-nums text-themed-muted">{avgRating} ({totalRatings} rating{totalRatings !== 1 ? "s" : ""})</span>
         ) : (
-          <span className="text-xs text-gray-400">No ratings yet</span>
+          <span className="text-sm text-themed-muted">No ratings yet</span>
         )}
       </div>
 
       {/* User rating input */}
       {!submitted ? (
         <div>
-          <p className="text-xs text-gray-500 mb-1">Rate this hunt:</p>
-          <div className="flex items-center gap-1 mb-2">
+          <p className="text-sm font-medium text-themed-text">Rate this hunt:</p>
+          <div className="-ml-2.5 mb-2 flex items-center">
             {[1, 2, 3, 4, 5].map((star) => (
               <button
                 key={star}
+                type="button"
                 onMouseEnter={() => setHoverRating(star)}
                 onMouseLeave={() => setHoverRating(0)}
                 onClick={() => setUserRating(star)}
-                className={`text-lg transition ${star <= displayRating ? "text-amber-400" : "text-gray-200"} hover:scale-110`}
+                aria-label={`Rate ${star} star${star !== 1 ? "s" : ""}`}
+                aria-pressed={userRating === star}
+                className="flex h-11 w-11 items-center justify-center rounded-lg transition-colors hover:bg-themed-bg"
               >
-                ★
+                <Star
+                  className={`w-6 h-6 transition-colors ${star <= displayRating ? "fill-current text-warning" : "text-themed-border"}`}
+                  aria-hidden="true"
+                />
               </button>
             ))}
-            {userRating > 0 && <span className="text-xs text-gray-500 ml-1">{userRating}/5</span>}
+            {userRating > 0 && <span className="ml-1 text-sm tabular-nums text-themed-muted">{userRating}/5</span>}
           </div>
           {userRating > 0 && (
             <>
@@ -88,13 +96,15 @@ export default function HuntRating({ huntId }: HuntRatingProps) {
                 value={reviewText}
                 onChange={(e) => setReviewText(e.target.value.slice(0, 500))}
                 placeholder="Write a short review (optional)..."
+                aria-label="Review (optional)"
                 rows={2}
-                className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs mb-2"
+                className="mb-2 w-full rounded-lg border border-themed-border bg-surface px-3 py-2 text-base text-themed-text placeholder:text-themed-muted focus:outline-none focus:ring-2 focus:ring-secondary/30"
               />
               <button
+                type="button"
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors px-3 py-1 text-xs font-medium disabled:opacity-50"
+                className="inline-flex min-h-11 items-center justify-center rounded-lg border border-secondary px-4 text-sm font-semibold text-secondary transition-colors hover:bg-secondary/10 disabled:opacity-50"
               >
                 {submitting ? "Submitting..." : "Submit Rating"}
               </button>
@@ -102,8 +112,8 @@ export default function HuntRating({ huntId }: HuntRatingProps) {
           )}
         </div>
       ) : (
-        <p className="text-xs text-green-600">Thanks for rating!</p>
+        <p className="text-sm font-medium text-secondary">Thanks for rating!</p>
       )}
-    </div>
+    </section>
   );
 }

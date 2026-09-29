@@ -1,24 +1,7 @@
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import Link from "next/link";
-import { MapPin, Clock, Users, Search, Compass } from "lucide-react";
-
-const HERO_IMAGES = [
-  "/hero-public.png",
-  "/hero-family.png",
-  "/hero-class.png",
-  "/hero-adult.png",
-  "/hero-intermediate.png",
-  "/hero-teen.png",
-  "/hero-primary.png",
-];
-
-const AUDIENCE_ICONS: Record<string, string> = {
-  kids: "🌟",
-  teens: "⚡",
-  adults: "🎯",
-  family: "🏡",
-  all: "🌍",
-};
+import { MapPin, Clock, Users, Search, Compass, ChevronRight } from "lucide-react";
+import { AudienceIcon, formatPlayMode } from "./hunt-meta";
 
 export default async function BrowseHuntsPage({
   searchParams,
@@ -26,7 +9,6 @@ export default async function BrowseHuntsPage({
   searchParams: Promise<{ q?: string; audience?: string }>;
 }) {
   const params = await searchParams;
-  const heroImage = HERO_IMAGES[Math.floor(Math.random() * HERO_IMAGES.length)];
   const supabase = await createSupabaseServiceClient();
 
   let query = supabase
@@ -48,119 +30,124 @@ export default async function BrowseHuntsPage({
   const { data: hunts } = await query;
 
   return (
-    <main className="min-h-screen bg-[#FEFCF6]">
-      {/* Hero strip with parallax feel */}
-      <div
-        className="relative w-full h-28 sm:h-36 flex items-end overflow-hidden"
-        style={{
-          backgroundImage: `url(${heroImage})`,
-          backgroundSize: "cover",
-          backgroundPosition: "center 40%",
-        }}
-      >
-        <div className="absolute inset-0 bg-gradient-to-t from-[#FEFCF6] via-black/30 to-transparent" />
-        <div className="relative mx-auto max-w-4xl w-full px-4 pb-4">
-          <div className="flex items-center gap-2">
-            <Compass className="w-5 h-5 text-brand" />
-            <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold text-gray-900">
-              Discover Adventures
-            </h1>
-          </div>
+    <main>
+      {/* Compact page header: topo band */}
+      <header className="fm-topo border-b border-themed-border">
+        <div className="mx-auto max-w-4xl px-4 pt-8 pb-6">
+          <h1 className="flex items-center gap-2 font-[family-name:var(--font-display)] text-3xl font-bold text-themed-text text-balance">
+            <Compass className="w-6 h-6 shrink-0 text-brand-dark" aria-hidden="true" />
+            Discover Adventures
+          </h1>
         </div>
-      </div>
+      </header>
 
-      <div className="mx-auto max-w-4xl px-4 -mt-1">
+      <div className="mx-auto max-w-4xl px-4 py-6">
         {/* Search bar */}
-        <form className="flex gap-2 mb-6 bg-white rounded-2xl border border-themed-border shadow-sm p-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <form
+          role="search"
+          className="flex flex-col gap-2 rounded-xl border border-themed-border bg-surface p-2 shadow-[var(--shadow-card)] sm:flex-row"
+        >
+          <div className="relative min-w-0 flex-1">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-themed-muted"
+              aria-hidden="true"
+            />
             <input
               name="q"
               type="search"
               defaultValue={params.q}
+              aria-label="Search hunts"
               placeholder="Search hunts by name, topic, or location..."
-              className="w-full rounded-xl bg-gray-50 pl-9 pr-3 py-2.5 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand/30 transition-all"
+              className="h-11 w-full rounded-lg border border-themed-border bg-themed-bg pl-10 pr-3 text-base text-themed-text placeholder:text-themed-muted transition-colors focus:bg-surface focus:outline-none focus:ring-2 focus:ring-brand/30"
             />
           </div>
-          <select
-            name="audience"
-            defaultValue={params.audience}
-            className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
-          >
-            <option value="">All ages</option>
-            <option value="kids">🌟 Kids</option>
-            <option value="teens">⚡ Teens</option>
-            <option value="adults">🎯 Adults</option>
-            <option value="family">🏡 Family</option>
-          </select>
-          <button
-            type="submit"
-            className="rounded-xl bg-brand px-5 py-2 text-sm font-semibold text-white hover:bg-brand-dark shadow-sm transition-colors"
-          >
-            Search
-          </button>
+          <div className="flex min-w-0 gap-2">
+            <select
+              name="audience"
+              defaultValue={params.audience}
+              aria-label="Audience"
+              className="h-11 min-w-0 flex-1 rounded-lg border border-themed-border bg-themed-bg px-3 text-base text-themed-text focus:outline-none focus:ring-2 focus:ring-brand/30 sm:flex-none"
+            >
+              <option value="">All ages</option>
+              <option value="kids">Kids</option>
+              <option value="teens">Teens</option>
+              <option value="adults">Adults</option>
+              <option value="family">Family</option>
+            </select>
+            <button
+              type="submit"
+              className="inline-flex h-11 shrink-0 items-center justify-center rounded-lg bg-brand px-5 text-base font-semibold text-white transition-colors hover:bg-brand-dark"
+            >
+              Search
+            </button>
+          </div>
         </form>
 
         {/* Browse by standards link */}
-        <div className="flex justify-end mb-4">
-          <Link href="/browse/standards" className="text-xs text-brand hover:underline font-medium">
-            Browse by Standard &rarr;
+        <div className="mt-2 mb-4 flex justify-end">
+          <Link
+            href="/browse/standards"
+            className="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-link transition-colors hover:text-link-dark hover:underline"
+          >
+            Browse by Standard
+            <ChevronRight className="w-4 h-4" aria-hidden="true" />
           </Link>
         </div>
 
         {/* Results */}
         {!hunts || hunts.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="font-[family-name:var(--font-handwritten)] text-4xl text-gray-300 mb-2">
+          <div className="py-16 text-center">
+            <p className="mb-2 font-[family-name:var(--font-handwritten)] text-3xl text-themed-muted">
               No adventures found
-            </div>
-            <p className="text-sm text-gray-500">
+            </p>
+            <p className="text-base text-themed-muted">
               {params.q ? "Try a different search term." : "Check back soon for new hunts!"}
             </p>
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 pb-8">
-            {hunts.map((hunt) => (
-              <Link
-                key={hunt.id}
-                href={`/browse/${hunt.id}`}
-                className="group block rounded-2xl border border-gray-100/80 bg-white p-5 hover:shadow-lg hover:-translate-y-1 transition-all duration-300"
-              >
-                {/* Audience emoji badge */}
-                <div className="flex items-start justify-between mb-2">
-                  <span className="text-2xl" title={hunt.target_audience}>
-                    {AUDIENCE_ICONS[hunt.target_audience] || "🌍"}
-                  </span>
-                  <span className="rounded-full bg-brand/10 text-brand px-2.5 py-0.5 text-[11px] font-semibold">
+          <div className="grid gap-3 pb-8 sm:grid-cols-2 lg:grid-cols-3">
+            {hunts.map((hunt) => {
+              return (
+                <Link
+                  key={hunt.id}
+                  href={`/browse/${hunt.id}`}
+                  className="group flex min-w-0 flex-col rounded-xl border border-themed-border bg-surface p-4 shadow-[var(--shadow-card)] transition-colors hover:border-brand/40"
+                >
+                  {/* Audience pill */}
+                  <span className="mb-2 inline-flex items-center gap-1 self-start rounded-full border border-themed-border bg-themed-bg px-2.5 py-0.5 text-sm font-medium capitalize text-themed-muted">
+                    <AudienceIcon audience={hunt.target_audience} className="w-3.5 h-3.5 text-secondary" />
                     {hunt.target_audience}
                   </span>
-                </div>
 
-                <h3 className="font-[family-name:var(--font-display)] font-semibold text-gray-900 mb-1 group-hover:text-brand transition-colors">
-                  {hunt.title}
-                </h3>
-                {hunt.description && (
-                  <p className="text-sm text-gray-500 line-clamp-2 mb-3">{hunt.description}</p>
-                )}
-
-                <div className="flex items-center gap-3 text-xs text-gray-400">
-                  <span className="flex items-center gap-1">
-                    <Users className="w-3 h-3" />
-                    {hunt.play_mode.replace(/_/g, " ")}
-                  </span>
-                  {hunt.estimated_duration_min && (
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {hunt.estimated_duration_min} min
-                    </span>
+                  <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold text-themed-text text-balance transition-colors group-hover:text-brand-dark">
+                    {hunt.title}
+                  </h2>
+                  {hunt.description && (
+                    <p className="mt-1 line-clamp-2 text-sm text-themed-muted">{hunt.description}</p>
                   )}
-                  <span className="flex items-center gap-1">
-                    <MapPin className="w-3 h-3" />
-                    GPS
-                  </span>
-                </div>
-              </Link>
-            ))}
+
+                  {/* Meta row, set off by a quiet dashed route line */}
+                  <div className="mt-auto pt-3">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-dashed border-themed-border pt-3 text-sm text-themed-muted">
+                      <span className="inline-flex min-w-0 items-center gap-1">
+                        <Users className="w-4 h-4 shrink-0 text-secondary" aria-hidden="true" />
+                        <span className="truncate">{formatPlayMode(hunt.play_mode)}</span>
+                      </span>
+                      {hunt.estimated_duration_min && (
+                        <span className="inline-flex items-center gap-1 whitespace-nowrap tabular-nums">
+                          <Clock className="w-4 h-4 shrink-0 text-secondary" aria-hidden="true" />
+                          {hunt.estimated_duration_min} min
+                        </span>
+                      )}
+                      <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                        <MapPin className="w-4 h-4 shrink-0 text-secondary" aria-hidden="true" />
+                        GPS
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         )}
       </div>

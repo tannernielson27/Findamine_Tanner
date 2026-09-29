@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from "@react-google-maps/api";
 
 interface Stop {
@@ -17,6 +17,13 @@ interface HuntMapProps {
 }
 
 const MAP_STYLES = { width: "100%", height: "280px" };
+
+// Marker colors (Google Maps needs raw hex): sky pin for the hunt center,
+// trail-blaze for stops. The legend dots reuse these so they always match.
+const CENTER_FILL = "#1A6FA6";
+const CENTER_STROKE = "#145782";
+const STOP_FILL = "#C2410C";
+const STOP_STROKE = "#9A3412";
 
 export default function HuntMap({ centerLat, centerLng, stops }: HuntMapProps) {
   const [selectedStop, setSelectedStop] = useState<Stop | null>(null);
@@ -54,8 +61,8 @@ export default function HuntMap({ centerLat, centerLng, stops }: HuntMapProps) {
 
   if (!isLoaded) {
     return (
-      <div className="rounded-lg bg-gray-100 mb-4" style={MAP_STYLES}>
-        <div className="flex items-center justify-center h-full text-xs text-gray-400">
+      <div className="mb-6 rounded-xl border border-themed-border bg-themed-bg" style={MAP_STYLES}>
+        <div className="flex h-full items-center justify-center text-sm text-themed-muted">
           Loading map...
         </div>
       </div>
@@ -63,7 +70,7 @@ export default function HuntMap({ centerLat, centerLng, stops }: HuntMapProps) {
   }
 
   return (
-    <div className="rounded-lg overflow-hidden border border-gray-200 mb-4">
+    <div className="mb-6 overflow-hidden rounded-xl border border-themed-border bg-surface shadow-[var(--shadow-card)]">
       <GoogleMap
         mapContainerStyle={MAP_STYLES}
         center={defaultCenter}
@@ -77,16 +84,16 @@ export default function HuntMap({ centerLat, centerLng, stops }: HuntMapProps) {
           fullscreenControl: false,
         }}
       >
-        {/* Hunt center marker (blue) */}
+        {/* Hunt center marker (sky pin) */}
         {centerLat && centerLng && (
           <Marker
             position={{ lat: centerLat, lng: centerLng }}
             icon={{
               path: google.maps.SymbolPath.CIRCLE,
               scale: 10,
-              fillColor: "#2563eb",
+              fillColor: CENTER_FILL,
               fillOpacity: 0.8,
-              strokeColor: "#1e40af",
+              strokeColor: CENTER_STROKE,
               strokeWeight: 2,
             }}
             title="Hunt center"
@@ -94,7 +101,7 @@ export default function HuntMap({ centerLat, centerLng, stops }: HuntMapProps) {
           />
         )}
 
-        {/* Stop markers (orange/red numbered) */}
+        {/* Stop markers (trail-blaze, numbered) */}
         {stops.map((stop) => (
           <Marker
             key={stop.order}
@@ -102,14 +109,14 @@ export default function HuntMap({ centerLat, centerLng, stops }: HuntMapProps) {
             label={{
               text: String(stop.order),
               color: "white",
-              fontSize: "11px",
+              fontSize: "12px",
               fontWeight: "bold",
             }}
             icon={{
               path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z",
-              fillColor: "#ea580c",
+              fillColor: STOP_FILL,
               fillOpacity: 0.9,
-              strokeColor: "#c2410c",
+              strokeColor: STOP_STROKE,
               strokeWeight: 1,
               scale: 1.5,
               anchor: new google.maps.Point(12, 24),
@@ -125,22 +132,22 @@ export default function HuntMap({ centerLat, centerLng, stops }: HuntMapProps) {
             position={{ lat: selectedStop.lat, lng: selectedStop.lng }}
             onCloseClick={() => setSelectedStop(null)}
           >
-            <div className="text-xs">
-              <p className="font-medium">Stop {selectedStop.order}</p>
-              <p className="text-gray-600">{selectedStop.name}</p>
+            <div className="text-sm text-themed-text">
+              <p className="font-semibold">Stop {selectedStop.order}</p>
+              <p className="text-themed-muted">{selectedStop.name}</p>
             </div>
           </InfoWindow>
         )}
       </GoogleMap>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 px-3 py-1.5 bg-gray-50 text-[11px] text-gray-500">
-        <span className="flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block" />
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-themed-border bg-themed-bg px-3 py-2 text-sm text-themed-muted">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: CENTER_FILL }} aria-hidden="true" />
           Hunt center
         </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded-full bg-orange-600 inline-block" />
+        <span className="flex items-center gap-1.5 tabular-nums">
+          <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: STOP_FILL }} aria-hidden="true" />
           Stops ({stops.length})
         </span>
       </div>

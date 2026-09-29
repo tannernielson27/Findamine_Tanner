@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronRight, X } from "lucide-react";
 import { GoogleMap, useJsApiLoader, Marker } from "@react-google-maps/api";
 
 interface StopData {
@@ -37,10 +38,15 @@ export default function StopDetailModal({ stop, onClose }: StopDetailModalProps)
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-xl bg-white shadow-xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="stop-detail-title"
+        className="w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-2xl bg-surface shadow-xl"
+      >
         {/* Map header */}
         {hasCoords && isLoaded && (
-          <div className="h-48 rounded-t-xl overflow-hidden">
+          <div className="h-48 rounded-t-2xl overflow-hidden">
             <GoogleMap
               mapContainerStyle={{ width: "100%", height: "100%" }}
               center={{ lat: stop.lat, lng: stop.lng }}
@@ -63,9 +69,9 @@ export default function StopDetailModal({ stop, onClose }: StopDetailModalProps)
                 }}
                 icon={{
                   path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z",
-                  fillColor: "#ea580c",
+                  fillColor: "#C2410C",
                   fillOpacity: 0.9,
-                  strokeColor: "#c2410c",
+                  strokeColor: "#9A3412",
                   strokeWeight: 1,
                   scale: 1.8,
                   anchor: new google.maps.Point(12, 24),
@@ -78,36 +84,45 @@ export default function StopDetailModal({ stop, onClose }: StopDetailModalProps)
 
         <div className="p-5">
           {/* Header */}
-          <div className="flex items-start justify-between mb-3">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-orange-100 text-xs font-bold text-orange-700">
+          <div className="mb-3 flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="mb-1 flex items-center gap-2">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-light text-sm font-bold tabular-nums text-brand-dark">
                   {stop.order}
                 </span>
-                <h2 className="text-base font-bold text-gray-900">{stop.location_name}</h2>
+                <h2 id="stop-detail-title" className="min-w-0 font-[family-name:var(--font-display)] text-lg font-semibold text-themed-text text-balance">
+                  {stop.location_name}
+                </h2>
               </div>
               {stop.challenge_type && (
-                <span className="text-xs text-sky-600">{stop.challenge_type.replace(/_/g, " ")}</span>
+                <span className="text-sm capitalize text-secondary">{stop.challenge_type.replace(/_/g, " ")}</span>
               )}
             </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="-mr-2 -mt-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-themed-muted transition-colors hover:bg-themed-bg hover:text-themed-text"
+            >
+              <X className="w-5 h-5" aria-hidden="true" />
+            </button>
           </div>
 
           {/* Primer */}
           {stop.primer_title && (
-            <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 mb-3">
-              <p className="text-xs font-medium text-blue-700 mb-1">Primer: {stop.primer_title}</p>
+            <div className="mb-3 rounded-lg border border-secondary/30 bg-secondary/10 p-3">
+              <p className="mb-1 text-sm font-semibold text-secondary">Primer: {stop.primer_title}</p>
               {stop.primer_text && (
-                <p className="text-xs text-blue-900">{stop.primer_text}</p>
+                <p className="text-sm text-themed-text">{stop.primer_text}</p>
               )}
             </div>
           )}
 
           {/* Clue */}
           {stop.clue_text && (
-            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 mb-3">
-              <p className="text-xs font-medium text-amber-700 mb-1">Clue</p>
-              <p className="text-sm text-amber-900">{stop.clue_text}</p>
+            <div className="mb-3 rounded-lg border border-brand/30 bg-brand-light p-3">
+              <p className="mb-1 text-sm font-semibold text-brand-dark">Clue</p>
+              <p className="text-base text-themed-text">{stop.clue_text}</p>
             </div>
           )}
 
@@ -115,17 +130,19 @@ export default function StopDetailModal({ stop, onClose }: StopDetailModalProps)
           {stop.clue_hints.length > 0 && (
             <div className="mb-3">
               <button
+                type="button"
                 onClick={() => setShowHints(!showHints)}
-                className="text-xs text-indigo-600 hover:underline"
+                aria-expanded={showHints}
+                className="inline-flex min-h-11 items-center text-sm font-medium text-link transition-colors hover:text-link-dark hover:underline"
               >
                 {showHints ? "Hide" : "Show"} location hints ({stop.clue_hints.length})
               </button>
               {showHints && (
-                <div className="mt-2 space-y-1.5">
+                <div className="mt-1 space-y-1.5">
                   {stop.clue_hints.map((hint, i) => (
-                    <div key={i} className="rounded bg-indigo-50 border border-indigo-200 px-3 py-2">
-                      <p className="text-[11px] font-medium text-indigo-700">Hint {i + 1}</p>
-                      <p className="text-xs text-indigo-900">{hint}</p>
+                    <div key={i} className="rounded-lg border border-themed-border bg-themed-bg px-3 py-2">
+                      <p className="text-sm font-medium text-themed-muted">Hint {i + 1}</p>
+                      <p className="text-sm text-themed-text">{hint}</p>
                     </div>
                   ))}
                 </div>
@@ -135,14 +152,14 @@ export default function StopDetailModal({ stop, onClose }: StopDetailModalProps)
 
           {/* Challenge */}
           {stop.challenge_title && (
-            <div className="rounded-lg bg-sky-50 border border-sky-200 p-3 mb-3">
-              <p className="text-xs font-medium text-sky-700 mb-1">Challenge: {stop.challenge_title}</p>
+            <div className="mb-3 rounded-lg border border-themed-border bg-themed-bg p-3">
+              <p className="text-sm font-medium text-themed-text">Challenge: {stop.challenge_title}</p>
             </div>
           )}
 
           {/* Location details */}
           {hasCoords && (
-            <p className="text-[11px] text-gray-400">
+            <p className="text-sm tabular-nums text-themed-muted">
               Location: {stop.lat.toFixed(4)}, {stop.lng.toFixed(4)} · Radius: {stop.radius_meters}m
             </p>
           )}
@@ -192,25 +209,29 @@ export function StopList({ finds }: { finds: any[] }) {
             <li key={find.id as string}>
               <button
                 onClick={() => handleClick(find, i)}
-                className="w-full text-left flex gap-3 rounded-lg border border-gray-200 p-3 hover:border-sky-300 hover:bg-sky-50/50 transition"
+                type="button"
+                className="flex min-h-11 w-full items-center gap-3 rounded-lg border border-themed-border bg-surface p-3 text-left transition-colors hover:border-secondary/40 hover:bg-themed-bg"
               >
-                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-100 text-xs font-medium text-sky-700">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary/10 text-sm font-semibold tabular-nums text-secondary">
                   {i + 1}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-base font-medium text-themed-text">
                     {locations?.name || `Stop ${i + 1}`}
-                  </p>
+                  </span>
                   {find.clue_text && (
-                    <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{find.clue_text as string}</p>
+                    <span className="mt-0.5 block line-clamp-1 text-sm text-themed-muted">{find.clue_text as string}</span>
                   )}
                   {tasks && (
-                    <span className="text-[11px] text-sky-600">
+                    <span className="block text-sm capitalize text-secondary">
                       {tasks.challenge_type.replace(/_/g, " ")}
                     </span>
                   )}
-                </div>
-                <span className="text-gray-300 text-xs ml-auto shrink-0">View →</span>
+                </span>
+                <span className="inline-flex shrink-0 items-center gap-0.5 text-sm text-link">
+                  View
+                  <ChevronRight className="w-4 h-4" aria-hidden="true" />
+                </span>
               </button>
             </li>
           );

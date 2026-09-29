@@ -37,6 +37,11 @@
   --color-warning: var(--color-warning, #F97316);
   --color-error: var(--color-error, #EF4444);
 
+  /* Trail-marker fixed roles (same on every band) */
+  --color-link: #1A6FA6;
+  --color-link-dark: #145782;
+  --shadow-card: 0 1px 2px rgb(28 36 48 / 0.06), 0 2px 6px rgb(28 36 48 / 0.04);
+
   /* Adventure-themed fonts */
   --font-display: 'Fredoka', 'Nunito', sans-serif;
   --font-handwritten: 'Caveat', cursive;
@@ -58,6 +63,16 @@
 body {
   background-color: var(--color-background, #FFFFFF);
   color: var(--color-text, #111827);
+}
+
+/* ─── Trail-marker motifs ───────────────────────────────────────
+   Topographic contour lines, drawn from the hunt maps. Used once per
+   screen at most (page header band), never behind body text. */
+
+.fm-topo {
+  background-color: var(--color-primary-light, #FDE7DA);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='120' viewBox='0 0 240 120'%3E%3Cg fill='none' stroke='%239A3412' stroke-opacity='0.16' stroke-width='1.2'%3E%3Cpath d='M-10 96c30-18 52-6 80-20s40-40 78-34 52 30 102 18'/%3E%3Cpath d='M-10 76c34-16 54-2 84-16s36-36 72-30 56 24 104 12'/%3E%3Cpath d='M-10 56c36-14 58 0 88-14s32-30 66-26 58 20 106 8'/%3E%3Cpath d='M-10 36c38-12 60 2 92-12s28-24 60-22 60 16 108 4'/%3E%3Cpath d='M-10 16c40-10 64 4 96-10s24-18 54-18 62 12 110 0'/%3E%3Cpath d='M-10 116c28-20 50-10 76-24s44-44 84-38 48 34 100 22'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 240px 120px;
 }
 
 /* ─── Play-loop reward motion ───────────────────────────────────

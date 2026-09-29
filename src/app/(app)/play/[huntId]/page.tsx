@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { Camera, RotateCcw, Star, ThumbsDown, ThumbsUp, Trophy, X } from "lucide-react";
 import StopFlowStepper from "@/components/play/stop-flow-stepper";
 import HotColdMeter from "@/components/play/hot-cold-meter";
 import ChallengeInput from "@/components/play/challenge-input";
@@ -455,9 +456,9 @@ export default function PlayPage() {
     return (
       <main className="mx-auto max-w-2xl px-4 py-12">
         <div className="animate-pulse space-y-4">
-          <div className="h-4 bg-gray-200 rounded w-1/3" />
-          <div className="h-2 bg-gray-200 rounded" />
-          <div className="h-64 bg-gray-100 rounded-xl" />
+          <div className="h-4 bg-themed-border rounded w-1/3" />
+          <div className="h-2 bg-themed-border rounded" />
+          <div className="h-64 bg-themed-border/60 rounded-xl" />
         </div>
       </main>
     );
@@ -465,7 +466,7 @@ export default function PlayPage() {
 
   if (finds.length === 0 && !huntComplete) {
     return (
-      <main className="mx-auto max-w-2xl px-4 py-12 text-center text-gray-500">
+      <main className="mx-auto max-w-2xl px-4 py-12 text-center text-base text-themed-muted">
         This hunt has no stops yet.
       </main>
     );
@@ -492,42 +493,44 @@ export default function PlayPage() {
           onComplete={() => setShowCelebration(false)}
         />
 
-        <div className="bg-white rounded-2xl border border-themed-border shadow-lg p-8 text-center">
-          <div className="text-6xl mb-4">🏆</div>
-          <h1 className="font-[family-name:var(--font-display)] text-3xl font-bold text-gray-900 mb-2">Hunt Complete!</h1>
+        <div className="bg-surface rounded-xl border border-themed-border shadow-[var(--shadow-card)] px-5 py-8 text-center sm:px-8">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-secondary/10 text-secondary">
+            <Trophy className="h-8 w-8" aria-hidden="true" />
+          </div>
+          <h1 className="font-[family-name:var(--font-display)] text-3xl font-bold text-themed-text mb-2 text-balance">Hunt Complete!</h1>
           <p className="font-[family-name:var(--font-handwritten)] text-xl text-themed-muted mb-8">You finished all {finds.length} stops</p>
 
           {huntSummary && (
-            <div className="grid grid-cols-3 gap-4 mb-8">
-              <div className="rounded-2xl bg-gradient-to-br from-sky-50 to-blue-50 p-5 border border-sky-100">
-                <div className="font-[family-name:var(--font-display)] text-3xl font-bold text-brand">{huntSummary.totalScore}</div>
-                <div className="text-xs text-gray-500 mt-1">Total Points</div>
+            <div className="grid grid-cols-3 gap-2 mb-8 sm:gap-4">
+              <div className="rounded-xl border border-themed-border bg-themed-bg px-2 py-4 sm:p-5">
+                <div className="font-[family-name:var(--font-display)] text-2xl font-bold tabular-nums text-themed-text sm:text-3xl">{huntSummary.totalScore}</div>
+                <div className="text-sm text-themed-muted mt-1">Total Points</div>
               </div>
-              <div className="rounded-2xl bg-gradient-to-br from-green-50 to-emerald-50 p-5 border border-green-100">
-                <div className="font-[family-name:var(--font-display)] text-3xl font-bold text-green-600">
+              <div className="rounded-xl border border-themed-border bg-themed-bg px-2 py-4 sm:p-5">
+                <div className="font-[family-name:var(--font-display)] text-2xl font-bold tabular-nums text-secondary sm:text-3xl">
                   {huntSummary.findsCompleted}/{huntSummary.totalFinds}
                 </div>
-                <div className="text-xs text-gray-500 mt-1">Stops Done</div>
+                <div className="text-sm text-themed-muted mt-1">Stops Done</div>
               </div>
-              <div className="rounded-2xl bg-gradient-to-br from-purple-50 to-violet-50 p-5 border border-purple-100">
-                <div className="font-[family-name:var(--font-display)] text-3xl font-bold text-purple-600">
+              <div className="rounded-xl border border-themed-border bg-themed-bg px-2 py-4 sm:p-5">
+                <div className="font-[family-name:var(--font-display)] text-2xl font-bold tabular-nums text-themed-text sm:text-3xl">
                   {elapsed !== null ? `${elapsed}m` : "--"}
                 </div>
-                <div className="text-xs text-gray-500 mt-1">Time</div>
+                <div className="text-sm text-themed-muted mt-1">Time</div>
               </div>
             </div>
           )}
 
-          <div className="flex gap-3 justify-center">
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
             <button
               onClick={() => router.push("/dashboard")}
-              className="bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors px-6 py-2 text-sm font-medium"
+              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand px-5 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50 sm:w-auto"
             >
               Back to Dashboard
             </button>
             <button
               onClick={() => router.push("/browse")}
-              className="rounded-md border border-gray-300 px-6 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              className="flex min-h-12 items-center justify-center gap-2 rounded-lg border border-themed-border bg-surface px-4 text-base font-semibold text-themed-text transition-colors hover:bg-themed-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-40 w-full px-5 sm:w-auto"
             >
               Find More Hunts
             </button>
@@ -562,55 +565,55 @@ export default function PlayPage() {
 
       {/* Error banner */}
       {error && (
-        <div role="alert" className="rounded-md bg-red-50 border border-red-200 px-4 py-3 mb-4 flex justify-between items-center">
-          <p className="text-sm text-red-700">{error}</p>
-          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 text-sm ml-4">
+        <div role="alert" className="rounded-lg bg-error/10 border border-error/30 py-2 pl-4 pr-2 mb-4 flex justify-between items-center gap-2">
+          <p className="text-base text-error">{error}</p>
+          <button onClick={() => setError(null)} className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3 text-sm font-semibold text-error hover:bg-error/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error">
             Dismiss
           </button>
         </div>
       )}
 
       {/* Progress bar */}
-      <div className="flex justify-between items-center text-sm mb-1.5">
-        <span className="font-[family-name:var(--font-display)] font-semibold text-gray-800">
+      <div className="flex flex-wrap justify-between items-center gap-x-3 gap-y-1 mb-2">
+        <span className="font-[family-name:var(--font-display)] text-lg font-semibold tabular-nums text-themed-text">
           Stop {currentIndex + 1} of {finds.length}
         </span>
         <div className="flex items-center gap-3">
           {!huntMeta.hide_scores && (
             <span
-              className="inline-flex items-center gap-1 rounded-full bg-brand-light/60 px-2.5 py-0.5 font-[family-name:var(--font-display)] font-bold text-brand-dark tabular-nums"
+              className="inline-flex items-center gap-1 rounded-full bg-secondary/10 px-2.5 py-0.5 font-[family-name:var(--font-display)] text-base font-bold text-secondary tabular-nums"
               aria-label={`${sessionScore} points so far`}
             >
-              <span aria-hidden="true">⭐</span>
+              <Star className="h-4 w-4" aria-hidden="true" />
               {sessionScore}
             </span>
           )}
-          <span className="font-[family-name:var(--font-handwritten)] text-lg text-brand">
+          <span className="font-[family-name:var(--font-handwritten)] text-xl tabular-nums text-secondary">
             {totalCompleted}/{finds.length} done
           </span>
         </div>
       </div>
-      <div className="h-3 rounded-full bg-gray-100 mb-4 overflow-hidden shadow-inner" role="progressbar" aria-valuenow={totalCompleted} aria-valuemin={0} aria-valuemax={finds.length} aria-label={`Hunt progress: ${totalCompleted} of ${finds.length} stops completed`}>
+      <div className="h-2.5 rounded-full bg-themed-border mb-5 overflow-hidden" role="progressbar" aria-valuenow={totalCompleted} aria-valuemin={0} aria-valuemax={finds.length} aria-label={`Hunt progress: ${totalCompleted} of ${finds.length} stops completed`}>
         <div
-          className="h-3 rounded-full bg-gradient-to-r from-brand via-brand-dark to-brand transition-[width] duration-500 ease-out"
+          className="h-2.5 rounded-full bg-secondary transition-[width] duration-500 ease-out"
           style={{ width: `${(totalCompleted / finds.length) * 100}%` }}
         />
       </div>
 
       <StopFlowStepper currentStep={step} />
 
-      <div className="bg-white rounded-2xl border border-themed-border shadow-sm mb-6 min-h-[300px] p-5" aria-live="polite">
+      <div className="bg-surface rounded-xl border border-themed-border shadow-[var(--shadow-card)] mb-4 min-h-[300px] p-4 sm:p-5" aria-live="polite">
         {/* ── PRIME ── */}
         {step === "prime" && currentFind?.primers && (
           <div>
-            <h2 className="font-[family-name:var(--font-display)] text-xl font-bold text-gray-900 mb-3">Before You Start</h2>
-            <div className="rounded-lg bg-blue-50 p-4 mb-4">
-              <h3 className="font-medium text-blue-800 mb-2">
+            <h2 className="font-[family-name:var(--font-display)] text-xl font-semibold text-themed-text mb-3">Before You Start</h2>
+            <div className="rounded-xl border border-themed-border bg-themed-bg p-4 mb-4">
+              <h3 className="font-[family-name:var(--font-display)] text-lg font-semibold text-themed-text mb-2">
                 {(currentFind.primers as { title: string }).title}
               </h3>
               <PrimerContent content={(currentFind.primers as { content: Record<string, unknown> }).content} />
             </div>
-            <button onClick={handlePrimeViewed} className="w-full bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors px-4 py-2 text-sm font-medium">
+            <button onClick={handlePrimeViewed} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand px-5 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50">
               I&apos;m Ready!
             </button>
           </div>
@@ -619,22 +622,22 @@ export default function PlayPage() {
         {/* ── READING CHECK ── */}
         {step === "reading_check" && currentFind?.reading_check && (
           <div>
-            <h2 className="font-[family-name:var(--font-display)] text-xl font-bold text-gray-900 mb-2">Comprehension Check</h2>
-            <p className="text-xs text-gray-500 mb-3">Answer these questions about the primer before continuing.</p>
+            <h2 className="font-[family-name:var(--font-display)] text-xl font-semibold text-themed-text mb-2">Comprehension Check</h2>
+            <p className="text-base text-themed-muted mb-3">Answer these questions about the primer before continuing.</p>
 
             <div className="space-y-3 mb-4">
               {currentFind.reading_check.questions.map((q, qi) => (
-                <div key={qi} className="rounded-lg border border-gray-200 bg-white p-3">
-                  <p className="text-sm text-gray-900 mb-2">{qi + 1}. {q.question}</p>
-                  <div className="space-y-1">
+                <div key={qi} className="rounded-xl border border-themed-border bg-surface p-3">
+                  <p className="text-base font-semibold text-themed-text mb-2">{qi + 1}. {q.question}</p>
+                  <div className="space-y-2">
                     {q.options.map((opt, oi) => (
                       <button
                         key={oi}
                         onClick={() => setReadingCheckAnswers({ ...readingCheckAnswers, [qi]: opt })}
-                        className={`w-full text-left rounded-md px-3 py-1.5 text-xs transition ${
+                        className={`flex min-h-11 w-full items-center text-left rounded-lg border-2 px-3 py-2 text-base transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 ${
                           readingCheckAnswers[qi] === opt
-                            ? "bg-sky-100 border border-sky-300 text-sky-800"
-                            : "bg-gray-50 border border-gray-200 text-gray-700 hover:bg-gray-100"
+                            ? "border-link bg-link/10 font-semibold text-themed-text"
+                            : "border-themed-border bg-surface text-themed-text hover:bg-themed-bg"
                         }`}
                       >
                         {opt}
@@ -659,7 +662,7 @@ export default function PlayPage() {
                 }
               }}
               disabled={Object.keys(readingCheckAnswers).length < (currentFind.reading_check.questions?.length || 0)}
-              className="w-full bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors px-4 py-2 text-sm font-medium disabled:opacity-50"
+              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand px-5 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50"
             >
               Check Answers
             </button>
@@ -669,33 +672,33 @@ export default function PlayPage() {
         {/* ── CLUE ── */}
         {step === "clue" && (
           <div>
-            <h2 className="text-lg font-bold text-gray-900 mb-3">Your Clue</h2>
-            <div className="rounded-lg bg-amber-50 p-4 mb-4">
-              <p className="text-amber-900">
+            <h2 className="font-[family-name:var(--font-display)] text-xl font-semibold text-themed-text mb-3">Your Clue</h2>
+            <div className="rounded-xl border-l-4 border-secondary bg-themed-bg p-4 mb-4">
+              <p className="font-[family-name:var(--font-display)] text-xl leading-snug text-themed-text">
                 {currentFind?.clue_text || "Head to the next location!"}
               </p>
             </div>
             {currentFind?.locations && (
-              <p className="text-sm text-gray-500 mb-4">
+              <p className="text-base text-themed-muted mb-4">
                 Heading to: {(currentFind.locations as { name: string }).name}
               </p>
             )}
             {clueHintText && (
-              <div className="rounded-lg bg-indigo-50 border border-indigo-200 p-3 mb-4">
-                <p className="text-xs font-medium text-indigo-700 mb-1">Clue Hint {clueHintLevel}</p>
-                <p className="text-sm text-indigo-900">{clueHintText}</p>
+              <div className="rounded-lg border border-link/30 bg-link/10 p-3 mb-4">
+                <p className="text-sm font-semibold text-link mb-1">Clue Hint {clueHintLevel}</p>
+                <p className="text-base text-themed-text">{clueHintText}</p>
               </div>
             )}
-            <div className="flex gap-2">
+            <div className="flex flex-col-reverse gap-3 sm:flex-row">
               {clueHintLevel < clueHintTotal || (clueHintLevel === 0 && !clueHintText) ? (
                 <button
                   onClick={handleClueHint}
-                  className="flex-1 rounded-md border border-indigo-300 px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50"
+                  className="flex min-h-12 items-center justify-center gap-2 rounded-lg border border-themed-border bg-surface px-4 text-base font-semibold text-themed-text transition-colors hover:bg-themed-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-40 sm:flex-1"
                 >
                   Need a hint? (-2 pts)
                 </button>
               ) : null}
-              <button onClick={handleClueRead} className="flex-1 bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors px-4 py-2 text-sm font-medium">
+              <button onClick={handleClueRead} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand px-5 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50 sm:flex-1">
                 Start Navigating
               </button>
             </div>
@@ -705,21 +708,21 @@ export default function PlayPage() {
         {/* ── NAVIGATE ── */}
         {step === "navigate" && (
           <div className="text-center">
-            <h2 className="text-lg font-bold text-gray-900 mb-3">Navigate to Location</h2>
-            <p className="text-sm text-gray-600 mb-6">
-              Walk toward <strong>{currentFind?.locations ? (currentFind.locations as { name: string }).name : "the target"}</strong>
+            <h2 className="font-[family-name:var(--font-display)] text-xl font-semibold text-themed-text mb-2">Navigate to Location</h2>
+            <p className="text-base text-themed-muted mb-4">
+              Walk toward <strong className="text-themed-text">{currentFind?.locations ? (currentFind.locations as { name: string }).name : "the target"}</strong>
             </p>
 
             {/* GPS error states */}
             {gpsStatus === "denied" && (
-              <div role="alert" className="rounded-lg bg-red-50 border border-red-200 p-4 mb-4">
-                <p className="text-sm font-medium text-red-800 mb-1">Location Access Denied</p>
-                <p className="text-xs text-red-600 mb-3">
+              <div role="alert" className="rounded-xl bg-error/10 border border-error/30 p-4 mb-4">
+                <p className="text-base font-semibold text-error mb-1">Location Access Denied</p>
+                <p className="text-base text-themed-text mb-3">
                   Please enable location access in your browser settings to use GPS navigation.
                 </p>
                 <button
                   onClick={handleSkipNav}
-                  className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+                  className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand px-5 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50"
                 >
                   Skip to Challenge
                 </button>
@@ -727,14 +730,14 @@ export default function PlayPage() {
             )}
 
             {gpsStatus === "unavailable" && (
-              <div role="alert" className="rounded-lg bg-orange-50 border border-orange-200 p-4 mb-4">
-                <p className="text-sm font-medium text-orange-800 mb-1">GPS Not Available</p>
-                <p className="text-xs text-orange-600 mb-3">
+              <div role="alert" className="rounded-xl bg-warning/10 border border-warning/30 p-4 mb-4">
+                <p className="text-base font-semibold text-warning mb-1">GPS Not Available</p>
+                <p className="text-base text-themed-text mb-3">
                   Your device doesn&apos;t have GPS or it&apos;s not working right now.
                 </p>
                 <button
                   onClick={handleSkipNav}
-                  className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700"
+                  className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand px-5 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50"
                 >
                   Skip to Challenge
                 </button>
@@ -742,20 +745,21 @@ export default function PlayPage() {
             )}
 
             {gpsStatus === "timeout" && (
-              <div role="alert" className="rounded-lg bg-yellow-50 border border-yellow-200 p-4 mb-4">
-                <p className="text-sm font-medium text-yellow-800 mb-1">GPS Signal Weak</p>
-                <p className="text-xs text-yellow-600 mb-3">
+              <div role="alert" className="rounded-xl bg-warning/10 border border-warning/30 p-4 mb-4">
+                <p className="text-base font-semibold text-warning mb-1">GPS Signal Weak</p>
+                <p className="text-base text-themed-text mb-3">
                   Try moving to an open area for better signal, or skip navigation.
                 </p>
                 <button
                   onClick={() => setGpsStatus("waiting")}
-                  className="rounded-md border border-yellow-400 px-3 py-1.5 text-xs text-yellow-700 hover:bg-yellow-100 mr-2"
+                  className="flex min-h-12 items-center justify-center gap-2 rounded-lg border border-themed-border bg-surface px-4 text-base font-semibold text-themed-text transition-colors hover:bg-themed-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-40 mb-3 w-full"
                 >
+                  <RotateCcw className="h-4 w-4" aria-hidden="true" />
                   Try Again
                 </button>
                 <button
                   onClick={handleSkipNav}
-                  className="rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700"
+                  className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand px-5 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50"
                 >
                   Skip to Challenge
                 </button>
@@ -790,30 +794,30 @@ export default function PlayPage() {
                     />
                   </div>
                 ) : (
-                  <div className="mb-4">
+                  <div className="mb-4" role="status">
                     <div className="animate-pulse flex justify-center">
-                      <div className="w-16 h-16 rounded-full bg-sky-100 flex items-center justify-center text-2xl">
-                        <svg className="animate-spin h-8 w-8 text-sky-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <div className="w-16 h-16 rounded-full bg-link/10 flex items-center justify-center text-2xl">
+                        <svg aria-hidden="true" className="animate-spin h-8 w-8 text-link" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                         </svg>
                       </div>
                     </div>
-                    <p className="text-sm text-gray-500 mt-2">Acquiring GPS signal...</p>
+                    <p className="text-base text-themed-muted mt-2">Acquiring GPS signal...</p>
                   </div>
                 )}
 
                 {/* Clue hints during navigation */}
                 {clueHintText && (
-                  <div className="rounded-lg bg-indigo-50 border border-indigo-200 p-3 mb-3">
-                    <p className="text-xs font-medium text-indigo-700 mb-1">Clue Hint {clueHintLevel}</p>
-                    <p className="text-sm text-indigo-900">{clueHintText}</p>
+                  <div className="rounded-lg border border-link/30 bg-link/10 p-3 mb-3 text-left">
+                    <p className="text-sm font-semibold text-link mb-1">Clue Hint {clueHintLevel}</p>
+                    <p className="text-base text-themed-text">{clueHintText}</p>
                   </div>
                 )}
                 {(clueHintLevel < clueHintTotal || (clueHintLevel === 0 && !clueHintText)) && (
                   <button
                     onClick={handleClueHint}
-                    className="mb-3 rounded-md border border-indigo-300 px-3 py-1.5 text-xs text-indigo-700 hover:bg-indigo-50"
+                    className="flex min-h-12 items-center justify-center gap-2 rounded-lg border border-themed-border bg-surface px-4 text-base font-semibold text-themed-text transition-colors hover:bg-themed-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-40 mb-2 w-full"
                   >
                     Stuck? Get a clue hint (-2 pts)
                   </button>
@@ -821,7 +825,7 @@ export default function PlayPage() {
 
                 <button
                   onClick={handleSkipNav}
-                  className="text-sm text-gray-500 hover:text-gray-600 underline"
+                  className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-link underline-offset-2 transition-colors hover:text-link-dark hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 underline"
                 >
                   I&apos;m already here (skip navigation)
                 </button>
@@ -833,11 +837,11 @@ export default function PlayPage() {
         {/* ── CHALLENGE ── */}
         {step === "challenge" && (
           <div>
-            <h2 className="text-lg font-bold text-gray-900 mb-3">Challenge</h2>
+            <h2 className="font-[family-name:var(--font-display)] text-xl font-semibold text-themed-text mb-3">Challenge</h2>
 
             {currentFind?.tasks && (
-              <div className="rounded-lg bg-sky-50 p-4 mb-4">
-                <h3 className="font-medium text-sky-800">
+              <div className="rounded-xl border-l-4 border-secondary bg-themed-bg p-4 mb-4">
+                <h3 className="font-[family-name:var(--font-display)] text-lg font-semibold text-themed-text">
                   {(currentFind.tasks as { title: string }).title}
                 </h3>
               </div>
@@ -845,13 +849,13 @@ export default function PlayPage() {
 
             {/* Hint section */}
             {hintText && (
-              <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-3 mb-4">
-                <p className="text-sm text-yellow-800">
+              <div className="rounded-lg border border-link/30 bg-link/10 p-3 mb-4">
+                <p className="text-base text-themed-text">
                   <strong>Hint (Level {hintLevel}):</strong> {hintText}
                 </p>
                 {!hintRated && (
                   <div className="flex items-center gap-2 mt-2">
-                    <span className="text-[11px] text-yellow-600" id="hint-helpful-label">Was this helpful?</span>
+                    <span className="text-sm text-themed-muted" id="hint-helpful-label">Was this helpful?</span>
                     <button
                       aria-label="Hint was helpful"
                       aria-describedby="hint-helpful-label"
@@ -863,9 +867,9 @@ export default function PlayPage() {
                         });
                         setHintRated(true);
                       }}
-                      className="text-xs px-2 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200"
+                      className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-themed-border bg-surface transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 text-secondary hover:bg-secondary/10"
                     >
-                      <span aria-hidden="true">👍</span>
+                      <ThumbsUp className="h-5 w-5" aria-hidden="true" />
                     </button>
                     <button
                       aria-label="Hint was not helpful"
@@ -878,30 +882,30 @@ export default function PlayPage() {
                         });
                         setHintRated(true);
                       }}
-                      className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200"
+                      className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-themed-border bg-surface transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 text-error hover:bg-error/10"
                     >
-                      <span aria-hidden="true">👎</span>
+                      <ThumbsDown className="h-5 w-5" aria-hidden="true" />
                     </button>
                   </div>
                 )}
-                {hintRated && <p className="text-[11px] text-yellow-600 mt-1">Thanks for the feedback!</p>}
+                {hintRated && <p className="text-sm text-themed-muted mt-1">Thanks for the feedback!</p>}
               </div>
             )}
 
             {/* Feedback from previous attempt */}
             {feedback && canRetry && (
-              <div className={`rounded-lg p-3 mb-4 ${
-                feedback.type === "correct" ? "bg-green-50 text-green-800" :
-                feedback.type === "partial" ? "bg-blue-50 text-blue-800" :
-                "bg-orange-50 text-orange-800"
+              <div className={`rounded-lg border p-3 mb-4 text-themed-text ${
+                feedback.type === "correct" ? "border-secondary/30 bg-secondary/10" :
+                feedback.type === "partial" ? "border-link/30 bg-link/10" :
+                "border-warning/30 bg-warning/10"
               }`}>
-                <p className="text-sm font-medium">{feedback.main}</p>
-                <p className="text-xs mt-1">{feedback.explanation}</p>
+                <p className="text-base font-semibold">{feedback.main}</p>
+                <p className="text-sm mt-1">{feedback.explanation}</p>
               </div>
             )}
 
             {/* Challenge-type-specific input */}
-            <div className="mb-3">
+            <div className="mb-2">
               <ChallengeInput
                 challengeType={currentFind?.tasks?.challenge_type || "short_text"}
                 content={currentFind?.tasks?.content || {}}
@@ -915,7 +919,7 @@ export default function PlayPage() {
             <button
               onClick={handleRequestHint}
               disabled={hintLevel >= 4}
-              className="text-sm text-brand hover:underline disabled:text-gray-500"
+              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg border border-themed-border bg-surface px-4 text-base font-semibold text-link transition-colors hover:bg-themed-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:text-themed-muted"
             >
               {hintLevel === 0 ? "Need a hint?" : hintLevel < 4 ? `Get more help (Level ${hintLevel + 1})` : "No more hints available"}
             </button>
@@ -925,18 +929,19 @@ export default function PlayPage() {
         {/* ── CAPTURE ── */}
         {step === "capture" && (
           <div className="text-center">
-            <h2 className="text-lg font-bold text-gray-900 mb-3">Geo-Selfie!</h2>
-            <p className="text-sm text-gray-600 mb-6">
+            <h2 className="font-[family-name:var(--font-display)] text-xl font-semibold text-themed-text mb-2">Geo-Selfie!</h2>
+            <p className="text-base text-themed-muted mb-6">
               Take a photo of yourself at this location to remember your adventure!
             </p>
 
-            <label className="inline-block bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors px-6 py-3 text-sm font-medium cursor-pointer mb-4">
+            <label className="flex min-h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-brand px-5 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-within:ring-2 focus-within:ring-brand focus-within:ring-offset-2 mb-2">
+              <Camera className="h-5 w-5" aria-hidden="true" />
               Take Photo
               <input
                 type="file"
                 accept="image/*"
                 capture="environment"
-                className="hidden"
+                className="sr-only"
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file || !currentFind) return;
@@ -957,7 +962,7 @@ export default function PlayPage() {
             </label>
 
             <div>
-              <button onClick={handleCaptureSkip} className="text-sm text-gray-500 hover:text-gray-600 underline">
+              <button onClick={handleCaptureSkip} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-link underline-offset-2 transition-colors hover:text-link-dark hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 underline">
                 Skip photo
               </button>
             </div>
@@ -967,51 +972,51 @@ export default function PlayPage() {
         {/* ── FEEDBACK ── */}
         {step === "feedback" && (
           <div>
-            <h2 className="text-lg font-bold text-gray-900 mb-3">Results</h2>
+            <h2 className="font-[family-name:var(--font-display)] text-xl font-semibold text-themed-text mb-3">Results</h2>
 
             {score !== null && !huntMeta.hide_scores && (
               <div className="text-center mb-4">
-                <div className="font-[family-name:var(--font-display)] text-5xl font-bold text-brand">{score}</div>
-                <p className="text-sm text-gray-500">points earned</p>
+                <div className="font-[family-name:var(--font-display)] text-5xl font-bold tabular-nums text-secondary">{score}</div>
+                <p className="text-base text-themed-muted">points earned</p>
               </div>
             )}
             {score !== null && huntMeta.hide_scores && (
               <div className="text-center mb-4">
-                <div className="text-4xl font-bold text-green-600">Complete!</div>
-                <p className="text-sm text-gray-500">Great effort on this stop</p>
+                <div className="font-[family-name:var(--font-display)] text-4xl font-bold text-secondary">Complete!</div>
+                <p className="text-base text-themed-muted">Great effort on this stop</p>
               </div>
             )}
 
             {feedback && (
-              <div className={`rounded-lg p-4 mb-4 ${
-                feedback.type === "correct" ? "bg-green-50" :
-                feedback.type === "partial" ? "bg-blue-50" :
-                "bg-orange-50"
+              <div className={`rounded-lg border p-4 mb-4 text-themed-text ${
+                feedback.type === "correct" ? "border-secondary/30 bg-secondary/10" :
+                feedback.type === "partial" ? "border-link/30 bg-link/10" :
+                "border-warning/30 bg-warning/10"
               }`}>
-                <p className="font-medium">{feedback.main}</p>
-                <p className="text-sm mt-1 opacity-80">{feedback.explanation}</p>
-                <p className="text-sm mt-2 italic">{feedback.next_steps}</p>
+                <p className="text-base font-semibold">{feedback.main}</p>
+                <p className="text-base mt-1">{feedback.explanation}</p>
+                <p className="text-sm mt-2 italic text-themed-muted">{feedback.next_steps}</p>
               </div>
             )}
 
             {breakdown && (
               <div className="space-y-2 mb-4">
-                <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                  <div className="rounded bg-gray-50 p-2">
-                    <div className="font-bold text-gray-700">{breakdown.correctness}</div>
-                    <div className="text-gray-500">Accuracy</div>
+                <div className="grid grid-cols-3 gap-2 text-center text-sm">
+                  <div className="rounded-lg border border-themed-border bg-themed-bg p-2">
+                    <div className="font-[family-name:var(--font-display)] text-lg font-bold tabular-nums text-themed-text">{breakdown.correctness}</div>
+                    <div className="text-themed-muted">Accuracy</div>
                   </div>
-                  <div className="rounded bg-gray-50 p-2">
-                    <div className="font-bold text-gray-700">{breakdown.masteryBonus}</div>
-                    <div className="text-gray-500">Mastery</div>
+                  <div className="rounded-lg border border-themed-border bg-themed-bg p-2">
+                    <div className="font-[family-name:var(--font-display)] text-lg font-bold tabular-nums text-themed-text">{breakdown.masteryBonus}</div>
+                    <div className="text-themed-muted">Mastery</div>
                   </div>
-                  <div className="rounded bg-gray-50 p-2">
-                    <div className="font-bold text-gray-700">{breakdown.completion}</div>
-                    <div className="text-gray-500">Completion</div>
+                  <div className="rounded-lg border border-themed-border bg-themed-bg p-2">
+                    <div className="font-[family-name:var(--font-display)] text-lg font-bold tabular-nums text-themed-text">{breakdown.completion}</div>
+                    <div className="text-themed-muted">Completion</div>
                   </div>
                 </div>
                 {(breakdown.hintPenalty > 0 || clueHintLevel > 0) && (
-                  <div className="text-xs text-gray-500 text-center">
+                  <div className="text-sm tabular-nums text-themed-muted text-center">
                     {clueHintLevel > 0 && <span>Navigation hints: {clueHintLevel} (-{clueHintLevel * 2} pts) </span>}
                     {breakdown.hintPenalty > 0 && <span>Challenge hints: -{breakdown.hintPenalty} pts</span>}
                   </div>
@@ -1025,14 +1030,14 @@ export default function PlayPage() {
                 {!showTechniqueReview ? (
                   <button
                     onClick={() => setShowTechniqueReview(true)}
-                    className="text-xs text-sky-600 hover:underline"
+                    className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-link underline-offset-2 transition-colors hover:text-link-dark hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
                   >
                     Reflect on your approach (optional)
                   </button>
                 ) : (
-                  <div className="rounded-lg bg-sky-50 border border-sky-200 p-3">
-                    <p className="text-xs font-medium text-sky-700 mb-2" id="review-strategies-label">What helped you?</p>
-                    <div className="flex flex-wrap gap-1.5 mb-2" role="group" aria-labelledby="review-strategies-label">
+                  <div className="rounded-lg border border-link/30 bg-link/10 p-3">
+                    <p className="text-sm font-semibold text-themed-text mb-2" id="review-strategies-label">What helped you?</p>
+                    <div className="flex flex-wrap gap-2 mb-3" role="group" aria-labelledby="review-strategies-label">
                       {[
                         { key: "read_carefully", label: "Read carefully" },
                         { key: "used_hint", label: "Used a hint" },
@@ -1052,8 +1057,8 @@ export default function PlayPage() {
                                 prev.includes(s.key) ? prev.filter((k) => k !== s.key) : [...prev, s.key]
                               )
                             }
-                            className={`rounded-full px-2.5 py-1 text-[11px] transition ${
-                              selected ? "bg-sky-200 text-sky-800" : "bg-gray-100 text-gray-600"
+                            className={`inline-flex min-h-11 items-center rounded-full border px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 ${
+                              selected ? "border-link bg-link text-white" : "border-themed-border bg-surface text-themed-text hover:bg-themed-bg"
                             }`}
                           >
                             {s.label}
@@ -1061,7 +1066,7 @@ export default function PlayPage() {
                         );
                       })}
                     </div>
-                    <p className="text-xs text-sky-700 mb-1" id="review-confidence-label">How confident are you?</p>
+                    <p className="text-sm font-semibold text-themed-text mb-1" id="review-confidence-label">How confident are you?</p>
                     <div className="flex gap-2 mb-2" role="group" aria-labelledby="review-confidence-label">
                       {[
                         { emoji: "😞", label: "Not confident" },
@@ -1072,7 +1077,7 @@ export default function PlayPage() {
                           key={i}
                           type="button"
                           aria-label={c.label}
-                          className="text-2xl leading-none p-1 rounded hover:scale-110 transition"
+                          className="inline-flex h-12 w-12 items-center justify-center rounded-lg text-2xl leading-none transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
                           onClick={() => {
                             fetch("/api/v1/technique-review", {
                               method: "POST",
@@ -1096,13 +1101,13 @@ export default function PlayPage() {
               </div>
             )}
             {techniqueReviewDone && (
-              <p className="text-[11px] text-sky-600 mt-2">Thanks for reflecting!</p>
+              <p className="text-sm text-secondary mt-2">Thanks for reflecting!</p>
             )}
 
             {/* Show "completed" for revisited finds that have no live score */}
             {score === null && completedFinds.has(currentFind?.id || "") && (
-              <div className="text-center py-8 text-gray-500">
-                <p className="text-sm">You already completed this stop.</p>
+              <div className="text-center py-8 text-themed-muted">
+                <p className="text-base">You already completed this stop.</p>
               </div>
             )}
           </div>
@@ -1110,11 +1115,11 @@ export default function PlayPage() {
       </div>
 
       {/* Navigation buttons */}
-      <div className="flex justify-between">
+      <div className="flex gap-3">
         <button
           onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}
           disabled={currentIndex === 0}
-          className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-30 min-h-[44px]"
+          className="flex min-h-12 items-center justify-center gap-2 rounded-lg border border-themed-border bg-surface px-4 text-base font-semibold text-themed-text transition-colors hover:bg-themed-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-40 shrink-0 px-5"
         >
           Previous
         </button>
@@ -1123,14 +1128,14 @@ export default function PlayPage() {
           isLastFind ? (
             <button
               onClick={handleFinishHunt}
-              className="bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors px-6 py-2.5 text-sm font-medium min-h-[44px]"
+              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand px-5 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50 flex-1 sm:ml-auto sm:w-auto sm:flex-none sm:px-8"
             >
               Finish Hunt
             </button>
           ) : (
             <button
               onClick={handleNextFind}
-              className="bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors px-6 py-2.5 text-sm font-medium min-h-[44px]"
+              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand px-5 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50 flex-1 sm:ml-auto sm:w-auto sm:flex-none sm:px-8"
             >
               Next Stop
             </button>
@@ -1141,19 +1146,19 @@ export default function PlayPage() {
       {/* Report a problem — accessible inline disclosure (no prompt/alert) */}
       <div className="mt-4 text-center">
         {reportDone ? (
-          <p role="status" className="text-xs text-gray-500">Thanks for reporting. A teacher will review this.</p>
+          <p role="status" className="text-sm text-themed-muted">Thanks for reporting. A teacher will review this.</p>
         ) : !showReport ? (
           <button
             onClick={() => setShowReport(true)}
             aria-expanded={false}
-            className="text-xs text-gray-400 hover:text-gray-600 underline"
+            className="inline-flex min-h-11 items-center rounded-lg px-3 text-sm text-themed-muted underline underline-offset-2 transition-colors hover:text-themed-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
           >
             Report a problem
           </button>
         ) : (
-          <div className="inline-block rounded-lg border border-gray-200 bg-white p-3 text-left">
-            <p className="text-xs font-medium text-gray-700 mb-2" id="report-label">What&apos;s the issue?</p>
-            <div className="flex flex-wrap gap-1.5" role="group" aria-labelledby="report-label">
+          <div className="inline-block rounded-xl border border-themed-border bg-surface p-3 text-left">
+            <p className="text-sm font-semibold text-themed-text mb-2" id="report-label">What&apos;s the issue?</p>
+            <div className="flex flex-wrap gap-2" role="group" aria-labelledby="report-label">
               {[
                 { key: "mean_hurtful", label: "Mean / hurtful" },
                 { key: "inappropriate", label: "Inappropriate" },
@@ -1177,7 +1182,7 @@ export default function PlayPage() {
                     setShowReport(false);
                     setReportDone(true);
                   }}
-                  className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100 min-h-[36px]"
+                  className="inline-flex min-h-11 items-center rounded-full border border-themed-border bg-themed-bg px-3 text-sm text-themed-text transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
                 >
                   {c.label}
                 </button>
@@ -1185,8 +1190,9 @@ export default function PlayPage() {
               <button
                 type="button"
                 onClick={() => setShowReport(false)}
-                className="rounded-full px-3 py-1.5 text-xs text-gray-400 hover:text-gray-600 min-h-[36px]"
+                className="inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-sm text-themed-muted transition-colors hover:text-themed-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
               >
+                <X className="h-4 w-4" aria-hidden="true" />
                 Cancel
               </button>
             </div>
@@ -1207,10 +1213,10 @@ function PrimerContent({ content }: { content: Record<string, unknown> }) {
 
   return (
     <div className="space-y-3">
-      {text && <p className="text-sm text-blue-700">{text}</p>}
+      {text && <p className="text-base text-themed-text">{text}</p>}
 
       {items && items.length > 0 && (
-        <ul className="list-disc list-inside text-sm text-blue-700 space-y-1">
+        <ul className="list-disc list-inside text-base text-themed-text space-y-1">
           {items.map((item, i) => (
             <li key={i}>{item}</li>
           ))}
@@ -1239,7 +1245,7 @@ function PrimerContent({ content }: { content: Record<string, unknown> }) {
 
       {/* Fallback: if content has no recognized fields, show raw text */}
       {!text && !imageUrl && !videoUrl && !items && (
-        <p className="text-sm text-blue-700">
+        <p className="text-base text-themed-text">
           {typeof content === "string" ? content : "Review this concept before continuing."}
         </p>
       )}

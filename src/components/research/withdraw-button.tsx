@@ -31,7 +31,7 @@ export default function WithdrawButton() {
       {!confirming ? (
         <button
           onClick={() => setConfirming(true)}
-          className="text-sm font-medium text-red-600 hover:underline"
+          className="inline-flex min-h-11 items-center text-sm font-medium text-red-600 hover:underline"
         >
           Withdraw from the study
         </button>
@@ -45,19 +45,19 @@ export default function WithdrawButton() {
             <button
               onClick={withdraw}
               disabled={state === "working"}
-              className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              className="min-h-11 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
             >
               {state === "working" ? "Withdrawing..." : "Yes, withdraw"}
             </button>
             <button
               onClick={() => setConfirming(false)}
-              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50"
+              className="min-h-11 rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50"
             >
               Cancel
             </button>
           </div>
           {state === "error" && (
-            <p className="mt-2 text-sm text-red-600">Something went wrong. Please try again.</p>
+            <p role="alert" className="mt-2 text-sm text-red-600">Something went wrong. Please try again.</p>
           )}
         </div>
       )}

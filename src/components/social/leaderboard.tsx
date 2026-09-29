@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { Trophy } from "lucide-react";
+import { Medal, Star, Trophy } from "lucide-react";
 import {
   summarizeViewerStanding,
   standingCaption,
@@ -82,122 +82,129 @@ export default function Leaderboard({ huntId }: LeaderboardProps) {
     };
   }, [huntId]);
 
-  const medals = ["🥇", "🥈", "🥉"];
+  const medalTints = ["text-amber-500", "text-slate-400", "text-orange-700"];
   const podiumColors = [
-    "from-amber-50 to-yellow-50 border-amber-200",
-    "from-gray-50 to-slate-50 border-gray-200",
-    "from-orange-50 to-amber-50 border-orange-200",
+    "from-amber-50 to-transparent",
+    "from-slate-50 to-transparent",
+    "from-orange-50 to-transparent",
   ];
 
   const { standing, pinned } = summarizeViewerStanding(entries, viewerId, serverMe);
   const caption = standingCaption(standing);
 
   return (
-    <div className="rounded-2xl border border-themed-border bg-white overflow-hidden">
-      <div className="border-b border-gray-100 px-5 py-3 flex items-center justify-between bg-gradient-to-r from-brand-light/30 to-transparent">
-        <h3 className="font-[family-name:var(--font-display)] font-semibold text-gray-900 flex items-center gap-2">
-          <Trophy className="w-4 h-4 text-amber-500" />
+    <div className="rounded-xl border border-themed-border bg-surface shadow-[var(--shadow-card)] overflow-hidden">
+      <div className="border-b border-themed-border px-4 py-3 flex items-center justify-between gap-3">
+        <h3 className="font-[family-name:var(--font-display)] text-lg font-semibold text-themed-text flex items-center gap-2 text-balance">
+          <Trophy className="w-5 h-5 text-brand-dark" aria-hidden="true" />
           {huntId ? "Hunt Leaderboard" : "Leaderboard"}
         </h3>
-        <span className="text-xs text-green-600 flex items-center gap-1.5 font-medium">
-          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+        <span className="text-sm text-secondary flex items-center gap-1.5 font-medium">
+          <span className="w-2 h-2 rounded-full bg-secondary motion-safe:animate-pulse" aria-hidden="true" />
           Live
         </span>
       </div>
 
       {loading ? (
-        <div className="p-5 space-y-3">
+        <div className="p-4 space-y-3">
           {[...Array(5)].map((_, i) => (
             <div key={i} className="flex items-center gap-3 animate-pulse">
-              <div className="w-8 h-8 rounded-full bg-gray-100" />
-              <div className="h-4 bg-gray-100 rounded-lg flex-1" />
-              <div className="h-4 bg-gray-100 rounded-lg w-14" />
+              <div className="w-9 h-9 rounded-full bg-themed-bg" />
+              <div className="h-4 bg-themed-bg rounded-lg flex-1" />
+              <div className="h-4 bg-themed-bg rounded-lg w-14" />
             </div>
           ))}
         </div>
       ) : entries.length === 0 ? (
         <div className="p-10 text-center">
-          <div className="text-3xl mb-2">🏅</div>
-          <p className="font-[family-name:var(--font-display)] font-semibold text-gray-500">No scores yet</p>
-          <p className="font-[family-name:var(--font-handwritten)] text-lg text-gray-400">Be the first explorer!</p>
+          <Medal className="mx-auto mb-2 w-8 h-8 text-themed-muted" aria-hidden="true" />
+          <p className="font-[family-name:var(--font-display)] text-base font-semibold text-themed-text">No scores yet</p>
+          <p className="font-[family-name:var(--font-handwritten)] text-lg text-themed-muted">Be the first explorer!</p>
         </div>
       ) : (
-        <div className="divide-y divide-gray-50">
+        <ol className="divide-y divide-themed-border">
           {entries.map((entry, i) => {
             const isViewer = viewerId != null && entry.user_id === viewerId;
             return (
-              <div
+              <li
                 key={entry.user_id}
-                className={`flex items-center gap-3 px-5 py-3 transition-colors ${
+                className={`flex min-h-14 items-center gap-3 px-4 py-2.5 transition-colors ${
                   isViewer
                     ? "bg-brand-light/40 ring-1 ring-inset ring-brand/40"
                     : i < 3
                     ? `bg-gradient-to-r ${podiumColors[i]}`
-                    : "hover:bg-gray-50/50"
+                    : ""
                 }`}
               >
                 {/* Rank */}
-                <div className="w-8 text-center shrink-0">
+                <div className="w-7 text-center shrink-0">
                   {i < 3 ? (
-                    <span className="text-xl">{medals[i]}</span>
+                    <>
+                      <Medal className={`mx-auto w-6 h-6 ${medalTints[i]}`} aria-hidden="true" />
+                      <span className="sr-only">Rank {i + 1}</span>
+                    </>
                   ) : (
-                    <span className="font-[family-name:var(--font-display)] text-sm font-bold text-gray-400">{i + 1}</span>
+                    <span className="font-[family-name:var(--font-display)] text-base font-bold tabular-nums text-themed-muted">{i + 1}</span>
                   )}
                 </div>
 
                 {/* Avatar */}
-                <div className="w-8 h-8 rounded-full bg-brand/10 flex items-center justify-center shrink-0">
-                  <span className="font-[family-name:var(--font-display)] text-xs font-bold text-brand">
+                <div className="w-9 h-9 rounded-full bg-secondary/10 flex items-center justify-center shrink-0" aria-hidden="true">
+                  <span className="font-[family-name:var(--font-display)] text-sm font-bold text-secondary">
                     {(entry.display_name || "?")[0].toUpperCase()}
                   </span>
                 </div>
 
                 {/* Name */}
                 <div className="flex-1 min-w-0">
-                  <p className="font-[family-name:var(--font-display)] text-sm font-semibold text-gray-900 truncate">
-                    {entry.display_name || "Anonymous"}
+                  <p className="flex min-w-0 items-center gap-2">
+                    <span className="min-w-0 truncate font-[family-name:var(--font-display)] text-base font-semibold text-themed-text">
+                      {entry.display_name || "Anonymous"}
+                    </span>
                     {isViewer && (
-                      <span className="ml-2 rounded-full bg-brand px-1.5 py-0.5 text-[10px] font-bold text-white align-middle">You</span>
+                      <span className="shrink-0 rounded-full bg-brand-dark px-2 py-0.5 text-xs font-bold text-white">You</span>
                     )}
                   </p>
                   {isViewer && caption ? (
-                    <p className="text-xs font-medium text-brand-dark">{caption}</p>
+                    <p className="text-sm font-medium text-brand-dark">{caption}</p>
                   ) : entry.hunts_completed != null ? (
-                    <p className="text-xs text-gray-400">{entry.hunts_completed} hunts</p>
+                    <p className="text-sm tabular-nums text-themed-muted">
+                      {entry.hunts_completed} {entry.hunts_completed === 1 ? "hunt" : "hunts"}
+                    </p>
                   ) : null}
                 </div>
 
                 {/* Score */}
                 <div className="text-right shrink-0">
-                  <span className="font-[family-name:var(--font-display)] text-base font-bold text-brand">{entry.score}</span>
-                  <span className="text-[10px] text-gray-400 ml-1">pts</span>
+                  <span className="font-[family-name:var(--font-display)] text-lg font-bold tabular-nums text-themed-text">{entry.score}</span>
+                  <span className="text-xs text-themed-muted ml-1">pts</span>
                 </div>
-              </div>
+              </li>
             );
           })}
 
           {/* Viewer's standing pinned when they're off the visible board */}
           {pinned && standing && (
-            <div className="flex items-center gap-3 border-t-2 border-dashed border-brand/30 bg-brand-light/40 px-5 py-3">
-              <div className="w-8 text-center shrink-0">
-                <span className="font-[family-name:var(--font-display)] text-sm font-bold text-brand-dark">{standing.rank}</span>
+            <li className="flex min-h-14 items-center gap-3 border-t-2 border-dashed border-brand/30 bg-brand-light/40 px-4 py-2.5">
+              <div className="w-7 text-center shrink-0">
+                <span className="font-[family-name:var(--font-display)] text-base font-bold tabular-nums text-brand-dark">{standing.rank}</span>
               </div>
-              <div className="w-8 h-8 rounded-full bg-brand/10 flex items-center justify-center shrink-0">
-                <span className="font-[family-name:var(--font-display)] text-xs font-bold text-brand">★</span>
+              <div className="w-9 h-9 rounded-full bg-brand/10 flex items-center justify-center shrink-0" aria-hidden="true">
+                <Star className="w-4 h-4 text-brand-dark" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-[family-name:var(--font-display)] text-sm font-semibold text-gray-900">
+                <p className="font-[family-name:var(--font-display)] text-base font-semibold text-themed-text">
                   You
                 </p>
-                {caption && <p className="text-xs font-medium text-brand-dark">{caption}</p>}
+                {caption && <p className="text-sm font-medium text-brand-dark">{caption}</p>}
               </div>
               <div className="text-right shrink-0">
-                <span className="font-[family-name:var(--font-display)] text-base font-bold text-brand">{standing.score}</span>
-                <span className="text-[10px] text-gray-400 ml-1">pts</span>
+                <span className="font-[family-name:var(--font-display)] text-lg font-bold tabular-nums text-themed-text">{standing.score}</span>
+                <span className="text-xs text-themed-muted ml-1">pts</span>
               </div>
-            </div>
+            </li>
           )}
-        </div>
+        </ol>
       )}
     </div>
   );

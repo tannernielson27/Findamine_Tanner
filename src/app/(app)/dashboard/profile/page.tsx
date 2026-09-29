@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { ChevronRight, Flame } from "lucide-react";
 
 interface ProfileData {
   id: string;
@@ -59,58 +60,53 @@ export default function ProfilePage() {
     setSavingName(false);
   }
 
-  if (loading) return <main className="mx-auto max-w-2xl px-4 py-4"><p className="text-sm text-gray-500">Loading...</p></main>;
-  if (!profile) return <main className="mx-auto max-w-2xl px-4 py-4"><p className="text-sm text-gray-500">Not found</p></main>;
+  if (loading) return <main className="mx-auto max-w-2xl px-4 py-6"><p className="text-base text-themed-muted">Loading...</p></main>;
+  if (!profile) return <main className="mx-auto max-w-2xl px-4 py-6"><p className="text-base text-themed-muted">Not found</p></main>;
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-4">
+    <main className="mx-auto max-w-2xl px-4 py-6">
       {/* Profile header */}
-      <div className="flex items-center gap-4 mb-6">
-        <div className="w-16 h-16 rounded-full bg-sky-100 flex items-center justify-center text-2xl text-sky-600 font-bold">
+      <header className="flex items-center gap-4 mb-6">
+        <div
+          className="w-16 h-16 shrink-0 rounded-full bg-secondary/10 flex items-center justify-center font-[family-name:var(--font-display)] text-2xl text-secondary font-bold"
+          aria-hidden="true"
+        >
           {profile.display_name?.[0]?.toUpperCase() || "?"}
         </div>
-        <div>
-          <h1 className="text-lg font-bold text-gray-900">{profile.display_name || "Explorer"}</h1>
-          <p className="text-xs text-gray-500">{profile.role} · joined {new Date(profile.created_at).toLocaleDateString()}</p>
-          <Link href="/settings/privacy" className="text-[11px] text-sky-600 hover:underline">
+        <div className="min-w-0">
+          <h1 className="truncate font-[family-name:var(--font-display)] text-3xl font-bold text-themed-text">{profile.display_name || "Explorer"}</h1>
+          <p className="text-sm text-themed-muted">{profile.role} · joined {new Date(profile.created_at).toLocaleDateString()}</p>
+          <Link href="/settings/privacy" className="inline-flex min-h-11 items-center text-sm font-medium text-link hover:text-link-dark hover:underline">
             Privacy settings →
           </Link>
         </div>
-      </div>
+      </header>
 
       {/* Stats grid */}
-      <div className="grid grid-cols-4 gap-2 mb-6">
-        <div className="rounded-lg border border-gray-200 bg-white p-3 text-center">
-          <div className="text-xl font-bold text-sky-600">{stats?.hunts_completed || 0}</div>
-          <div className="text-[10px] text-gray-500">Hunts</div>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-3 text-center">
-          <div className="text-xl font-bold text-emerald-600">{stats?.total_score || 0}</div>
-          <div className="text-[10px] text-gray-500">Total Score</div>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-3 text-center">
-          <div className="text-xl font-bold text-amber-600">{stats?.badges_earned || 0}</div>
-          <div className="text-[10px] text-gray-500">Badges</div>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-3 text-center">
-          <div className="text-xl font-bold text-red-500">{stats?.current_streak || 0}🔥</div>
-          <div className="text-[10px] text-gray-500">Streak</div>
-        </div>
-      </div>
+      <dl className="grid grid-cols-2 gap-2 mb-6 sm:grid-cols-4">
+        <StatTile label="Hunts" value={stats?.hunts_completed || 0} />
+        <StatTile label="Total Score" value={stats?.total_score || 0} />
+        <StatTile label="Badges" value={stats?.badges_earned || 0} />
+        <StatTile
+          label="Streak"
+          value={stats?.current_streak || 0}
+          icon={<Flame className="w-5 h-5 text-brand-dark" aria-hidden="true" />}
+        />
+      </dl>
 
       {/* Real name (optional — who can see it is controlled in Privacy Settings) */}
-      <div className="rounded-lg border border-gray-200 bg-white p-3 mb-6">
-        <label htmlFor="realName" className="block text-sm font-medium text-gray-900 mb-1">
-          Real name <span className="font-normal text-gray-400">(optional)</span>
+      <section className="rounded-xl border border-themed-border bg-surface p-4 mb-6 shadow-[var(--shadow-card)]">
+        <label htmlFor="realName" className="block font-[family-name:var(--font-display)] text-base font-semibold text-themed-text mb-1">
+          Real name <span className="font-[family-name:var(--font-body)] text-sm font-normal text-themed-muted">(optional)</span>
         </label>
-        <p className="text-xs text-gray-500 mb-2">
+        <p className="text-sm text-themed-muted mb-3">
           Shown to others only if you allow it in{" "}
-          <Link href="/settings/privacy" className="text-sky-600 hover:underline">
+          <Link href="/settings/privacy" className="font-medium text-link hover:text-link-dark underline">
             privacy settings
           </Link>
           .
         </p>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <input
             id="realName"
             type="text"
@@ -118,49 +114,52 @@ export default function ProfilePage() {
             onChange={(e) => setRealName(e.target.value)}
             maxLength={120}
             placeholder="First and last name"
-            className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:bg-white focus:border-sky-300 focus:outline-none"
+            className="min-h-11 min-w-0 flex-1 basis-48 rounded-lg border border-themed-border bg-themed-bg px-3 py-2 text-base text-themed-text focus:bg-surface focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           />
           <button
             onClick={handleSaveRealName}
             disabled={savingName || realName.trim() === savedRealName}
-            className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-40 transition"
+            className="min-h-11 shrink-0 rounded-lg bg-brand px-5 text-base font-semibold text-white transition-colors hover:bg-brand-dark disabled:opacity-40"
           >
             {savingName ? "Saving..." : "Save"}
           </button>
         </div>
-      </div>
+      </section>
 
       {/* Quick links */}
-      <div className="space-y-2">
-        <Link href="/dashboard/assessment" className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2.5 hover:border-sky-200 transition">
-          <div>
-            <p className="text-sm font-medium text-gray-900">Personality Assessment</p>
-            <p className="text-[11px] text-gray-500">Big 5 + Growth Mindset</p>
-          </div>
-          <span className="text-gray-300">→</span>
-        </Link>
-        <Link href="/dashboard/badges" className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2.5 hover:border-sky-200 transition">
-          <div>
-            <p className="text-sm font-medium text-gray-900">My Badges</p>
-            <p className="text-[11px] text-gray-500">View achievements</p>
-          </div>
-          <span className="text-gray-300">→</span>
-        </Link>
-        <Link href="/settings" className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2.5 hover:border-sky-200 transition">
-          <div>
-            <p className="text-sm font-medium text-gray-900">Account Settings</p>
-            <p className="text-[11px] text-gray-500">Name, email, password</p>
-          </div>
-          <span className="text-gray-300">→</span>
-        </Link>
-        <Link href="/settings/privacy" className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2.5 hover:border-sky-200 transition">
-          <div>
-            <p className="text-sm font-medium text-gray-900">Privacy Settings</p>
-            <p className="text-[11px] text-gray-500">Control who sees your information</p>
-          </div>
-          <span className="text-gray-300">→</span>
-        </Link>
-      </div>
+      <nav aria-label="Profile shortcuts" className="space-y-2">
+        <QuickLink href="/dashboard/assessment" title="Personality Assessment" description="Big 5 + Growth Mindset" />
+        <QuickLink href="/dashboard/badges" title="My Badges" description="View achievements" />
+        <QuickLink href="/settings" title="Account Settings" description="Name, email, password" />
+        <QuickLink href="/settings/privacy" title="Privacy Settings" description="Control who sees your information" />
+      </nav>
     </main>
+  );
+}
+
+function StatTile({ label, value, icon }: { label: string; value: number; icon?: React.ReactNode }) {
+  return (
+    <div className="flex flex-col-reverse rounded-xl border border-themed-border bg-surface px-3 py-2.5 text-center">
+      <dt className="text-sm text-themed-muted">{label}</dt>
+      <dd className="flex items-center justify-center gap-1 font-[family-name:var(--font-display)] text-2xl font-bold tabular-nums text-themed-text">
+        {value}
+        {icon}
+      </dd>
+    </div>
+  );
+}
+
+function QuickLink({ href, title, description }: { href: string; title: string; description: string }) {
+  return (
+    <Link
+      href={href}
+      className="group flex min-h-14 items-center justify-between gap-3 rounded-xl border border-themed-border bg-surface px-4 py-3 transition-colors hover:border-secondary/40 hover:bg-themed-bg"
+    >
+      <span className="min-w-0">
+        <span className="block font-[family-name:var(--font-display)] text-base font-semibold text-themed-text">{title}</span>
+        <span className="block text-sm text-themed-muted">{description}</span>
+      </span>
+      <ChevronRight className="w-5 h-5 shrink-0 text-themed-muted transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+    </Link>
   );
 }

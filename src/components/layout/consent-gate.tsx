@@ -81,7 +81,7 @@ export default function ConsentGate() {
       <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
         <div className="p-6">
           <div className="flex items-center gap-2 mb-3">
-            <ShieldCheck className="w-6 h-6 text-brand" />
+            <ShieldCheck aria-hidden="true" className="w-6 h-6 text-brand" />
             <h2 id="consent-title" className="text-lg font-bold text-gray-900">
               Research participation
             </h2>
@@ -115,25 +115,25 @@ export default function ConsentGate() {
             <input
               value={signature}
               onChange={(e) => setSignature(e.target.value)}
-              className="mt-1 block w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
+              className="mt-1 block min-h-11 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
               placeholder="Your name"
             />
           </label>
 
-          {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+          {error && <p role="alert" className="mt-3 text-sm text-red-600">{error}</p>}
 
           <div className="mt-5 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <button
               onClick={() => decide(false)}
               disabled={submitting}
-              className="rounded-xl border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              className="min-h-11 rounded-xl border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
             >
               I do not consent
             </button>
             <button
               onClick={() => decide(true)}
               disabled={submitting}
-              className="rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark disabled:opacity-50"
+              className="min-h-11 rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark disabled:opacity-50"
             >
               {submitting ? "Saving..." : "I consent"}
             </button>

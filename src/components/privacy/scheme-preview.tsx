@@ -133,7 +133,7 @@ export default function SchemePreview({ seed, canChoose, submitting, error, getS
               </div>
 
               <div className="mt-2" role="radiogroup" aria-label={`How useful would "${copy.title}" be for you?`}>
-                <p className="text-[11px] text-gray-500 mb-1">How useful would these controls be for you?</p>
+                <p className="text-xs text-gray-500 mb-1">How useful would these controls be for you?</p>
                 <div className="flex gap-1">
                   {RATINGS.map((v) => (
                     <label key={v} className="flex-1">
@@ -145,20 +145,20 @@ export default function SchemePreview({ seed, canChoose, submitting, error, getS
                         onChange={() => setRatings((prev) => ({ ...prev, [s]: v }))}
                         className="peer sr-only"
                       />
-                      <span className="block cursor-pointer rounded border border-gray-200 bg-gray-50 py-1 text-center text-xs text-gray-700 transition hover:bg-gray-100 peer-checked:border-sky-300 peer-checked:bg-sky-100 peer-checked:text-sky-800 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-300">
+                      <span className="flex min-h-11 items-center justify-center cursor-pointer rounded border border-gray-200 bg-gray-50 py-1 text-center text-xs text-gray-700 transition hover:bg-gray-100 peer-checked:border-sky-300 peer-checked:bg-sky-100 peer-checked:text-sky-800 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-300">
                         {v}
                       </span>
                     </label>
                   ))}
                 </div>
-                <div className="mt-0.5 flex justify-between text-[10px] text-gray-500">
+                <div className="mt-0.5 flex justify-between gap-2 text-xs text-gray-500">
                   <span>Not at all useful</span>
                   <span>Extremely useful</span>
                 </div>
               </div>
 
               {canChoose && (
-                <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs font-medium text-gray-800">
+                <label className="mt-2 flex min-h-11 cursor-pointer items-center gap-2 text-xs font-medium text-gray-800">
                   <input
                     type="radio"
                     name="scheme-pick"
@@ -183,7 +183,7 @@ export default function SchemePreview({ seed, canChoose, submitting, error, getS
         type="button"
         onClick={submit}
         disabled={!ready}
-        className="mt-3 bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors px-6 py-2 text-sm font-medium disabled:opacity-50"
+        className="mt-3 min-h-11 bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors px-6 py-2 text-sm font-medium disabled:opacity-50"
       >
         {submitting ? "Saving..." : canChoose ? "Use the controls I picked" : "Continue"}
       </button>
