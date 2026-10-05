@@ -9,7 +9,7 @@ import {
   resolveReferralSwitches,
 } from "@/lib/services/referral";
 import { trackEvent } from "@/lib/utils/track-event";
-import { filterProfileForViewer } from "@/lib/utils/privacy";
+import { filterProfileForViewer, type ViewerRelationship } from "@/lib/utils/privacy";
 import { getViewerRelationships } from "@/lib/utils/viewer";
 
 type EmbeddedUser = {
@@ -24,6 +24,12 @@ type EmbeddedUser = {
 function asUser(embed: unknown): EmbeddedUser | null {
   const v = Array.isArray(embed) ? embed[0] : embed;
   return (v ?? null) as EmbeddedUser | null;
+}
+
+// A counterpart's id plus only the name/avatar this viewer may see.
+function presentUser(u: EmbeddedUser | null, rel: ViewerRelationship) {
+  if (!u?.id) return null;
+  return { id: u.id, ...filterProfileForViewer(u, rel) };
 }
 
 // GET: my referral code, my minions, my recruiter, points earned, and a recent
@@ -57,11 +63,7 @@ export async function GET(request: NextRequest) {
     ].filter((id): id is string => Boolean(id));
     const rels = await getViewerRelationships(user.id, counterpartIds);
 
-    const present = (u: EmbeddedUser | null) => {
-      if (!u?.id) return null;
-      const rel = rels.get(u.id) ?? "public";
-      return { id: u.id, ...filterProfileForViewer(u, rel) };
-    };
+    const present = (u: EmbeddedUser | null) => presentUser(u, (u?.id && rels.get(u.id)) || "public");
 
     const minions = (minionRows || []).map((r) => ({
       created_at: r.created_at,
@@ -155,7 +157,25 @@ export async function POST(request: NextRequest) {
       throw new ApiError(status, result.reason || "Could not redeem code");
     }
 
-    return Response.json({ ok: true, recruiter_id: result.recruiterId }, { status: 201 });
+    // Hand back the recruiter in the same privacy-filtered shape GET uses, so
+    // the page can show "Recruited by" without a second GET (which would log
+    // another forfeit-notice exposure).
+    let recruiter: { created_at: string; user: ReturnType<typeof presentUser> } | null = null;
+    if (result.recruiterId) {
+      const supabase = await createSupabaseServiceClient();
+      const { data: recruiterRow } = await supabase
+        .from("users")
+        .select("id, display_name, avatar_url, profile_visibility")
+        .eq("id", result.recruiterId)
+        .maybeSingle();
+      const rels = await getViewerRelationships(user.id, [result.recruiterId]);
+      recruiter = {
+        created_at: new Date().toISOString(),
+        user: presentUser(recruiterRow as EmbeddedUser | null, rels.get(result.recruiterId) ?? "public"),
+      };
+    }
+
+    return Response.json({ ok: true, recruiter_id: result.recruiterId, recruiter }, { status: 201 });
   } catch (error) {
     return errorResponse(error);
   }

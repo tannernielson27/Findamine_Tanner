@@ -3,9 +3,14 @@ import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { generalLimiter } from "@/lib/utils/rate-limit";
 import { resolveLeaderboardVisibility } from "@/lib/utils/leaderboard-visibility";
+import { standingAmong, type ServerMe } from "@/lib/social/standing";
 
 // Roles whose names are never shown publicly on leaderboards
 const PROTECTED_ROLES = ["child", "teen"];
+
+// How many ranked players the overall board scans to place the caller when
+// they sit below the visible top-N. Beyond this, the reported rank is a floor.
+const STANDING_SCAN_LIMIT = 1000;
 
 interface LeaderboardUser {
   id: string;
@@ -19,18 +24,26 @@ interface LeaderboardUser {
  * Redact display info for protected users based on the hunt's identity_mode.
  * - codename_assigned / codename_chosen: always show codename
  * - real_name: show real name for adults, initials for children/teens
+ * - nameAllowed false (the player restricted display_name from this viewer)
+ *   and no codename to fall back on: "Anonymous", never the real name
+ *
+ * `named` is true only when the row shows the player's own display name, i.e.
+ * the board already tells this viewer who they are.
  */
 function redactEntry(
   user: LeaderboardUser | null,
   codename: string | null,
-  identityMode: string
-) {
-  if (!user) return { display_name: "Anonymous", avatar_url: null };
+  identityMode: string,
+  nameAllowed: boolean
+): { display_name: string | null; avatar_url: string | null; named: boolean } {
+  if (!user) return { display_name: "Anonymous", avatar_url: null, named: false };
 
   // If hunt uses codenames, always show the codename
   if (identityMode !== "real_name" && codename) {
-    return { display_name: codename, avatar_url: null };
+    return { display_name: codename, avatar_url: null, named: false };
   }
+
+  if (!nameAllowed) return { display_name: "Anonymous", avatar_url: null, named: false };
 
   // real_name mode: protect children/teens with initials
   if (PROTECTED_ROLES.includes(user.role)) {
@@ -39,10 +52,21 @@ function redactEntry(
       .map((w: string) => w[0])
       .join("")
       .toUpperCase();
-    return { display_name: initials || "?", avatar_url: null };
+    return { display_name: initials || "?", avatar_url: null, named: false };
   }
 
-  return { display_name: user.display_name, avatar_url: user.avatar_url };
+  return { display_name: user.display_name, avatar_url: user.avatar_url, named: Boolean(user.display_name) };
+}
+
+/** A row of the overall_leaderboard() SQL function (migration 010). */
+interface OverallRow {
+  user_id: string;
+  total_score: number;
+  hunts_completed: number;
+  display_name: string | null;
+  avatar_url: string | null;
+  role: string;
+  best_codename: string | null;
 }
 
 export async function GET(request: NextRequest) {
@@ -113,30 +137,34 @@ export async function GET(request: NextRequest) {
 
           const codename = row.codename as string | null;
 
-          const nameAllowed =
-            identityMode !== "real_name" ||
-            isHuntOwner ||
-            (vis.nameAllowed.get(row.user_id as string) ?? false);
+          const nameAllowed = isHuntOwner || (vis.nameAllowed.get(row.user_id as string) ?? false);
           const effectiveMode = nameAllowed ? identityMode : "codename_assigned";
 
-          const identity = isHuntOwner
-            ? {
-                display_name: user?.display_name ?? null,
-                avatar_url: user?.avatar_url ?? null,
-                codename,
-              }
-            : redactEntry(user, codename, effectiveMode);
+          if (isHuntOwner) {
+            return {
+              user_id: row.user_id as string,
+              score: row.total_score as number,
+              display_name: user?.display_name ?? null,
+              avatar_url: user?.avatar_url ?? null,
+              codename,
+              profile_linkable: true,
+            };
+          }
 
+          const { named, ...identity } = redactEntry(user, codename, effectiveMode, nameAllowed);
           return {
             user_id: row.user_id as string,
             score: row.total_score as number,
             ...identity,
+            // Only rows that already show the player's own name link to their
+            // profile; linking a codename row would unmask the codename.
+            profile_linkable: named,
           };
         });
 
       // Viewer's own standing — precise even when outside the visible top-N.
       // Self data, so no name-redaction applies. Motivation surface (B5).
-      let me: { rank: number; score: number; gap_to_next: number | null } | null = null;
+      let me: ServerMe | null = null;
       if (currentUser) {
         const { data: mySession } = await supabase
           .from("play_sessions")
@@ -181,54 +209,77 @@ export async function GET(request: NextRequest) {
     }
 
     // Overall leaderboard: aggregated per user via RPC, always protect children.
-    const { data } = await supabase.rpc("overall_leaderboard", {
-      p_limit: limit,
+    // For a signed-in caller the scan goes deeper than the visible page so their
+    // own standing is known even when they sit below the top-N.
+    const { data: ranked } = await supabase.rpc("overall_leaderboard", {
+      p_limit: currentUser ? Math.max(limit, STANDING_SCAN_LIMIT) : limit,
     });
+    const rankedRows = (ranked || []) as OverallRow[];
+    const data = rankedRows.slice(0, limit);
 
-    // Omit users who restricted total_score from viewers who can't see it.
-    // (Names here are already codenames/initials via redactEntry.)
+    // Omit users who restricted total_score from viewers who can't see it, and
+    // redact a restricted display_name that has no codename to stand in for it.
     const overallVis = await resolveLeaderboardVisibility(
       currentUser?.id ?? null,
-      (data || []).map((r: { user_id: string }) => r.user_id)
+      data.map((r) => r.user_id)
     );
 
-    const entries = (data || [])
-      .filter((row: { user_id: string }) => !overallVis.drop.has(row.user_id))
-      .map(
-        (row: {
-          user_id: string;
-          total_score: number;
-          hunts_completed: number;
-          display_name: string | null;
-          avatar_url: string | null;
-          role: string;
-          best_codename: string | null;
-        }) => {
-          const user: LeaderboardUser = {
-            id: row.user_id,
-            display_name: row.display_name,
-            avatar_url: row.avatar_url,
-            role: row.role,
-          };
-          const identity = redactEntry(
-            user,
-            row.best_codename,
-            "codename_assigned"
-          );
-          return {
-            user_id: row.user_id,
-            score: row.total_score,
-            hunts_completed: row.hunts_completed,
-            ...identity,
+    const entries = data
+      .filter((row) => !overallVis.drop.has(row.user_id))
+      .map((row) => {
+        const user: LeaderboardUser = {
+          id: row.user_id,
+          display_name: row.display_name,
+          avatar_url: row.avatar_url,
+          role: row.role,
+        };
+        const { named, ...identity } = redactEntry(
+          user,
+          row.best_codename,
+          "codename_assigned",
+          overallVis.nameAllowed.get(row.user_id) ?? false
+        );
+        return {
+          user_id: row.user_id,
+          score: Number(row.total_score),
+          hunts_completed: Number(row.hunts_completed),
+          ...identity,
+          profile_linkable: named,
+        };
+      });
+
+    // Viewer's own standing (self data). null = no completed hunt yet, which the
+    // board shows as "finish a hunt to get on the board".
+    let me: ServerMe | null = null;
+    if (currentUser) {
+      me = standingAmong(
+        rankedRows.map((r) => ({ user_id: r.user_id, score: Number(r.total_score) })),
+        currentUser.id
+      );
+      if (!me && rankedRows.length >= STANDING_SCAN_LIMIT) {
+        // Ranked, but below everyone the scan returned.
+        const { data: own } = await supabase
+          .from("play_sessions")
+          .select("total_score")
+          .eq("user_id", currentUser.id)
+          .eq("status", "completed");
+        if (own && own.length > 0) {
+          const score = own.reduce((sum, s) => sum + ((s.total_score as number) || 0), 0);
+          const floor = Number(rankedRows[rankedRows.length - 1].total_score);
+          me = {
+            rank: rankedRows.length + 1,
+            score,
+            gap_to_next: floor > score ? floor - score : null,
           };
         }
-      );
+      }
+    }
 
     return Response.json({
       entries,
       identity_mode: "codename_assigned",
       viewer_id: currentUser?.id ?? null,
-      me: null, // overall standing is derived client-side from visible entries
+      me,
     });
   } catch (error) {
     return errorResponse(error);

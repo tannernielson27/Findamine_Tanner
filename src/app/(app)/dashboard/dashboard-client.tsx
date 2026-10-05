@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import InsightsPanel from "@/components/hunts/insights-panel";
 import StreakDisplay from "@/components/gamification/streak-display";
 import FeaturedHunts from "@/components/gamification/featured-hunts";
-import { Map, Users, Award, Heart, Compass, ChevronRight, MapPin } from "lucide-react";
+import { Map, Users, Award, Heart, Compass, ChevronRight, MapPin, Trophy, UserRound } from "lucide-react";
 
 interface DashboardUser {
   id: string;
@@ -24,33 +24,55 @@ const GREETINGS = [
   "The trail is calling",
 ];
 
+// Roles POST /api/v1/hunts accepts — everyone else gets "Forbidden" there.
+const HUNT_CREATOR_ROLES = ["teacher", "hunt_creator", "admin", "researcher"];
+
+/** A list length from a JSON endpoint, or 0 when it fails. */
+async function countOf(url: string, key: string): Promise<number> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return 0;
+    const list = (await res.json())[key];
+    return Array.isArray(list) ? list.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Total points (the points_ledger sum, same figure the profile shows). */
+async function fetchTotalPoints(): Promise<number> {
+  try {
+    const res = await fetch("/api/v1/gamification/me");
+    if (!res.ok) return 0;
+    const points = (await res.json()).total_points;
+    return typeof points === "number" ? points : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export default function DashboardClient({ user }: { user: DashboardUser }) {
-  const [counts, setCounts] = useState({ hunts: 0, teams: 0, badges: 0 });
+  const [counts, setCounts] = useState({ hunts: 0, teams: 0, badges: 0, friends: 0, points: 0 });
+  const canCreateHunts = HUNT_CREATOR_ROLES.includes(user.role);
   // Rotate by day, not Math.random: a random pick differs between the server
   // render and hydration.
   const greeting = GREETINGS[new Date().getDate() % GREETINGS.length];
 
   useEffect(() => {
-    async function loadCounts() {
-      try {
-        const [huntsRes, badgesRes] = await Promise.all([
-          fetch("/api/v1/hunts?mine=true"),
-          fetch("/api/v1/badges?mine=true"),
-        ]);
-        const huntsData = huntsRes.ok ? await huntsRes.json() : { hunts: [] };
-        const badgesData = badgesRes.ok ? await badgesRes.json() : { badges: [] };
-
-        setCounts({
-          hunts: (huntsData.hunts || []).length,
-          teams: 0,
-          badges: (badgesData.badges || []).length,
-        });
-      } catch {
-        // Keep defaults on error
-      }
-    }
-    loadCounts();
-  }, []);
+    let cancelled = false;
+    Promise.all([
+      canCreateHunts ? countOf("/api/v1/hunts?mine=true", "hunts") : Promise.resolve(0),
+      countOf("/api/v1/teams?mine=true", "teams"),
+      countOf("/api/v1/badges?mine=true", "badges"),
+      countOf("/api/v1/social/friends", "friends"),
+      fetchTotalPoints(),
+    ]).then(([hunts, teams, badges, friends, points]) => {
+      if (!cancelled) setCounts({ hunts, teams, badges, friends, points });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [canCreateHunts]);
 
   return (
     <main>
@@ -97,10 +119,14 @@ export default function DashboardClient({ user }: { user: DashboardUser }) {
 
         {/* Shortcuts */}
         <nav aria-label="Your stuff" className="grid gap-3 sm:grid-cols-2">
-          <DashboardCard title="My Hunts" description="Create and manage hunts" count={counts.hunts} href="/dashboard/hunts" icon={Map} />
+          <DashboardCard title="My Profile" description="Your stats and total points" count={counts.points} countLabel="pts" href="/dashboard/profile" icon={UserRound} />
+          <DashboardCard title="Leaderboard" description="See where you stand" href="/leaderboard" icon={Trophy} />
+          {canCreateHunts && (
+            <DashboardCard title="My Hunts" description="Create and manage hunts" count={counts.hunts} href="/dashboard/hunts" icon={Map} />
+          )}
           <DashboardCard title="My Teams" description="View your teams" count={counts.teams} href="/dashboard/teams" icon={Users} />
           <DashboardCard title="Badges" description="Achievements earned" count={counts.badges} href="/dashboard/badges" icon={Award} />
-          <DashboardCard title="Social" description="Friends and kudos" count={0} href="/dashboard/social" icon={Heart} />
+          <DashboardCard title="Social" description="Friends, crew and kudos" count={counts.friends} countLabel={counts.friends === 1 ? "friend" : "friends"} href="/dashboard/social" icon={Heart} />
         </nav>
 
         {/* Hunt creator insights */}
@@ -113,13 +139,17 @@ export default function DashboardClient({ user }: { user: DashboardUser }) {
 function DashboardCard({
   title,
   description,
-  count,
+  count = 0,
+  countLabel,
   href,
   icon: Icon,
 }: {
   title: string;
   description: string;
-  count: number;
+  /** Shown only when above zero. */
+  count?: number;
+  /** Unit for the count when the title alone doesn't say what it measures. */
+  countLabel?: string;
   href: string;
   icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" }>;
 }) {
@@ -138,8 +168,11 @@ function DashboardCard({
         <span className="block text-sm text-themed-muted">{description}</span>
       </span>
       {count > 0 && (
-        <span className="font-[family-name:var(--font-display)] text-xl font-bold tabular-nums text-themed-text">
+        <span className="shrink-0 font-[family-name:var(--font-display)] text-xl font-bold tabular-nums text-themed-text">
           {count}
+          {countLabel && (
+            <span className="ml-1 font-[family-name:var(--font-body)] text-xs font-normal text-themed-muted">{countLabel}</span>
+          )}
         </span>
       )}
       <ChevronRight className="w-5 h-5 shrink-0 text-themed-muted transition-transform group-hover:translate-x-0.5" aria-hidden="true" />

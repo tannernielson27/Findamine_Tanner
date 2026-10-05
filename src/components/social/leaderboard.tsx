@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Medal, Star, Trophy } from "lucide-react";
 import {
+  competitionRanks,
   summarizeViewerStanding,
   standingCaption,
   type ServerMe,
@@ -16,35 +18,48 @@ interface LeaderboardEntry {
   avatar_url: string | null;
   codename?: string | null;
   hunts_completed?: number;
+  /** Set by the API only when the row already shows the player's own name. */
+  profile_linkable?: boolean;
 }
 
 interface LeaderboardProps {
   huntId?: string;
 }
 
+interface Board {
+  entries: LeaderboardEntry[];
+  viewerId: string | null;
+  me: ServerMe | null;
+}
+
+/** One fetch of the board; null when the request fails (keep what's on screen). */
+async function loadBoard(huntId: string | undefined): Promise<Board | null> {
+  try {
+    const params = huntId ? `?hunt_id=${encodeURIComponent(huntId)}` : "";
+    const res = await fetch(`/api/v1/leaderboard${params}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return { entries: data.entries || [], viewerId: data.viewer_id ?? null, me: data.me ?? null };
+  } catch {
+    return null;
+  }
+}
+
 export default function Leaderboard({ huntId }: LeaderboardProps) {
-  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+  const [board, setBoard] = useState<Board | null>(null);
   const [loading, setLoading] = useState(true);
-  const [identityMode, setIdentityMode] = useState("codename_assigned");
-  const [viewerId, setViewerId] = useState<string | null>(null);
-  const [serverMe, setServerMe] = useState<ServerMe | null>(null);
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  async function fetchLeaderboard() {
-    const params = huntId ? `?hunt_id=${huntId}` : "";
-    const res = await fetch(`/api/v1/leaderboard${params}`);
-    if (res.ok) {
-      const data = await res.json();
-      setEntries(data.entries || []);
-      if (data.identity_mode) setIdentityMode(data.identity_mode);
-      setViewerId(data.viewer_id ?? null);
-      setServerMe(data.me ?? null);
-    }
-    setLoading(false);
-  }
-
   useEffect(() => {
-    fetchLeaderboard();
+    let cancelled = false;
+    loadBoard(huntId).then((next) => {
+      if (cancelled) return;
+      if (next) setBoard(next);
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [huntId]);
 
   useEffect(() => {
@@ -66,7 +81,9 @@ export default function Leaderboard({ huntId }: LeaderboardProps) {
             if (refetchTimer.current) clearTimeout(refetchTimer.current);
             refetchTimer.current = setTimeout(() => {
               refetchTimer.current = null;
-              fetchLeaderboard();
+              loadBoard(huntId).then((next) => {
+                if (next) setBoard(next);
+              });
             }, 3000);
           }
         }
@@ -89,20 +106,33 @@ export default function Leaderboard({ huntId }: LeaderboardProps) {
     "from-orange-50 to-transparent",
   ];
 
-  const { standing, pinned } = summarizeViewerStanding(entries, viewerId, serverMe);
+  const entries = board?.entries ?? [];
+  const viewerId = board?.viewerId ?? null;
+  const ranks = competitionRanks(entries);
+  const { standing, pinned } = summarizeViewerStanding(entries, viewerId, board?.me);
   const caption = standingCaption(standing);
+  // Signed in, board has scores, but none of them are the viewer's.
+  const unranked = viewerId != null && !standing && entries.length > 0;
 
   return (
     <div className="rounded-xl border border-themed-border bg-surface shadow-[var(--shadow-card)] overflow-hidden">
-      <div className="border-b border-themed-border px-4 py-3 flex items-center justify-between gap-3">
-        <h3 className="font-[family-name:var(--font-display)] text-lg font-semibold text-themed-text flex items-center gap-2 text-balance">
-          <Trophy className="w-5 h-5 text-brand-dark" aria-hidden="true" />
-          {huntId ? "Hunt Leaderboard" : "Leaderboard"}
-        </h3>
-        <span className="text-sm text-secondary flex items-center gap-1.5 font-medium">
-          <span className="w-2 h-2 rounded-full bg-secondary motion-safe:animate-pulse" aria-hidden="true" />
-          Live
-        </span>
+      <div className="border-b border-themed-border px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="font-[family-name:var(--font-display)] text-lg font-semibold text-themed-text flex items-center gap-2 text-balance">
+            <Trophy className="w-5 h-5 text-brand-dark" aria-hidden="true" />
+            {huntId ? "Hunt Leaderboard" : "Leaderboard"}
+          </h3>
+          <span className="text-sm text-secondary flex items-center gap-1.5 font-medium">
+            <span className="w-2 h-2 rounded-full bg-secondary motion-safe:animate-pulse" aria-hidden="true" />
+            Live
+          </span>
+        </div>
+        {!huntId && (
+          <p className="mt-1 text-sm text-themed-muted">
+            Ranked by hunt score: points from hunts you&apos;ve finished. Bonuses and hunts still
+            in progress count toward the total points on your profile, not here.
+          </p>
+        )}
       </div>
 
       {loading ? (
@@ -125,26 +155,28 @@ export default function Leaderboard({ huntId }: LeaderboardProps) {
         <ol className="divide-y divide-themed-border">
           {entries.map((entry, i) => {
             const isViewer = viewerId != null && entry.user_id === viewerId;
+            const rank = ranks[i];
+            const name = entry.display_name || "Anonymous";
             return (
               <li
                 key={entry.user_id}
                 className={`flex min-h-14 items-center gap-3 px-4 py-2.5 transition-colors ${
                   isViewer
                     ? "bg-brand-light/40 ring-1 ring-inset ring-brand/40"
-                    : i < 3
-                    ? `bg-gradient-to-r ${podiumColors[i]}`
+                    : rank <= 3
+                    ? `bg-gradient-to-r ${podiumColors[rank - 1]}`
                     : ""
                 }`}
               >
                 {/* Rank */}
                 <div className="w-7 text-center shrink-0">
-                  {i < 3 ? (
+                  {rank <= 3 ? (
                     <>
-                      <Medal className={`mx-auto w-6 h-6 ${medalTints[i]}`} aria-hidden="true" />
-                      <span className="sr-only">Rank {i + 1}</span>
+                      <Medal className={`mx-auto w-6 h-6 ${medalTints[rank - 1]}`} aria-hidden="true" />
+                      <span className="sr-only">Rank {rank}</span>
                     </>
                   ) : (
-                    <span className="font-[family-name:var(--font-display)] text-base font-bold tabular-nums text-themed-muted">{i + 1}</span>
+                    <span className="font-[family-name:var(--font-display)] text-base font-bold tabular-nums text-themed-muted">{rank}</span>
                   )}
                 </div>
 
@@ -158,9 +190,18 @@ export default function Leaderboard({ huntId }: LeaderboardProps) {
                 {/* Name */}
                 <div className="flex-1 min-w-0">
                   <p className="flex min-w-0 items-center gap-2">
-                    <span className="min-w-0 truncate font-[family-name:var(--font-display)] text-base font-semibold text-themed-text">
-                      {entry.display_name || "Anonymous"}
-                    </span>
+                    {entry.profile_linkable && !isViewer ? (
+                      <Link
+                        href={`/profile/${entry.user_id}`}
+                        className="min-w-0 truncate font-[family-name:var(--font-display)] text-base font-semibold text-themed-text underline-offset-2 hover:text-link hover:underline"
+                      >
+                        {name}
+                      </Link>
+                    ) : (
+                      <span className="min-w-0 truncate font-[family-name:var(--font-display)] text-base font-semibold text-themed-text">
+                        {name}
+                      </span>
+                    )}
                     {isViewer && (
                       <span className="shrink-0 rounded-full bg-brand-dark px-2 py-0.5 text-xs font-bold text-white">You</span>
                     )}
@@ -202,6 +243,22 @@ export default function Leaderboard({ huntId }: LeaderboardProps) {
                 <span className="font-[family-name:var(--font-display)] text-lg font-bold tabular-nums text-themed-text">{standing.score}</span>
                 <span className="text-xs text-themed-muted ml-1">pts</span>
               </div>
+            </li>
+          )}
+
+          {/* Signed in but not ranked: say why, and what gets you on the board */}
+          {unranked && (
+            <li className="flex min-h-14 flex-wrap items-center justify-between gap-2 border-t-2 border-dashed border-brand/30 bg-brand-light/40 px-4 py-2.5">
+              <p className="text-sm font-medium text-themed-text">
+                {huntId
+                  ? "You're not on this board yet. Finish this hunt to get on it."
+                  : "You're not on the board yet. Finish a hunt to get on it."}
+              </p>
+              {!huntId && (
+                <Link href="/browse" className="inline-flex min-h-11 items-center text-sm font-semibold text-link hover:text-link-dark hover:underline">
+                  Browse hunts &rarr;
+                </Link>
+              )}
             </li>
           )}
         </ol>

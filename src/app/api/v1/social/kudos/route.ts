@@ -11,6 +11,42 @@ type EmbeddedUser = {
   profile_visibility?: Record<string, string>;
 };
 
+type KudosRow = {
+  sender_id: string;
+  receiver_id: string;
+  sender?: unknown;
+  receiver?: unknown;
+  [key: string]: unknown;
+};
+
+const KUDOS_SELECT =
+  "*, sender:users!sender_id(id, display_name, avatar_url, profile_visibility), receiver:users!receiver_id(id, display_name, avatar_url, profile_visibility)";
+
+// kudos.message is CHECKed to 200 characters (migration 003).
+const MAX_MESSAGE_LENGTH = 200;
+
+/** Enforce profile-field visibility on the embedded sender/receiver of each row. */
+async function presentKudos(rows: KudosRow[], viewerId: string) {
+  const otherIds = rows.flatMap((r) => {
+    const other = (r.sender_id === viewerId ? r.receiver : r.sender) as EmbeddedUser | null;
+    return other?.id ? [other.id] : [];
+  });
+  const rels = await getViewerRelationships(viewerId, otherIds);
+
+  const applyFilter = (u: EmbeddedUser | null) => {
+    if (!u?.id) return u;
+    const rel = u.id === viewerId ? "self" : rels.get(u.id) ?? "public";
+    return { id: u.id, ...filterProfileForViewer(u, rel) };
+  };
+
+  return rows.map((r) => ({
+    ...r,
+    sender: applyFilter((r.sender ?? null) as EmbeddedUser | null),
+    receiver: applyFilter((r.receiver ?? null) as EmbeddedUser | null),
+  }));
+}
+
+// GET ?type=received (default) | sent | all
 export async function GET(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
@@ -21,34 +57,14 @@ export async function GET(request: NextRequest) {
 
     const supabase = await createSupabaseServiceClient();
 
-    const column = type === "sent" ? "sender_id" : "receiver_id";
-    const { data } = await supabase
-      .from("kudos")
-      .select("*, sender:users!sender_id(id, display_name, avatar_url, profile_visibility), receiver:users!receiver_id(id, display_name, avatar_url, profile_visibility)")
-      .eq(column, user.id)
-      .order("created_at", { ascending: false })
-      .limit(50);
+    const base = supabase.from("kudos").select(KUDOS_SELECT);
+    const scoped =
+      type === "all"
+        ? base.or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+        : base.eq(type === "sent" ? "sender_id" : "receiver_id", user.id);
+    const { data } = await scoped.order("created_at", { ascending: false }).limit(50);
 
-    const rows = data || [];
-
-    // Enforce profile-field visibility on embedded counterpart users.
-    const otherIds = rows.flatMap((r) => {
-      const other = (r.sender_id === user.id ? r.receiver : r.sender) as EmbeddedUser | null;
-      return other?.id ? [other.id] : [];
-    });
-    const rels = await getViewerRelationships(user.id, otherIds);
-
-    const applyFilter = (u: EmbeddedUser | null) => {
-      if (!u?.id) return u;
-      const rel = u.id === user.id ? "self" : rels.get(u.id) ?? "public";
-      return { id: u.id, ...filterProfileForViewer(u, rel) };
-    };
-
-    const kudos = rows.map((r) => ({
-      ...r,
-      sender: applyFilter(r.sender as EmbeddedUser | null),
-      receiver: applyFilter(r.receiver as EmbeddedUser | null),
-    }));
+    const kudos = await presentKudos((data || []) as KudosRow[], user.id);
 
     return Response.json({ kudos });
   } catch (error) {
@@ -62,12 +78,12 @@ export async function POST(request: NextRequest) {
     if (!user) throw new ApiError(401, "Not authenticated");
     blockChildren(user, "kudos");
 
-    const body = await request.json();
-    if (!body.receiver_id || !body.message) {
+    const body = await request.json().catch(() => null);
+    if (!body?.receiver_id || !body?.message) {
       throw new ApiError(400, "receiver_id and message required");
     }
-    if (typeof body.message !== "string" || body.message.length > 1000) {
-      throw new ApiError(400, "Message must be a string of 1000 characters or fewer");
+    if (typeof body.message !== "string" || body.message.length > MAX_MESSAGE_LENGTH) {
+      throw new ApiError(400, `Message must be ${MAX_MESSAGE_LENGTH} characters or fewer`);
     }
     if (body.receiver_id === user.id) {
       throw new ApiError(400, "Cannot send kudos to yourself");
@@ -75,21 +91,31 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createSupabaseServiceClient();
 
+    // Return the row with the same sender/receiver embed the list uses, so the
+    // client can show it straight away.
     const { data, error } = await supabase
       .from("kudos")
       .insert({
         sender_id: user.id,
         receiver_id: body.receiver_id,
         message_type: body.message_type || "custom",
-        message: body.message.slice(0, 1000),
+        message: body.message,
         hunt_id: body.hunt_id || null,
       })
-      .select()
+      .select(KUDOS_SELECT)
       .single();
 
-    if (error) throw new ApiError(500, error.message);
+    if (error) {
+      // 23503 = receiver (or hunt) doesn't exist; 22P02 = not a UUID.
+      if (error.code === "23503" || error.code === "22P02") {
+        throw new ApiError(404, "That player couldn't be found.");
+      }
+      throw new ApiError(500, error.message);
+    }
 
-    return Response.json({ kudos: data }, { status: 201 });
+    const [kudos] = await presentKudos([data as KudosRow], user.id);
+
+    return Response.json({ kudos }, { status: 201 });
   } catch (error) {
     return errorResponse(error);
   }

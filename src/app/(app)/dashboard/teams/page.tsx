@@ -52,7 +52,7 @@ export default function TeamsPage() {
       ) : teams.length === 0 ? (
         <div className="rounded-lg border-2 border-dashed border-gray-200 p-12 text-center text-gray-500">
           <p>You haven&apos;t joined any teams yet.</p>
-          <p className="text-xs mt-1">Join a team hunt from the <Link href="/browse" className="text-brand hover:underline">Browse</Link> page.</p>
+          <p className="text-xs mt-1">Teams are set up by the teacher or organizer running a hunt. Once you&apos;re placed on one, it shows up here.</p>
         </div>
       ) : (
         <div className="space-y-4">

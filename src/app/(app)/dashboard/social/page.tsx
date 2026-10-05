@@ -5,13 +5,14 @@ import Link from "next/link";
 import StreakDisplay from "@/components/gamification/streak-display";
 import { buildKudosRecipients, type RecipientGroup } from "@/lib/social/recipients";
 import { RECRUIT_BONUS, WELCOME_BONUS } from "@/lib/utils/referral-rewards";
-
-interface Friend {
-  id: string;
-  status: string;
-  created_at: string;
-  friend: { id: string; display_name: string | null; avatar_url: string | null } | null;
-}
+import {
+  answerFriendRequest,
+  fetchFriendRows,
+  removeFriendConnection,
+  socialErrorMessage,
+  type FriendActionResult,
+  type FriendRow,
+} from "@/lib/social/friends";
 
 interface Kudos {
   id: string;
@@ -67,8 +68,42 @@ function initial(name: string | null | undefined): string {
   return (name || "?").trim()[0]?.toUpperCase() || "?";
 }
 
+const REDEEM_ERRORS: Record<string, string> = {
+  self_referral: "You can't use your own code.",
+  already_recruited: "You already have a recruiter.",
+  invalid_code: "That code didn't work. Check it and try again.",
+};
+
+const ROW_BUTTON =
+  "inline-flex min-h-11 items-center justify-center rounded-lg border border-themed-border bg-surface px-3 text-sm font-semibold text-themed-text transition-colors hover:bg-themed-bg disabled:opacity-50";
+const ROW_BUTTON_PRIMARY =
+  "inline-flex min-h-11 items-center justify-center rounded-lg bg-brand px-3 text-sm font-semibold text-white transition-colors hover:bg-brand-dark disabled:opacity-50";
+
+/** Avatar + name for one friend row; links to the profile when we know who it is. */
+function FriendIdentity({ person }: { person: FriendRow["friend"] }) {
+  const body = (
+    <>
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary/10 font-[family-name:var(--font-display)] text-sm font-bold text-secondary" aria-hidden="true">
+        {initial(person?.display_name)}
+      </span>
+      <span className="min-w-0 truncate text-base text-themed-text">{person?.display_name || "Player"}</span>
+    </>
+  );
+  return person?.id ? (
+    <Link href={`/profile/${person.id}`} className="flex min-h-11 min-w-0 flex-1 items-center gap-3 hover:underline">
+      {body}
+    </Link>
+  ) : (
+    <span className="flex min-h-11 min-w-0 flex-1 items-center gap-3">{body}</span>
+  );
+}
+
 export default function SocialPage() {
-  const [friends, setFriends] = useState<Friend[]>([]);
+  const [friends, setFriends] = useState<FriendRow[]>([]);
+  const [friendBusy, setFriendBusy] = useState(false);
+  const [friendMsg, setFriendMsg] = useState("");
+  const [kudosError, setKudosError] = useState("");
+  const [shareLink, setShareLink] = useState("");
   const [kudos, setKudos] = useState<Kudos[]>([]);
   const [loading, setLoading] = useState(true);
   const [kudosMessage, setKudosMessage] = useState("");
@@ -81,12 +116,14 @@ export default function SocialPage() {
 
   useEffect(() => {
     async function load() {
-      const [friendsRes, kudosRes, referralRes] = await Promise.all([
-        fetch("/api/v1/social/friends"),
-        fetch("/api/v1/social/kudos"),
+      // Friends: accepted + pending. Kudos: sent as well as received, so a
+      // kudos you just sent is still there after a reload.
+      const [friendRows, kudosRes, referralRes] = await Promise.all([
+        fetchFriendRows(),
+        fetch("/api/v1/social/kudos?type=all"),
         fetch("/api/v1/social/referrals"),
       ]);
-      if (friendsRes.ok) setFriends((await friendsRes.json()).friends || []);
+      if (friendRows) setFriends(friendRows);
       if (kudosRes.ok) setKudos((await kudosRes.json()).kudos || []);
       if (referralRes.ok) setReferral(await referralRes.json());
       setLoading(false);
@@ -102,17 +139,28 @@ export default function SocialPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code: redeemCode.trim() }),
     });
+    const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      setRedeemMsg("You're now connected to your recruiter!");
+      // Show the new recruiter straight away (this also hides the code box).
+      setReferral((prev) => (prev ? { ...prev, recruiter: data.recruiter ?? { created_at: new Date().toISOString(), user: null } } : prev));
+      setRedeemMsg(`You joined a crew: +${WELCOME_BONUS} bonus points added.`);
       setRedeemCode("");
     } else {
-      const err = await res.json().catch(() => ({}));
       setRedeemMsg(
-        err.error === "self_referral" ? "You can't use your own code." :
-        err.error === "already_recruited" ? "You already have a recruiter." :
-        "That code didn't work."
+        REDEEM_ERRORS[data.error as string] ??
+          socialErrorMessage(res.status, null, "Couldn't redeem that code right now. Try again in a moment.")
       );
     }
+  };
+
+  const handleFriendAction = async (action: () => Promise<FriendActionResult>, done: string) => {
+    setFriendBusy(true);
+    setFriendMsg("");
+    const result = await action();
+    const rows = await fetchFriendRows();
+    if (rows) setFriends(rows);
+    setFriendMsg(result.ok ? done : result.message);
+    setFriendBusy(false);
   };
 
   const handleShare = async () => {
@@ -120,39 +168,56 @@ export default function SocialPage() {
     // The register page reads ?ref= and redeems the code at signup.
     const link = `${window.location.origin}/register?ref=${encodeURIComponent(referral.code)}`;
     const text = `Join my crew on findamine! Sign up with my link and you start with ${WELCOME_BONUS} bonus points.`;
+    setShareLink("");
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
         await navigator.share({ title: "Join me on findamine", text, url: link });
         return;
-      } catch {
-        /* user cancelled — fall through to copy */
+      } catch (err) {
+        // Closing the share sheet is a choice, not a failure: copy nothing.
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        /* sharing isn't possible here — fall through to copy */
       }
     }
-    navigator.clipboard?.writeText(link).then(() => {
+    try {
+      if (!navigator.clipboard) throw new Error("clipboard unavailable");
+      await navigator.clipboard.writeText(link);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    }).catch(() => {});
+    } catch {
+      // No share sheet and no clipboard: show the link so it can be copied by hand.
+      setShareLink(link);
+    }
   };
 
   const handleSendKudos = async () => {
     if (!kudosMessage.trim() || !kudosReceiverId || sending) return;
     setSending(true);
-    const res = await fetch("/api/v1/social/kudos", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ receiver_id: kudosReceiverId, message: kudosMessage }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setKudos((prev) => [data.kudos, ...prev]);
-      setKudosMessage("");
-      setKudosReceiverId("");
+    setKudosError("");
+    const fallback = "Couldn't send that kudos. Try again.";
+    try {
+      const res = await fetch("/api/v1/social/kudos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ receiver_id: kudosReceiverId, message: kudosMessage }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.kudos) {
+        setKudos((prev) => [data.kudos, ...prev]);
+        setKudosMessage("");
+        setKudosReceiverId("");
+      } else {
+        setKudosError(socialErrorMessage(res.status, data.error, fallback));
+      }
+    } catch {
+      setKudosError(fallback);
     }
     setSending(false);
   };
 
   const acceptedFriends = friends.filter((f) => f.status === "accepted");
-  const pendingFriends = friends.filter((f) => f.status === "pending");
+  const incomingRequests = friends.filter((f) => f.status === "pending" && f.direction === "incoming");
+  const sentRequests = friends.filter((f) => f.status === "pending" && f.direction === "outgoing");
 
   const recipients = buildKudosRecipients({
     friends: acceptedFriends,
@@ -205,6 +270,17 @@ export default function SocialPage() {
                     </button>
                   </div>
                 )}
+                {shareLink && (
+                  <label className="mt-3 block text-sm text-white/90">
+                    Copy your invite link:
+                    <input
+                      readOnly
+                      value={shareLink}
+                      onFocus={(e) => e.currentTarget.select()}
+                      className="mt-1 block min-h-11 w-full rounded-lg border border-white/40 bg-white/10 px-3 py-2 font-mono text-sm text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    />
+                  </label>
+                )}
               </div>
 
               <div className="flex shrink-0 gap-6">
@@ -223,15 +299,27 @@ export default function SocialPage() {
             {referral && referral.minions.length > 0 && (
               <div className="mt-5 flex flex-wrap items-center gap-2">
                 <div className="flex -space-x-2">
-                  {referral.minions.slice(0, 8).map((m, i) => (
-                    <div
-                      key={m.user?.id ?? i}
-                      title={m.user?.display_name ?? "Crew member"}
-                      className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-brand-dark bg-white/90 text-sm font-bold text-brand-dark"
-                    >
-                      {initial(m.user?.display_name)}
-                    </div>
-                  ))}
+                  {referral.minions.slice(0, 8).map((m, i) =>
+                    m.user?.id ? (
+                      <Link
+                        key={m.user.id}
+                        href={`/profile/${m.user.id}`}
+                        title={m.user.display_name ?? "Crew member"}
+                        aria-label={`${m.user.display_name ?? "Crew member"}'s profile`}
+                        className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-brand-dark bg-white/90 text-sm font-bold text-brand-dark hover:bg-white focus-visible:outline-white"
+                      >
+                        {initial(m.user.display_name)}
+                      </Link>
+                    ) : (
+                      <div
+                        key={i}
+                        title="Crew member"
+                        className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-brand-dark bg-white/90 text-sm font-bold text-brand-dark"
+                      >
+                        {initial(null)}
+                      </div>
+                    )
+                  )}
                 </div>
                 {referral.minion_count > 8 && (
                   <span className="text-sm tabular-nums text-white/90">+{referral.minion_count - 8} more</span>
@@ -240,10 +328,21 @@ export default function SocialPage() {
             )}
 
             {/* Recruited-by */}
-            {referral?.recruiter?.user && (
+            {referral?.recruiter && (
               <p className="mt-4 text-sm text-white/90">
-                Recruited by <span className="font-semibold text-white">{referral.recruiter.user.display_name ?? "your recruiter"}</span> — score well to reward them.
+                Recruited by{" "}
+                {referral.recruiter.user?.id ? (
+                  <Link href={`/profile/${referral.recruiter.user.id}`} className="font-semibold text-white underline underline-offset-2">
+                    {referral.recruiter.user.display_name ?? "your recruiter"}
+                  </Link>
+                ) : (
+                  <span className="font-semibold text-white">your recruiter</span>
+                )}{" "}
+                — score well to reward them.
               </p>
+            )}
+            {referral?.recruiter && redeemMsg && (
+              <p role="status" className="mt-2 text-sm font-medium text-white">{redeemMsg}</p>
             )}
 
             {/* Redeem someone else's code (only meaningful if not yet recruited) */}
@@ -263,7 +362,7 @@ export default function SocialPage() {
                 >
                   Join a crew
                 </button>
-                {redeemMsg && <span className="text-sm text-white">{redeemMsg}</span>}
+                {redeemMsg && <span role="status" className="text-sm text-white">{redeemMsg}</span>}
               </div>
             )}
           </section>
@@ -318,39 +417,92 @@ export default function SocialPage() {
                   Friends (<span className="tabular-nums">{acceptedFriends.length}</span>)
                 </h2>
               </div>
-              {acceptedFriends.length === 0 ? (
-                <p className="p-8 text-center text-base text-themed-muted">No friends yet — add some to send kudos.</p>
-              ) : (
-                <div className="divide-y divide-themed-border">
-                  {acceptedFriends.map((f) =>
-                    f.friend?.id ? (
-                      <Link
-                        key={f.id}
-                        href={`/profile/${f.friend.id}`}
-                        className="flex min-h-14 items-center gap-3 px-4 py-2.5 transition-colors hover:bg-themed-bg"
-                      >
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary/10 font-[family-name:var(--font-display)] text-sm font-bold text-secondary" aria-hidden="true">
-                          {initial(f.friend.display_name)}
-                        </div>
-                        <span className="min-w-0 truncate text-base text-themed-text">{f.friend.display_name || "Player"}</span>
-                      </Link>
-                    ) : (
-                      <div key={f.id} className="flex min-h-14 items-center gap-3 px-4 py-2.5">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary/10 font-[family-name:var(--font-display)] text-sm font-bold text-secondary" aria-hidden="true">
-                          {initial(f.friend?.display_name)}
-                        </div>
-                        <span className="min-w-0 truncate text-base text-themed-text">{f.friend?.display_name || "Player"}</span>
-                      </div>
-                    )
-                  )}
+              {/* Requests waiting on the viewer */}
+              {incomingRequests.length > 0 && (
+                <div className="border-b border-themed-border bg-[var(--color-warning)]/10">
+                  <h3 className="px-4 pt-3 text-sm font-semibold text-themed-text">
+                    Friend requests (<span className="tabular-nums">{incomingRequests.length}</span>)
+                  </h3>
+                  <ul className="divide-y divide-themed-border">
+                    {incomingRequests.map((f) => (
+                      <li key={f.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5">
+                        <FriendIdentity person={f.friend} />
+                        <button
+                          type="button"
+                          disabled={friendBusy}
+                          onClick={() => handleFriendAction(() => answerFriendRequest(f.id, "accepted"), "You're now friends.")}
+                          className={ROW_BUTTON_PRIMARY}
+                        >
+                          Accept
+                        </button>
+                        <button
+                          type="button"
+                          disabled={friendBusy}
+                          onClick={() => handleFriendAction(() => answerFriendRequest(f.id, "declined"), "Request declined.")}
+                          className={ROW_BUTTON}
+                        >
+                          Decline
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
-              {pendingFriends.length > 0 && (
-                <div className="border-t border-themed-border bg-[var(--color-warning)]/10 px-4 py-2.5">
-                  <p className="text-sm font-medium tabular-nums text-[var(--color-warning)]">
-                    {pendingFriends.length} pending request{pendingFriends.length > 1 ? "s" : ""}
-                  </p>
+
+              {acceptedFriends.length === 0 ? (
+                <p className="p-8 text-center text-base text-themed-muted">
+                  No friends yet. Open a player&apos;s name on the{" "}
+                  <Link href="/leaderboard" className="font-medium text-link hover:text-link-dark underline">leaderboard</Link>,
+                  in team chat or in your crew, then choose Add friend.
+                </p>
+              ) : (
+                <ul className="divide-y divide-themed-border">
+                  {acceptedFriends.map((f) => (
+                    <li key={f.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5">
+                      <FriendIdentity person={f.friend} />
+                      <button
+                        type="button"
+                        disabled={friendBusy}
+                        onClick={() => {
+                          if (window.confirm("Remove this friend?")) {
+                            handleFriendAction(() => removeFriendConnection(f.id), "Friend removed.");
+                          }
+                        }}
+                        className={ROW_BUTTON}
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {/* Requests the viewer sent that haven't been answered */}
+              {sentRequests.length > 0 && (
+                <div className="border-t border-themed-border">
+                  <h3 className="px-4 pt-3 text-sm font-semibold text-themed-text">Requests you sent</h3>
+                  <ul className="divide-y divide-themed-border">
+                    {sentRequests.map((f) => (
+                      <li key={f.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5">
+                        <FriendIdentity person={f.friend} />
+                        <button
+                          type="button"
+                          disabled={friendBusy}
+                          onClick={() => handleFriendAction(() => removeFriendConnection(f.id), "Request cancelled.")}
+                          className={ROW_BUTTON}
+                        >
+                          Cancel
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
+              )}
+
+              {friendMsg && (
+                <p role="status" className="border-t border-themed-border px-4 py-2.5 text-sm text-themed-muted">
+                  {friendMsg}
+                </p>
               )}
             </section>
 
@@ -399,6 +551,9 @@ export default function SocialPage() {
                       Send
                     </button>
                   </div>
+                  {kudosError && (
+                    <p role="alert" className="text-sm font-medium text-[var(--color-error)]">{kudosError}</p>
+                  )}
                 </div>
               )}
 

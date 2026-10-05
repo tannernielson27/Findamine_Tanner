@@ -15,11 +15,12 @@ interface ProfileData {
   metadata?: { real_name?: string | null };
 }
 
+/** The fields of GET /api/v1/gamification/me this page shows. */
 interface Stats {
   hunts_completed: number;
-  total_score: number;
+  total_points: number;
   badges_earned: number;
-  current_streak: number;
+  streak: { current_streak: number } | null;
 }
 
 export default function ProfilePage() {
@@ -84,12 +85,12 @@ export default function ProfilePage() {
 
       {/* Stats grid */}
       <dl className="grid grid-cols-2 gap-2 mb-6 sm:grid-cols-4">
-        <StatTile label="Hunts" value={stats?.hunts_completed || 0} />
-        <StatTile label="Total Score" value={stats?.total_score || 0} />
+        <StatTile label="Hunts finished" value={stats?.hunts_completed || 0} />
+        <StatTile label="Total points" value={stats?.total_points || 0} />
         <StatTile label="Badges" value={stats?.badges_earned || 0} />
         <StatTile
           label="Streak"
-          value={stats?.current_streak || 0}
+          value={stats?.streak?.current_streak || 0}
           icon={<Flame className="w-5 h-5 text-brand-dark" aria-hidden="true" />}
         />
       </dl>
@@ -128,6 +129,8 @@ export default function ProfilePage() {
 
       {/* Quick links */}
       <nav aria-label="Profile shortcuts" className="space-y-2">
+        <QuickLink href={`/profile/${profile.id}`} title="Your player page" description="The page other players open, limited by your privacy settings" />
+        <QuickLink href="/leaderboard" title="Leaderboard" description="Ranked by hunt score from finished hunts" />
         <QuickLink href="/dashboard/assessment" title="Personality Assessment" description="Big 5 + Growth Mindset" />
         <QuickLink href="/dashboard/badges" title="My Badges" description="View achievements" />
         <QuickLink href="/settings" title="Account Settings" description="Name, email, password" />
