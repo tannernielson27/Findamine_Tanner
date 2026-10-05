@@ -1,4 +1,4 @@
-import Link from "next/link";
+import SignOutButton from "@/app/login/sign-out-button";
 
 export default function ConsentPendingPage() {
   return (
@@ -18,12 +18,14 @@ export default function ConsentPendingPage() {
             <li>Then you can start playing hunts!</li>
           </ul>
         </div>
-        <Link
-          href="/login"
-          className="inline-block text-sm text-sky-600 hover:underline"
-        >
-          Back to sign in
-        </Link>
+        {/* Signing out (not a plain link) because a signed-in visitor to
+            /login is sent straight back here. */}
+        <div>
+          <SignOutButton
+            label="Sign out or use a different account"
+            className="inline-block text-sm text-sky-600 hover:underline disabled:opacity-50"
+          />
+        </div>
       </div>
     </main>
   );

@@ -2,7 +2,8 @@ import { NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { ApiError } from "@/lib/utils/api-auth";
-import { authLimiter } from "@/lib/utils/rate-limit";
+import { emailRateLimitKey, loginEmailLimiter, loginIpLimiter } from "@/lib/utils/rate-limit";
+import { normalizeEmail } from "@/lib/utils/registration";
 import { withLogging } from "@/lib/utils/with-logging";
 import { botGuard } from "@/lib/utils/bot-guard";
 import { trackEvent } from "@/lib/utils/track-event";
@@ -12,13 +13,16 @@ export const POST = withLogging("POST /api/v1/auth/login", async (request: NextR
   const blocked = await botGuard(request);
   if (blocked) return blocked;
 
-  await authLimiter.check(request);
+  await loginIpLimiter.check(request);
   const body = await request.json();
-  const { email, password } = body;
+  const { password } = body;
+  const email = normalizeEmail(body.email);
 
   if (!email || !password) {
     throw new ApiError(400, "Email and password are required");
   }
+  // Password guessing is limited per account, not per (shared) IP.
+  await loginEmailLimiter.checkKey(emailRateLimitKey(email));
 
   const isMobile = request.headers.get("x-client-type") === "mobile";
 

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { NETWORK_ERROR_MESSAGE, describePasswordUpdateError } from "@/app/login/auth-client";
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -16,18 +17,31 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<LinkStatus>("checking");
   const router = useRouter();
+  // The one-time token from the emailed link. It is exchanged for a session
+  // only when the form is submitted, so a mail scanner that merely opens the
+  // link cannot use it up before the person gets here.
+  const pendingToken = useRef<string | null>(null);
 
   useEffect(() => {
+    const tokenHash = new URLSearchParams(window.location.search).get("token_hash");
+    pendingToken.current = tokenHash;
+
     const supabase = createSupabaseBrowserClient();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === "PASSWORD_RECOVERY") {
         setStatus("ready");
       }
     });
-    // Emailed reset links go through /api/auth/confirm, which has already
-    // exchanged the token for a session cookie by the time we land here.
-    supabase.auth.getUser().then(({ data }) => {
-      setStatus((current) => (current === "ready" || data.user ? "ready" : "invalid"));
+    // With a token in the URL the form can be shown straight away (the token
+    // is checked on submit). Without one, only an existing session can proceed.
+    const canProceed: Promise<boolean> = tokenHash
+      ? Promise.resolve(true)
+      : supabase.auth
+          .getUser()
+          .then(({ data }) => Boolean(data.user))
+          .catch(() => false);
+    canProceed.then((allowed) => {
+      setStatus((current) => (current === "ready" || allowed ? "ready" : "invalid"));
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -48,16 +62,48 @@ export default function ResetPasswordPage() {
 
     setLoading(true);
 
-    const supabase = createSupabaseBrowserClient();
-    const { error } = await supabase.auth.updateUser({ password });
+    try {
+      const supabase = createSupabaseBrowserClient();
 
-    if (error) {
-      setError(error.message);
+      if (pendingToken.current) {
+        const { error: verifyError } = await supabase.auth.verifyOtp({
+          token_hash: pendingToken.current,
+          type: "recovery",
+        });
+        if (verifyError) {
+          const status = verifyError.status ?? 0;
+          const transient =
+            verifyError.name === "AuthRetryableFetchError" || status === 0 || status === 429 || status >= 500;
+          if (transient) {
+            // The token may still be good: let them try again.
+            setError(describePasswordUpdateError(verifyError));
+          } else {
+            // Used or expired: show the "send a new link" screen.
+            setStatus("invalid");
+          }
+          setLoading(false);
+          return;
+        }
+        // Spent. A retry (e.g. after a rejected password) reuses the session.
+        pendingToken.current = null;
+        window.history.replaceState(null, "", "/reset-password");
+      }
+
+      const { error } = await supabase.auth.updateUser({ password });
+
+      if (error) {
+        setError(describePasswordUpdateError(error));
+        setLoading(false);
+        return;
+      }
+    } catch {
+      setError(NETWORK_ERROR_MESSAGE);
       setLoading(false);
       return;
     }
 
     router.push("/dashboard");
+    router.refresh();
   }
 
   if (status === "checking") {
@@ -73,7 +119,7 @@ export default function ResetPasswordPage() {
       <main className="flex min-h-screen items-center justify-center bg-white px-4">
         <div className="w-full max-w-sm space-y-4 text-center">
           <h1 className="text-xl font-bold text-gray-900">Link expired</h1>
-          <p className="text-gray-600">This reset link is invalid or has already been used.</p>
+          <p className="text-gray-600">This reset link is invalid, has expired, or has already been used.</p>
           <Link href="/forgot-password" className="inline-block text-sm text-sky-600 hover:underline">
             Send a new reset link
           </Link>
@@ -91,7 +137,7 @@ export default function ResetPasswordPage() {
 
         <form onSubmit={handleReset} className="space-y-4">
           {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+            <div role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">
               {error}
             </div>
           )}
@@ -107,7 +153,7 @@ export default function ResetPasswordPage() {
               minLength={MIN_PASSWORD_LENGTH}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-base sm:text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
             />
           </div>
 
@@ -121,7 +167,7 @@ export default function ResetPasswordPage() {
               required
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-base sm:text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
             />
           </div>
 

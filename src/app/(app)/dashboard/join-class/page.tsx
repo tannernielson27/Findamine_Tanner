@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Users, CheckCircle2 } from "lucide-react";
+import { postJson } from "@/app/login/auth-client";
 
 export default function JoinClassPage() {
   const router = useRouter();
@@ -16,20 +17,21 @@ export default function JoinClassPage() {
     if (!trimmed) return;
     setState("working");
     setError("");
-    const res = await fetch("/api/v1/roster/join", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: trimmed }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setJoined(data.roster?.name || "your class");
-      setState("idle");
-    } else {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error || "Could not join. Check the code and try again.");
+    // postJson never throws, so a dropped connection shows an error instead
+    // of leaving the button on "Joining...".
+    const result = await postJson(
+      "/api/v1/roster/join",
+      { code: trimmed },
+      "Could not join. Check the code and try again."
+    );
+    if (!result.ok) {
+      setError(result.error);
       setState("error");
+      return;
     }
+    const roster = result.data.roster as { name?: string } | undefined;
+    setJoined(roster?.name || "your class");
+    setState("idle");
   }
 
   if (joined) {
@@ -75,7 +77,7 @@ export default function JoinClassPage() {
           maxLength={12}
           className="block w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-lg font-mono tracking-widest uppercase focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition-all"
         />
-        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+        {error && <p role="alert" className="mt-2 text-sm text-red-600">{error}</p>}
         <button
           onClick={join}
           disabled={state === "working" || !code.trim()}

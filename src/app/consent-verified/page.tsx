@@ -1,12 +1,46 @@
 import Link from "next/link";
 
+const ERROR_COPY: Record<string, { title: string; body: string }> = {
+  invalid: {
+    title: "This link didn't work",
+    body: "This consent link is invalid or has expired. Please open the most recent email we sent you and use the button in it. If it still doesn't work, please contact the teacher or organizer who set up the account.",
+  },
+  rate_limited: {
+    title: "Please try again shortly",
+    body: "This link has been opened too many times in a short while. Wait a few minutes, then open it again.",
+  },
+  failed: {
+    title: "Something went wrong",
+    body: "We couldn't record your consent just now. Nothing has changed. Please open the link from your email again in a few minutes.",
+  },
+};
+
 export default async function ConsentVerifiedPage({
   searchParams,
 }: {
-  searchParams: Promise<{ success?: string; already?: string }>;
+  searchParams: Promise<{ success?: string; already?: string; error?: string }>;
 }) {
   const params = await searchParams;
   const alreadyVerified = params.already === "true";
+  const problem = params.error ? ERROR_COPY[params.error] ?? ERROR_COPY.invalid : null;
+
+  if (problem) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-white px-4">
+        <div className="w-full max-w-sm space-y-6 text-center">
+          <div className="text-5xl" aria-hidden="true">⚠️</div>
+          <h1 className="text-xl font-bold text-gray-900">{problem.title}</h1>
+          <p className="text-gray-600">{problem.body}</p>
+          <Link
+            href="/login"
+            className="inline-block rounded-md bg-sky-600 px-6 py-2 text-sm font-medium text-white hover:bg-sky-700"
+          >
+            Sign in
+          </Link>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-white px-4">

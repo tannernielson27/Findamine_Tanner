@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { errorResponse, ApiError } from "@/lib/utils/api-auth";
-import { authLimiter } from "@/lib/utils/rate-limit";
+import { authEmailIpLimiter, authEmailLimiter, emailRateLimitKey } from "@/lib/utils/rate-limit";
+import { normalizeEmail } from "@/lib/utils/registration";
 import { logger } from "@/lib/utils/logger";
 import {
   buildAuthConfirmUrl,
@@ -13,13 +14,15 @@ const GENERIC_RESPONSE = { message: "If an account exists, a reset link has been
 
 export async function POST(request: NextRequest) {
   try {
-    await authLimiter.check(request);
+    await authEmailIpLimiter.check(request);
     const body = await request.json();
-    const { email } = body;
+    const email = normalizeEmail(body.email);
 
-    if (!email || typeof email !== "string") {
+    if (!email) {
       throw new ApiError(400, "Email is required");
     }
+    // Keyed on the inbox being mailed; applies whether or not an account exists.
+    await authEmailLimiter.checkKey(`recovery:${emailRateLimitKey(email)}`);
 
     const siteUrl = resolveSiteUrl(request.nextUrl.origin);
     const supabase = await createSupabaseServiceClient();

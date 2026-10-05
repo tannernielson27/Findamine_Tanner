@@ -17,9 +17,19 @@ export function isAuthLinkType(value: string | null): value is AuthLinkType {
   return value !== null && AUTH_LINK_TYPES.has(value);
 }
 
-/** Only same-site relative paths are allowed as post-confirm destinations. */
+/**
+ * Only same-site relative paths are allowed as post-confirm / post-login
+ * destinations. Whitespace and control characters are refused because
+ * browsers strip them while parsing, which can turn "/\t/evil" into "//evil".
+ */
 export function safeNextPath(next: string | null | undefined, fallback: string): string {
-  if (!next || !next.startsWith("/") || next.startsWith("//") || next.includes("\\")) {
+  if (
+    !next ||
+    !next.startsWith("/") ||
+    next.startsWith("//") ||
+    next.includes("\\") ||
+    /[\s\u0000-\u001f\u007f]/.test(next)
+  ) {
     return fallback;
   }
   return next;
@@ -38,13 +48,20 @@ export function resolveSiteUrl(requestOrigin: string): string {
   return requestOrigin;
 }
 
+/**
+ * `authUserId` lets /api/auth/confirm tell "this link was already used and the
+ * account is confirmed" (often a mail scanner opened it first) apart from a
+ * link that is simply dead. It is an opaque id, not a credential.
+ */
 export function buildAuthConfirmUrl(
   siteUrl: string,
   tokenHash: string,
   type: AuthLinkType,
-  next: string
+  next: string,
+  authUserId?: string
 ): string {
   const params = new URLSearchParams({ token_hash: tokenHash, type, next });
+  if (authUserId) params.set("uid", authUserId);
   return `${siteUrl}/api/auth/confirm?${params.toString()}`;
 }
 

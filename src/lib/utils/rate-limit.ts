@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { createHash } from "crypto";
 import { ApiError } from "./api-auth";
 
 /**
@@ -28,26 +29,93 @@ function getIp(request: NextRequest): string {
   return forwarded?.split(",")[0]?.trim() || "unknown";
 }
 
+function fingerprint(value: string): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, 16);
+}
+
+/** The `sub` claim of a JWT, read without verifying (it only picks a bucket). */
+function jwtSubject(token: string): string | null {
+  try {
+    const payload = JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"));
+    return typeof payload?.sub === "string" && payload.sub.length <= 64 ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The raw value of the @supabase/ssr session cookie. Its name is
+ * sb-<project-ref>-auth-token, and long sessions are split into .0, .1, ...
+ * chunks that must be joined in order.
+ */
+function readSupabaseSessionCookie(request: NextRequest): string | null {
+  const chunks = request.cookies
+    .getAll()
+    .map((cookie) => ({ match: /^sb-.+-auth-token(?:\.(\d+))?$/.exec(cookie.name), value: cookie.value }))
+    .filter((c): c is { match: RegExpExecArray; value: string } => c.match !== null)
+    .sort((a, b) => Number(a.match[1] ?? -1) - Number(b.match[1] ?? -1));
+  if (chunks.length === 0) return null;
+  return chunks.map((c) => c.value).join("");
+}
+
+function sessionCookieSubject(raw: string): string | null {
+  try {
+    const json = raw.startsWith("base64-")
+      ? Buffer.from(raw.slice("base64-".length), "base64url").toString("utf8")
+      : raw;
+    const session = JSON.parse(json);
+    return typeof session?.access_token === "string" ? jwtSubject(session.access_token) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A stable identifier for the signed-in caller, or null when unauthenticated.
+ * Prefers the user id inside the access token (stable across token refreshes).
+ * Every Supabase token and session cookie starts with the same characters, so
+ * a prefix can never be used here; anything undecodable is hashed whole.
+ */
+function getSessionIdentity(request: NextRequest): string | null {
+  const authHeader = request.headers.get("authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice(7).trim();
+    if (token) return jwtSubject(token) ?? fingerprint(token);
+  }
+  const cookie = readSupabaseSessionCookie(request);
+  if (cookie) return sessionCookieSubject(cookie) ?? fingerprint(cookie);
+  return null;
+}
+
 /**
  * Get a composite rate limit key: userId:IP
  * This ensures students in the same classroom (same IP) get individual limits.
  * Falls back to IP-only for unauthenticated requests.
  */
-function getCompositeKey(request: NextRequest): string {
+export function getCompositeKey(request: NextRequest): string {
   const ip = getIp(request);
-  // Try to extract user ID from auth header (Bearer token) or cookie
-  const authHeader = request.headers.get("authorization");
-  if (authHeader?.startsWith("Bearer ")) {
-    // Use a hash of the token as user identifier (don't use full token as key)
-    const tokenHash = authHeader.slice(7, 20); // first 13 chars as fingerprint
-    return `${tokenHash}:${ip}`;
-  }
-  // For cookie-based auth, use a cookie fingerprint
-  const sbCookie = request.cookies.get("sb-access-token")?.value;
-  if (sbCookie) {
-    return `${sbCookie.slice(0, 13)}:${ip}`;
-  }
-  return ip;
+  const identity = getSessionIdentity(request);
+  return identity ? `${identity}:${ip}` : ip;
+}
+
+/**
+ * Rate limit key for an email address (trimmed, lowercased, hashed so that
+ * addresses are not stored in the limiter). Use with `limiter.checkKey`.
+ */
+export function emailRateLimitKey(email: string): string {
+  return fingerprint(email.trim().toLowerCase());
+}
+
+/** "about 4 minutes" / "about a minute" / "a few seconds" for a 429 message. */
+export function formatRetryAfter(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 20) return "a few seconds";
+  if (seconds <= 90) return "about a minute";
+  if (seconds < 90 * 60) return `about ${Math.ceil(seconds / 60)} minutes`;
+  return `about ${Math.round(seconds / 3600)} hours`;
+}
+
+function tooManyRequests(retryAfterSec: number): ApiError {
+  return new ApiError(429, `Too many attempts. Please try again in ${formatRetryAfter(retryAfterSec)}.`);
 }
 
 function msToUpstashDuration(ms: number): `${number} s` | `${number} m` | `${number} h` {
@@ -57,14 +125,25 @@ function msToUpstashDuration(ms: number): `${number} s` | `${number} m` | `${num
 }
 
 interface RateLimiter {
+  /** Count one request against the caller's key (user+IP, or IP-only). */
   check(request: NextRequest): Promise<void>;
+  /** Count one request against an explicit key, e.g. an email fingerprint. */
+  checkKey(key: string): Promise<void>;
 }
 
 function createRateLimiter(opts: {
   max: number;
   windowMs: number;
   prefix: string;
+  /**
+   * "session" (default): user+IP for signed-in callers, IP otherwise.
+   * "ip": always the IP. Use this on unauthenticated endpoints, where a
+   * made-up Authorization header would otherwise mint a fresh bucket.
+   */
+  keyBy?: "session" | "ip";
 }): RateLimiter {
+  const requestKey = opts.keyBy === "ip" ? getIp : getCompositeKey;
+
   if (!USE_UPSTASH) {
     // In-memory fallback for local dev
     const store = new Map<string, { count: number; resetAt: number }>();
@@ -80,65 +159,122 @@ function createRateLimiter(opts: {
       }
     }
 
+    async function consume(key: string): Promise<void> {
+      cleanup();
+      const now = Date.now();
+      const entry = store.get(key);
+
+      if (!entry || entry.resetAt <= now) {
+        store.set(key, { count: 1, resetAt: now + windowMs });
+        return;
+      }
+
+      entry.count++;
+      if (entry.count > max) {
+        throw tooManyRequests(Math.ceil((entry.resetAt - now) / 1000));
+      }
+    }
+
     return {
-      async check(request: NextRequest): Promise<void> {
-        cleanup();
-        const key = getCompositeKey(request);
-        const now = Date.now();
-        const entry = store.get(key);
-
-        if (!entry || entry.resetAt <= now) {
-          store.set(key, { count: 1, resetAt: now + windowMs });
-          return;
-        }
-
-        entry.count++;
-        if (entry.count > max) {
-          const retryAfterSec = Math.ceil((entry.resetAt - now) / 1000);
-          throw new ApiError(
-            429,
-            `Too many requests. Try again in ${retryAfterSec} seconds.`
-          );
-        }
-      },
+      check: (request: NextRequest) => consume(requestKey(request)),
+      checkKey: (key: string) => consume(key),
     };
   }
 
   // Upstash Redis (production)
   let _limiter: import("@upstash/ratelimit").Ratelimit | null = null;
 
-  return {
-    async check(request: NextRequest): Promise<void> {
-      if (!_limiter) {
-        const { Ratelimit } = await import("@upstash/ratelimit");
-        const { Redis } = await import("@upstash/redis");
-        _limiter = new Ratelimit({
-          redis: new Redis({ url: UPSTASH_URL!, token: UPSTASH_TOKEN! }),
-          limiter: Ratelimit.slidingWindow(opts.max, msToUpstashDuration(opts.windowMs)),
-          prefix: `rl:${opts.prefix}`,
-        });
-      }
+  async function consume(key: string): Promise<void> {
+    if (!_limiter) {
+      const { Ratelimit } = await import("@upstash/ratelimit");
+      const { Redis } = await import("@upstash/redis");
+      _limiter = new Ratelimit({
+        redis: new Redis({ url: UPSTASH_URL!, token: UPSTASH_TOKEN! }),
+        limiter: Ratelimit.slidingWindow(opts.max, msToUpstashDuration(opts.windowMs)),
+        prefix: `rl:${opts.prefix}`,
+      });
+    }
 
-      const key = getCompositeKey(request);
-      const result = await _limiter.limit(key);
-      if (!result.success) {
-        const retryAfterSec = Math.ceil((result.reset - Date.now()) / 1000);
-        throw new ApiError(
-          429,
-          `Too many requests. Try again in ${retryAfterSec} seconds.`
-        );
-      }
-    },
+    const result = await _limiter.limit(key);
+    if (!result.success) {
+      throw tooManyRequests(Math.ceil((result.reset - Date.now()) / 1000));
+    }
+  }
+
+  return {
+    check: (request: NextRequest) => consume(requestKey(request)),
+    checkKey: (key: string) => consume(key),
   };
 }
 
 // Pre-configured limiters
+
+/** Strict limit for sensitive signed-in actions (per user+IP). */
 export const authLimiter = createRateLimiter({
   max: 10,
-  windowMs: 15 * 60 * 1000, // 10 requests per 15 minutes per IP
+  windowMs: 15 * 60 * 1000, // 10 requests per 15 minutes per user+IP
   prefix: "auth",
 });
 
+/*
+ * Sign-up / sign-in limits. A whole class signs up from one campus NAT, so the
+ * per-IP numbers are only a ceiling against floods; the real abuse protection
+ * is keyed on the thing being abused (the email address being mailed or
+ * guessed). Per-IP limiters ignore auth headers: these endpoints are public.
+ */
+
+/** Registration attempts per IP: a 100-seat lecture hall with ~3 tries each. */
+export const registerIpLimiter = createRateLimiter({
+  max: 300,
+  windowMs: 10 * 60 * 1000,
+  prefix: "register-ip",
+  keyBy: "ip",
+});
+
+/** Registration attempts (each can send a confirmation email) per address. */
+export const registerEmailLimiter = createRateLimiter({
+  max: 5,
+  windowMs: 60 * 60 * 1000,
+  prefix: "register-email",
+});
+
+/** Sign-in attempts per IP (same lecture-hall sizing as registration). */
+export const loginIpLimiter = createRateLimiter({
+  max: 300,
+  windowMs: 10 * 60 * 1000,
+  prefix: "login-ip",
+  keyBy: "ip",
+});
+
+/** Sign-in attempts per account: the password-guessing limit. */
+export const loginEmailLimiter = createRateLimiter({
+  max: 10,
+  windowMs: 15 * 60 * 1000,
+  prefix: "login-email",
+});
+
+/** Resend-confirmation and forgot-password requests per IP. */
+export const authEmailIpLimiter = createRateLimiter({
+  max: 100,
+  windowMs: 15 * 60 * 1000,
+  prefix: "auth-email-ip",
+  keyBy: "ip",
+});
+
+/** Auth emails sent to one address; key as `<purpose>:<emailRateLimitKey>`. */
+export const authEmailLimiter = createRateLimiter({
+  max: 3,
+  windowMs: 15 * 60 * 1000,
+  prefix: "auth-email",
+});
+
+/** Parental-consent link clicks per IP (the token itself is unguessable). */
+export const consentVerifyLimiter = createRateLimiter({
+  max: 60,
+  windowMs: 15 * 60 * 1000,
+  prefix: "consent-verify",
+  keyBy: "ip",
+});
 export const aiLimiter = createRateLimiter({
   max: 20,
   windowMs: 60 * 1000, // 20 requests per minute per IP

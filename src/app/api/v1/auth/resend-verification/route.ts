@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { ApiError } from "@/lib/utils/api-auth";
-import { authLimiter } from "@/lib/utils/rate-limit";
+import { authEmailIpLimiter, authEmailLimiter, emailRateLimitKey } from "@/lib/utils/rate-limit";
+import { escapeLikePattern, normalizeEmail } from "@/lib/utils/registration";
 import { withLogging } from "@/lib/utils/with-logging";
 import { botGuard } from "@/lib/utils/bot-guard";
 import { logger } from "@/lib/utils/logger";
@@ -22,12 +23,15 @@ export const POST = withLogging("POST /api/v1/auth/resend-verification", async (
   const blocked = await botGuard(request);
   if (blocked) return blocked;
 
-  await authLimiter.check(request);
+  await authEmailIpLimiter.check(request);
   const body = await request.json();
-  const email = typeof body.email === "string" ? body.email.trim() : "";
+  const email = normalizeEmail(body.email);
   if (!email) {
     throw new ApiError(400, "Email is required");
   }
+  // Keyed on the inbox being mailed, so one person can't be flooded and a
+  // shared campus IP doesn't use up everyone else's resends.
+  await authEmailLimiter.checkKey(`resend:${emailRateLimitKey(email)}`);
 
   const siteUrl = resolveSiteUrl(request.nextUrl.origin);
   const supabase = await createSupabaseServiceClient();
@@ -36,8 +40,12 @@ export const POST = withLogging("POST /api/v1/auth/resend-verification", async (
   const { data: profile } = await supabase
     .from("users")
     .select("auth_id, display_name")
-    .eq("email", email)
+    // Case-insensitive: rows created before emails were normalized may hold
+    // the address exactly as it was typed.
+    .ilike("email", escapeLikePattern(email))
     .is("deleted_at", null)
+    .order("created_at", { ascending: true })
+    .limit(1)
     .maybeSingle();
   if (!profile?.auth_id) return Response.json(GENERIC_RESPONSE);
 
@@ -58,7 +66,7 @@ export const POST = withLogging("POST /api/v1/auth/resend-verification", async (
   const result = await sendVerificationEmail({
     to: authUser.user.email,
     displayName: profile.display_name ?? null,
-    confirmUrl: buildAuthConfirmUrl(siteUrl, data.properties.hashed_token, "magiclink", "/dashboard"),
+    confirmUrl: buildAuthConfirmUrl(siteUrl, data.properties.hashed_token, "magiclink", "/dashboard", profile.auth_id),
   });
   if (!result.success) {
     logger.error("auth.resend_verification.email_failed", { error: result.error });

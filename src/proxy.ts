@@ -11,12 +11,41 @@ const CONSENT_ALLOWED_PATHS = [
   "/reset-password",
 ];
 
+/**
+ * Everything in the (app) route group except the public hunt catalogue
+ * (/browse, which is linked from the landing page and listed in the sitemap).
+ * Signed-out visitors to these are sent to /login?next=<where they were going>.
+ * The (app) layout repeats the check for any route that is added to the group
+ * without being listed here, so a missing entry fails closed, not open.
+ */
+const PROTECTED_PREFIXES = [
+  "/admin",
+  "/dashboard",
+  "/debrief",
+  "/leaderboard",
+  "/play",
+  "/profile",
+  "/settings",
+  "/surveys",
+];
+
+/**
+ * Request header carrying the original path + query to server components
+ * (layouts cannot read the URL themselves). Always overwritten here, so a
+ * value sent by the client is never trusted.
+ */
+const REQUEST_PATH_HEADER = "x-findamine-path";
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, x-client-type",
   "Access-Control-Max-Age": "86400",
 };
+
+function isUnder(pathname: string, prefix: string): boolean {
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
 
 export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -26,7 +55,19 @@ export default async function proxy(request: NextRequest) {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
 
-  let supabaseResponse = NextResponse.next({ request });
+  // The page being asked for, minus Next's internal RSC cache-busting param.
+  const query = new URLSearchParams(request.nextUrl.search);
+  query.delete("_rsc");
+  const originalPath = query.size > 0 ? `${pathname}?${query.toString()}` : pathname;
+
+  // Continue to the app with the (possibly refreshed) cookies and the path header.
+  const forward = () => {
+    const headers = new Headers(request.headers);
+    headers.set(REQUEST_PATH_HEADER, originalPath);
+    return NextResponse.next({ request: { headers } });
+  };
+
+  let supabaseResponse = forward();
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -40,7 +81,7 @@ export default async function proxy(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
-          supabaseResponse = NextResponse.next({ request });
+          supabaseResponse = forward();
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
           );
@@ -49,12 +90,34 @@ export default async function proxy(request: NextRequest) {
     }
   );
 
+  // Redirect while keeping any session cookies the refresh above just issued.
+  const redirectTo = (path: string, next?: string) => {
+    const url = request.nextUrl.clone();
+    url.pathname = path;
+    url.search = "";
+    if (next) url.searchParams.set("next", next);
+    const response = NextResponse.redirect(url);
+    supabaseResponse.cookies.getAll().forEach((cookie) => response.cookies.set(cookie));
+    return response;
+  };
+
   // Refresh the session
   const { data: { user: authUser } } = await supabase.auth.getUser();
 
+  // Route guard: signed-out visitors never get an app shell. The page they
+  // wanted is kept in ?next= so login can send them back to it.
+  if (!authUser && PROTECTED_PREFIXES.some((prefix) => isUnder(pathname, prefix))) {
+    return redirectTo("/login", originalPath);
+  }
+
+  // Someone who is already signed in has no use for the sign-up form. /login
+  // decides where they belong (it also explains a session with no profile).
+  if (authUser && isUnder(pathname, "/register")) {
+    return redirectTo("/login", request.nextUrl.searchParams.get("next") ?? undefined);
+  }
+
   // COPPA consent gate: block pending_consent users from app pages
   if (authUser) {
-    const pathname = request.nextUrl.pathname;
     const isAllowed = CONSENT_ALLOWED_PATHS.some((p) => pathname.startsWith(p));
 
     if (!isAllowed) {
@@ -67,9 +130,7 @@ export default async function proxy(request: NextRequest) {
         .single();
 
       if (profile?.status === "pending_consent") {
-        const url = request.nextUrl.clone();
-        url.pathname = "/consent-pending";
-        return NextResponse.redirect(url);
+        return redirectTo("/consent-pending");
       }
     }
   }
@@ -86,6 +147,6 @@ export default async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

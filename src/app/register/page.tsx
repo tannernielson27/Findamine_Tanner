@@ -3,8 +3,11 @@
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { MapPin, Users } from "lucide-react";
+import { postJson } from "@/app/login/auth-client";
+
+type Outcome = { resent: boolean; referralApplied: boolean | null };
 
 export default function RegisterPage() {
   return (
@@ -21,11 +24,13 @@ function RegisterForm() {
   const [role, setRole] = useState("parent");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
   const searchParams = useSearchParams();
   const referralCode = searchParams.get("ref")?.trim().toUpperCase() || "";
+  // Deep link to return to after confirming; the server validates it.
+  const next = searchParams.get("next") || "";
+  const loginHref = next ? `/login?next=${encodeURIComponent(next)}` : "/login";
   // Self-registered players confirm their age: teens 13+, adults 18+.
   const needsDob = role === "teen" || role === "adult";
 
@@ -34,42 +39,68 @@ function RegisterForm() {
     setError("");
     setLoading(true);
 
-    const res = await fetch("/api/v1/auth/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email,
+    // postJson never throws: a dropped connection or a non-JSON error page
+    // comes back as a message instead of leaving the button stuck.
+    const result = await postJson(
+      "/api/v1/auth/register",
+      {
+        email: email.trim().toLowerCase(),
         password,
         display_name: displayName,
         role,
         date_of_birth: needsDob ? dateOfBirth : undefined,
         referral_code: referralCode || undefined,
-      }),
-    });
+        next: next || undefined,
+      },
+      "Registration failed. Please check your details and try again."
+    );
+    setLoading(false);
 
-    const data = await res.json();
-
-    if (!res.ok) {
-      setError(data.error || "Registration failed");
-      setLoading(false);
+    if (!result.ok) {
+      setError(result.error);
       return;
     }
 
-    setSuccess(true);
-    setLoading(false);
+    const applied = result.data.referral_applied;
+    setOutcome({
+      resent: result.data.resent === true,
+      referralApplied: typeof applied === "boolean" ? applied : null,
+    });
   }
 
-  if (success) {
+  if (outcome) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-white px-4">
         <div className="w-full max-w-sm space-y-4 text-center">
           <h1 className="text-xl font-bold text-gray-900">Check your email</h1>
-          <p className="text-gray-600">
-            We sent a verification link to <strong>{email}</strong>. Click the
-            link to activate your account.
+          {outcome.resent ? (
+            <p className="text-gray-600">
+              You already started signing up with <strong>{email.trim().toLowerCase()}</strong>, so
+              we&apos;ve re-sent your confirmation link. The password you chose the first time
+              still applies; if you don&apos;t remember it, you can reset it after confirming.
+            </p>
+          ) : (
+            <p className="text-gray-600">
+              We sent a verification link to <strong>{email.trim().toLowerCase()}</strong>. Click the
+              link to activate your account.
+            </p>
+          )}
+          <p className="text-sm text-gray-500">
+            It can take a minute to arrive. Check your spam or junk folder too.
           </p>
+          {referralCode && outcome.referralApplied === false && (
+            <p className="rounded-xl bg-amber-50 border border-amber-100 p-3 text-sm text-amber-800">
+              Your account was created, but invite code <strong>{referralCode}</strong> wasn&apos;t
+              recognized, so it wasn&apos;t applied. Ask your friend to check their code.
+            </p>
+          )}
+          {referralCode && outcome.referralApplied === true && (
+            <p className="rounded-xl bg-sky-50 border border-sky-100 p-3 text-sm text-sky-800">
+              Invite code <strong>{referralCode}</strong> was applied.
+            </p>
+          )}
           <Link
-            href="/login"
+            href={loginHref}
             className="inline-block text-sm text-sky-600 hover:underline"
           >
             Back to sign in
@@ -99,7 +130,7 @@ function RegisterForm() {
         <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-6">
           <form onSubmit={handleRegister} className="space-y-4">
             {error && (
-              <div className="rounded-xl bg-red-50 border border-red-100 p-3 text-sm text-red-700">
+              <div role="alert" className="rounded-xl bg-red-50 border border-red-100 p-3 text-sm text-red-700">
                 {error}
               </div>
             )}
@@ -108,8 +139,8 @@ function RegisterForm() {
               <div className="rounded-xl bg-sky-50 border border-sky-100 p-3 text-sm text-sky-800 flex items-center gap-2">
                 <Users className="w-4 h-4 shrink-0" />
                 <span>
-                  Invited by a friend — code <strong>{referralCode}</strong> will
-                  be applied when you join.
+                  Invited by a friend — we&apos;ll check code <strong>{referralCode}</strong> when
+                  you join and tell you if it was applied.
                 </span>
               </div>
             )}
@@ -124,7 +155,7 @@ function RegisterForm() {
                 required
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                className="block w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition-all"
+                className="block w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-base sm:text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition-all"
                 placeholder="Your display name"
               />
             </div>
@@ -139,7 +170,7 @@ function RegisterForm() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="block w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition-all"
+                className="block w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-base sm:text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition-all"
                 placeholder="you@example.com"
               />
             </div>
@@ -155,7 +186,7 @@ function RegisterForm() {
                 minLength={8}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="block w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition-all"
+                className="block w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-base sm:text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition-all"
                 placeholder="At least 8 characters"
               />
             </div>
@@ -168,7 +199,7 @@ function RegisterForm() {
                 id="role"
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
-                className="block w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition-all"
+                className="block w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-base sm:text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition-all"
               >
                 <option value="parent">Parent</option>
                 <option value="teacher">Teacher</option>
@@ -189,7 +220,7 @@ function RegisterForm() {
                   value={dateOfBirth}
                   onChange={(e) => setDateOfBirth(e.target.value)}
                   max={new Date().toISOString().split("T")[0]}
-                  className="block w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition-all"
+                  className="block w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-base sm:text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition-all"
                 />
                 <p className="mt-1.5 text-xs text-gray-500">
                   {role === "adult"
@@ -200,8 +231,8 @@ function RegisterForm() {
             )}
 
             <div className="rounded-xl bg-amber-50 border border-amber-100 p-3 text-xs text-amber-800">
-              <strong>Under 13?</strong> A parent or teacher needs to create your account.
-              Ask them to sign up and add you from their dashboard.
+              <strong>Under 13?</strong> You can&apos;t create an account here yourself.
+              Please ask a parent or teacher for help.
             </div>
 
             <button
@@ -216,7 +247,7 @@ function RegisterForm() {
 
         <p className="text-center text-sm text-gray-500 mt-5">
           Already have an account?{" "}
-          <Link href="/login" className="text-brand hover:underline font-medium">
+          <Link href={loginHref} className="text-brand hover:underline font-medium">
             Sign in
           </Link>
         </p>

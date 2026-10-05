@@ -23,6 +23,10 @@ describe("safeNextPath", () => {
     expect(safeNextPath("https://evil.example", "/dashboard")).toBe("/dashboard");
     expect(safeNextPath("//evil.example", "/dashboard")).toBe("/dashboard");
     expect(safeNextPath("/\\evil.example", "/dashboard")).toBe("/dashboard");
+    // Browsers strip tabs/newlines while parsing, which would leave "//evil.example".
+    expect(safeNextPath("/\t/evil.example", "/dashboard")).toBe("/dashboard");
+    expect(safeNextPath("/\n/evil.example", "/dashboard")).toBe("/dashboard");
+    expect(safeNextPath("/a b", "/dashboard")).toBe("/dashboard");
   });
 });
 
@@ -38,6 +42,13 @@ describe("isAuthLinkType", () => {
 });
 
 describe("buildAuthConfirmUrl", () => {
+  it("adds the account id only when one is given", () => {
+    const withUid = new URL(buildAuthConfirmUrl("https://findamine.test", "abc", "signup", "/dashboard", "auth-1"));
+    expect(withUid.searchParams.get("uid")).toBe("auth-1");
+    const without = new URL(buildAuthConfirmUrl("https://findamine.test", "abc", "signup", "/dashboard"));
+    expect(without.searchParams.has("uid")).toBe(false);
+  });
+
   it("points at the confirm route with encoded parameters", () => {
     const url = new URL(buildAuthConfirmUrl("https://findamine.test", "abc+/=", "recovery", "/reset-password"));
     expect(url.origin + url.pathname).toBe("https://findamine.test/api/auth/confirm");

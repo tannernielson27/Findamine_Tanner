@@ -1,7 +1,21 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
-import { errorResponse, ApiError } from "@/lib/utils/api-auth";
-import { authLimiter } from "@/lib/utils/rate-limit";
+import { ApiError } from "@/lib/utils/api-auth";
+import { consentVerifyLimiter } from "@/lib/utils/rate-limit";
+import { logger } from "@/lib/utils/logger";
+
+type ConsentOutcome = "success" | "already" | "invalid" | "rate_limited" | "failed";
+
+/**
+ * This link is opened by a parent in a browser, so every outcome (including
+ * errors) lands on the human-readable /consent-verified page, never raw JSON.
+ */
+function resultRedirect(outcome: ConsentOutcome): Response {
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://findamine.app").replace(/\/+$/, "");
+  const query =
+    outcome === "success" ? "success=true" : outcome === "already" ? "already=true" : `error=${outcome}`;
+  return Response.redirect(`${siteUrl}/consent-verified?${query}`);
+}
 
 /**
  * Verify parental consent via email link.
@@ -9,13 +23,13 @@ import { authLimiter } from "@/lib/utils/rate-limit";
  */
 export async function GET(request: NextRequest) {
   try {
-    await authLimiter.check(request);
+    await consentVerifyLimiter.check(request);
     const { searchParams } = new URL(request.url);
     const token = searchParams.get("token");
     const childId = searchParams.get("child_id");
 
     if (!token || !childId) {
-      throw new ApiError(400, "Missing token or child_id");
+      return resultRedirect("invalid");
     }
 
     const supabase = await createSupabaseServiceClient();
@@ -31,23 +45,27 @@ export async function GET(request: NextRequest) {
       .maybeSingle();
 
     if (!consent) {
-      throw new ApiError(404, "Consent record not found or invalid token");
+      return resultRedirect("invalid");
     }
 
     // Prevent re-verification
     if (consent.verified_at) {
-      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://findamine.app";
-      return Response.redirect(`${siteUrl}/consent-verified?already=true`);
+      return resultRedirect("already");
     }
 
     // Mark consent as granted and verified
-    await supabase
+    const { error: consentError } = await supabase
       .from("consent_records")
       .update({
         granted: true,
         verified_at: new Date().toISOString(),
       })
       .eq("id", consent.id);
+
+    if (consentError) {
+      logger.error("consent.coppa_verify.update_failed", { error: consentError.message });
+      return resultRedirect("failed");
+    }
 
     // Verify the parent-child link
     await supabase
@@ -63,10 +81,12 @@ export async function GET(request: NextRequest) {
       .eq("id", childId)
       .eq("status", "pending_consent"); // Only activate if still pending
 
-    // Redirect to success page
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://findamine.app";
-    return Response.redirect(`${siteUrl}/consent-verified?success=true`);
+    return resultRedirect("success");
   } catch (error) {
-    return errorResponse(error);
+    if (error instanceof ApiError && error.statusCode === 429) {
+      return resultRedirect("rate_limited");
+    }
+    logger.error("consent.coppa_verify.failed", { error: error instanceof Error ? error.message : String(error) });
+    return resultRedirect("failed");
   }
 }

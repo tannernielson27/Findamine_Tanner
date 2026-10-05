@@ -46,8 +46,43 @@ export function resolveSelfRegisterRole(
       ok: false,
       status: 403,
       message:
-        "You must be 13 or older to create your own account. Ask a parent or teacher to create an account for you.",
+        "You must be 13 or older to create your own account. Please ask a parent or teacher for help.",
     };
   }
   return { ok: true, role: age >= 18 ? "adult" : "teen" };
+}
+
+/** Canonical form for every email we store, look up or rate limit by. */
+export function normalizeEmail(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+/** Cheap shape check; the confirmation email is the real validation. */
+export function isPlausibleEmail(email: string): boolean {
+  return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+/**
+ * Escape an exact value for a case-insensitive `.ilike()` match, so rows that
+ * were stored with mixed case before emails were normalized are still found.
+ */
+export function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, "\\$&");
+}
+
+/** How far the auth server's clock may trail ours and still count as "now". */
+const CREATED_SKEW_MS = 30_000;
+
+/**
+ * Whether an auth user was created by the current request rather than being a
+ * pre-existing unconfirmed account that generateLink handed back. Only a user
+ * this request created may ever be rolled back.
+ */
+export function wasCreatedDuringRequest(
+  createdAt: string | null | undefined,
+  requestStartedAt: number
+): boolean {
+  if (!createdAt) return false;
+  const created = new Date(createdAt).getTime();
+  return Number.isFinite(created) && created >= requestStartedAt - CREATED_SKEW_MS;
 }
