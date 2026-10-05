@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { playLimiter } from "@/lib/utils/rate-limit";
+import { getCompletion, insertCompletion } from "../../_lib/completions";
 
 export async function POST(
   request: NextRequest,
@@ -51,20 +52,20 @@ export async function POST(
     const hint = hints[hintIndex];
 
     // Update clue_hints_used on the completion record
+    // The clue step comes before arrival, so there is often no row yet: create
+    // one, otherwise the hint penalty would never reach scoring.
     {
-      const { data: completion } = await supabase
-        .from("find_completions")
-        .select("id, clue_hints_used")
-        .eq("play_session_id", session.id)
-        .eq("find_id", find_id)
-        .maybeSingle();
+      const usedLevel = hintIndex + 1;
+      const completion = await getCompletion(supabase, session.id, find_id);
 
-      if (completion) {
-        const newCount = Math.max(completion.clue_hints_used || 0, hintLevel);
-        await supabase
+      if (!completion) {
+        await insertCompletion(supabase, session.id, find_id, { clue_hints_used: usedLevel });
+      } else if ((completion.clue_hints_used || 0) < usedLevel) {
+        const { error: updateError } = await supabase
           .from("find_completions")
-          .update({ clue_hints_used: newCount })
+          .update({ clue_hints_used: usedLevel })
           .eq("id", completion.id);
+        if (updateError) throw new ApiError(500, updateError.message);
       }
     }
 

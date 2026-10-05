@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
+import { getCompletion } from "../../_lib/completions";
 
 export async function POST(
   request: NextRequest,
@@ -43,12 +44,7 @@ export async function POST(
     if (!findId) throw new ApiError(400, "find_id required");
 
     // Get completion
-    const { data: completion } = await supabase
-      .from("find_completions")
-      .select("id")
-      .eq("play_session_id", session.id)
-      .eq("find_id", findId)
-      .single();
+    const completion = await getCompletion(supabase, session.id, findId);
 
     if (!completion) throw new ApiError(404, "Complete the challenge first");
 

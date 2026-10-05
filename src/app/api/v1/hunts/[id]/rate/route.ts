@@ -20,16 +20,20 @@ export async function POST(
 
     const supabase = await createSupabaseServiceClient();
 
-    // Verify user has played this hunt
-    const { data: playSession } = await supabase
+    // Verify user has played this hunt. A replayer has several sessions, so
+    // ask for at most one row rather than .maybeSingle(), which errors on many.
+    const { data: playSessions, error: sessionError } = await supabase
       .from("play_sessions")
       .select("id")
       .eq("hunt_id", id)
       .eq("user_id", user.id)
       .in("status", ["completed", "active"])
-      .maybeSingle();
+      .limit(1);
 
-    if (!playSession && !["admin", "researcher"].includes(user.role)) {
+    if (sessionError) throw new ApiError(500, sessionError.message);
+
+    const hasPlayed = (playSessions || []).length > 0;
+    if (!hasPlayed && !["admin", "researcher"].includes(user.role)) {
       throw new ApiError(403, "You must play this hunt before rating it");
     }
 

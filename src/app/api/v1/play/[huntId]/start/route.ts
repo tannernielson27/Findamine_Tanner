@@ -62,20 +62,39 @@ export async function POST(
       });
       codename = result as string;
     } else if (hunt.identity_mode === "codename_chosen") {
-      codename = body.codename?.trim()?.slice(0, 40) || null;
-      if (!codename) {
-        throw new ApiError(400, "Please choose an explorer name for this hunt");
+      codename =
+        typeof body.codename === "string" ? body.codename.trim().slice(0, 40) || null : null;
+      if (!codename && body.assign_codename === true) {
+        // Player asked us to pick a name for them
+        const { data: result } = await supabase.rpc("assign_random_codename", {
+          p_hunt_id: huntId,
+        });
+        codename = (result as string) || null;
+      } else if (codename) {
+        // Taken by someone else? (A replaying player may reuse their own name.)
+        const { data: dups } = await supabase
+          .from("play_sessions")
+          .select("id")
+          .eq("hunt_id", huntId)
+          .eq("codename", codename)
+          .neq("user_id", user.id)
+          .limit(1);
+        if (dups && dups.length > 0) {
+          throw new ApiError(
+            409,
+            "That explorer name is already taken in this hunt. Try another!"
+          );
+        }
       }
-      const { data: dup } = await supabase
-        .from("play_sessions")
-        .select("id")
-        .eq("hunt_id", huntId)
-        .eq("codename", codename)
-        .maybeSingle();
-      if (dup) {
-        throw new ApiError(
-          409,
-          "That explorer name is already taken in this hunt. Try another!"
+      if (!codename) {
+        // `needs_codename` tells the play page to show the name prompt
+        return Response.json(
+          {
+            error: "Please choose an explorer name for this hunt",
+            needs_codename: true,
+            identity_mode: hunt.identity_mode,
+          },
+          { status: 400 }
         );
       }
     }
@@ -91,7 +110,27 @@ export async function POST(
       .select()
       .single();
 
-    if (error) throw new ApiError(500, error.message);
+    if (error) {
+      // Two start requests raced (double tap, or the page mounting twice) and
+      // the other one created the active session first: resume that one.
+      if (error.code === "23505") {
+        const { data: raced } = await supabase
+          .from("play_sessions")
+          .select("id, codename")
+          .eq("hunt_id", huntId)
+          .eq("user_id", user.id)
+          .eq("status", "active")
+          .maybeSingle();
+        if (raced) {
+          return Response.json({
+            session: raced,
+            resumed: true,
+            identity_mode: hunt.identity_mode,
+          });
+        }
+      }
+      throw new ApiError(500, error.message);
+    }
 
     logger.info("play.started", { userId: user.id, huntId, durationMs: Math.round(performance.now() - start) });
 

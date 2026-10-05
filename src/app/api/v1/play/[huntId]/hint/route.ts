@@ -87,7 +87,7 @@ export async function POST(
         "Take a moment to look around. What do you notice about this location? Re-read the clue carefully.",
         "Think about what the clue is really asking. The answer is connected to something you can observe here.",
         "You're getting closer! Focus on the most specific detail in the clue. The answer is right in front of you.",
-        "Almost there! The answer involves [the main subject]. Look at it one more time and count/describe what you see.",
+        "Almost there! Go back to the main thing the clue points to. Look at it one more time and count or describe exactly what you see.",
       ];
       hintText = genericHints[hintLevel - 1];
     }

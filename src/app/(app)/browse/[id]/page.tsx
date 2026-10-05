@@ -1,4 +1,4 @@
-import { createSupabaseServiceClient } from "@/lib/supabase/server";
+import { createSupabaseServerClient, createSupabaseServiceClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Clock, Flag, Play, Users } from "lucide-react";
@@ -12,6 +12,8 @@ import { AudienceIcon, formatPlayMode } from "../hunt-meta";
 const PILL_CLASS =
   "inline-flex items-center gap-1.5 rounded-full border border-themed-border bg-surface px-3 py-1 text-sm text-themed-text";
 
+const PLAYABLE_STATUSES = ["published", "enrollment_open", "in_progress"];
+
 export default async function HuntDetailPage({
   params,
 }: {
@@ -22,16 +24,39 @@ export default async function HuntDetailPage({
 
   const { data: hunt } = await supabase
     .from("hunts")
-    .select("*, finds(id, sort_order, clue_text, clue_hints, locations(name, latitude, longitude, radius_meters), tasks(title, challenge_type), primers(title, content))")
+    .select("*, finds(id, sort_order, deleted_at, clue_text, clue_hints, locations(name, latitude, longitude, radius_meters), tasks(title, challenge_type), primers(title, content))")
     .eq("id", id)
     .is("deleted_at", null)
     .single();
 
   if (!hunt) notFound();
 
-  const finds = (hunt.finds || []).sort(
-    (a: { sort_order: number }, b: { sort_order: number }) => a.sort_order - b.sort_order
-  );
+  // Same statuses the play API accepts (play/[huntId]/start).
+  const isPlayable = PLAYABLE_STATUSES.includes(hunt.status);
+
+  // Draft hunts are only visible to their owner or admins/researchers, the
+  // same rule the hunts API applies.
+  if (hunt.status === "draft") {
+    const authClient = await createSupabaseServerClient();
+    const { data: { user: authUser } } = await authClient.auth.getUser();
+    const { data: viewer } = authUser
+      ? await supabase
+          .from("users")
+          .select("id, role")
+          .eq("auth_id", authUser.id)
+          .is("deleted_at", null)
+          .maybeSingle()
+      : { data: null };
+
+    const canPreview =
+      !!viewer && (viewer.id === hunt.created_by || ["admin", "researcher"].includes(viewer.role));
+    if (!canPreview) notFound();
+  }
+
+  // Removed stops are soft-deleted.
+  const finds = (hunt.finds || [])
+    .filter((f: { deleted_at: string | null }) => !f.deleted_at)
+    .sort((a: { sort_order: number }, b: { sort_order: number }) => a.sort_order - b.sort_order);
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-4">
@@ -74,13 +99,21 @@ export default async function HuntDetailPage({
         </ul>
 
         {/* The screen's one primary action */}
-        <Link
-          href={`/play/${hunt.id}`}
-          className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand px-6 text-base font-semibold text-white transition-colors hover:bg-brand-dark sm:w-auto"
-        >
-          <Play className="w-5 h-5" aria-hidden="true" />
-          Start Hunt
-        </Link>
+        {isPlayable ? (
+          <Link
+            href={`/play/${hunt.id}`}
+            className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand px-6 text-base font-semibold text-white transition-colors hover:bg-brand-dark sm:w-auto"
+          >
+            <Play className="w-5 h-5" aria-hidden="true" />
+            Start Hunt
+          </Link>
+        ) : (
+          <p className="rounded-lg border border-themed-border bg-themed-bg px-4 py-3 text-base text-themed-muted">
+            {hunt.status === "draft"
+              ? "This hunt is still a draft. Publish it before anyone can play."
+              : "This hunt has ended and can no longer be played."}
+          </p>
+        )}
       </header>
 
       {/* Hunt map */}

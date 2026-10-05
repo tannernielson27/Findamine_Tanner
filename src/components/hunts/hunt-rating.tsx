@@ -15,6 +15,7 @@ export default function HuntRating({ huntId }: HuntRatingProps) {
   const [reviewText, setReviewText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/v1/hunts/${huntId}/rate`)
@@ -29,20 +30,34 @@ export default function HuntRating({ huntId }: HuntRatingProps) {
   async function handleSubmit() {
     if (userRating === 0) return;
     setSubmitting(true);
+    setSubmitError(null);
     try {
-      await fetch(`/api/v1/hunts/${huntId}/rate`, {
+      const saveRes = await fetch(`/api/v1/hunts/${huntId}/rate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rating: userRating, review_text: reviewText || null }),
       });
+      if (!saveRes.ok) {
+        const body = await saveRes.json().catch(() => null);
+        setSubmitError(body?.error || "We couldn't save your rating. Please try again.");
+        return;
+      }
       setSubmitted(true);
-      // Refresh ratings
+    } catch {
+      setSubmitError("We couldn't save your rating. Check your connection and try again.");
+      return;
+    } finally {
+      setSubmitting(false);
+    }
+
+    // Refresh the average. The rating is already saved, so a failure here is harmless.
+    try {
       const res = await fetch(`/api/v1/hunts/${huntId}/rate`);
+      if (!res.ok) return;
       const d = await res.json();
       setAvgRating(d.avg_rating);
-      setTotalRatings(d.total_ratings);
-    } catch { /* ignore */ }
-    setSubmitting(false);
+      setTotalRatings(d.total_ratings || 0);
+    } catch { /* keep the previous average */ }
   }
 
   const displayRating = hoverRating || userRating;
@@ -108,6 +123,9 @@ export default function HuntRating({ huntId }: HuntRatingProps) {
               >
                 {submitting ? "Submitting..." : "Submit Rating"}
               </button>
+              {submitError && (
+                <p role="alert" className="mt-2 text-sm text-error">{submitError}</p>
+              )}
             </>
           )}
         </div>

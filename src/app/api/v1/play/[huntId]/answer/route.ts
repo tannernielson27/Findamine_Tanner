@@ -6,6 +6,9 @@ import { awardReferralPoints } from "@/lib/services/referral";
 import { recordPrivacyNotice, type PrivacyNotice } from "@/lib/services/privacy-notice";
 import { logger } from "@/lib/utils/logger";
 import { playLimiter } from "@/lib/utils/rate-limit";
+import { evaluateBadges, updateStreak } from "@/lib/services/gamification";
+import { getCompletion } from "../../_lib/completions";
+import { gradeAnswer } from "../../_lib/grading";
 
 export async function POST(
   request: NextRequest,
@@ -39,14 +42,9 @@ export async function POST(
     if (!session) throw new ApiError(404, "No active play session");
 
     // Get completion record (may already exist from prime-viewed/arrive steps)
-    const { data: completion } = await supabase
-      .from("find_completions")
-      .select("id, hints_used, metadata, completed_at")
-      .eq("play_session_id", session.id)
-      .eq("find_id", find_id)
-      .maybeSingle();
+    const completion = await getCompletion(supabase, session.id, find_id);
 
-    if (!completion) throw new ApiError(400, "Must arrive at location first");
+    if (!completion?.arrived_at) throw new ApiError(400, "Must arrive at location first");
     if (completion.completed_at) throw new ApiError(409, "Already completed this find");
 
     // Count previous attempts
@@ -71,29 +69,11 @@ export async function POST(
       challenge_type: string;
     } | null;
 
-    // Determine correctness
-    let isCorrect = false;
-    let partialCredit: number | undefined;
-
-    if (task?.content) {
-      const correct = task.content.correct_answer;
-      if (correct !== undefined) {
-        isCorrect =
-          String(answer).toLowerCase().trim() ===
-          String(correct).toLowerCase().trim();
-
-        // Check for partial credit (multiple choice with close answers)
-        if (!isCorrect && task.content.partial_answers) {
-          const partials = task.content.partial_answers as Record<string, number>;
-          const normalizedAnswer = String(answer).toLowerCase().trim();
-          if (normalizedAnswer in partials) {
-            partialCredit = partials[normalizedAnswer];
-          }
-        }
-      } else {
-        // Open-ended: auto-score as partial
-        partialCredit = 0.5;
-      }
+    // Determine correctness. Open-ended tasks (no answer key) accept any real
+    // submission; a blank one is rejected without using up an attempt.
+    const { isCorrect, partialCredit, openEnded } = gradeAnswer(task, answer);
+    if (openEnded && !isCorrect) {
+      throw new ApiError(400, "Please enter an answer before submitting");
     }
 
     // Calculate score with full engine
@@ -106,6 +86,8 @@ export async function POST(
       partialCredit,
       attemptNumber: attemptCount,
       hintsUsed: completion.hints_used || 0,
+      clueHintsUsed: completion.clue_hints_used || 0,
+      challengeHintsUsed: completion.hints_used || 0,
       timeSpentSeconds: timeSpent,
       expectedTimeSeconds: (task?.content?.expected_time_seconds as number) || undefined,
       isFirstAttempt: attemptCount === 1,
@@ -161,6 +143,7 @@ export async function POST(
 
     // Award points if completed
     let privacyNotice: PrivacyNotice | null = null;
+    let badgesEarned: string[] = [];
     if (isNowComplete) {
       await supabase.from("points_ledger").insert({
         user_id: user.id,
@@ -203,6 +186,20 @@ export async function POST(
       if (!huntHidesScores) {
         privacyNotice = await recordPrivacyNotice(user.id, { findId: find_id, huntId });
       }
+
+      // Badges and the daily streak. These must never fail a scored answer.
+      try {
+        const streak = await updateStreak(user.id);
+        const findBadges = await evaluateBadges(user.id, "find_complete");
+        badgesEarned = [...streak.badgesEarned, ...findBadges];
+      } catch (gamificationError) {
+        logger.error("play.answer.gamification_error", {
+          userId: user.id,
+          huntId,
+          findId: find_id,
+          error: gamificationError instanceof Error ? gamificationError.message : String(gamificationError),
+        });
+      }
     }
 
     logger.info("play.answer", { userId: user.id, huntId, findId: find_id, score: scoringResult.totalScore, correct: isCorrect, attempt: attemptCount, durationMs: Math.round(performance.now() - start) });
@@ -220,6 +217,7 @@ export async function POST(
       can_retry: scoringResult.feedback.canRetry,
       is_complete: isNowComplete,
       privacy_notice: privacyNotice,
+      badges_earned: badgesEarned,
     });
   } catch (error) {
     logger.error("play.answer.error", { durationMs: Math.round(performance.now() - start), error: error instanceof Error ? error.message : String(error) });

@@ -96,6 +96,7 @@ export default function ChallengeInput({
       return (
         <TextInput
           challengeType={challengeType}
+          content={content}
           answer={answer}
           onAnswerChange={onAnswerChange}
           onSubmit={onSubmit}
@@ -239,6 +240,12 @@ function SortingOrdering({
     // Shuffle items for initial display
     return [...items].sort(() => Math.random() - 0.5);
   });
+
+  // The order on screen is the answer even before anything is moved; without
+  // this the Submit button stays disabled until the player reorders something.
+  useEffect(() => {
+    if (!answer && order.length > 0) onAnswerChange(order.join(","));
+  }, [answer, order, onAnswerChange]);
 
   const moveItem = (fromIdx: number, toIdx: number) => {
     if (disabled) return;
@@ -408,11 +415,17 @@ function SketchDraw({
     const canvas = canvasRef.current;
     if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
-    if ("touches" in e) {
-      const touch = e.touches[0];
-      return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
-    }
-    return { x: (e as React.MouseEvent).clientX - rect.left, y: (e as React.MouseEvent).clientY - rect.top };
+    if (rect.width === 0 || rect.height === 0) return null;
+    // The canvas bitmap is 400x280 but CSS stretches it to the container, so
+    // convert from on-screen pixels to bitmap pixels or strokes land off-finger.
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const point = "touches" in e ? e.touches[0] : (e as React.MouseEvent);
+    if (!point) return null;
+    return {
+      x: (point.clientX - rect.left) * scaleX,
+      y: (point.clientY - rect.top) * scaleY,
+    };
   };
 
   const startDraw = (e: React.TouchEvent | React.MouseEvent) => {
@@ -689,21 +702,27 @@ function AudioResponse({
 
 function TextInput({
   challengeType,
+  content,
   answer,
   onAnswerChange,
   onSubmit,
   disabled,
 }: {
   challengeType: string;
+  content: Record<string, unknown>;
   answer: string;
   onAnswerChange: (a: string) => void;
   onSubmit: () => void;
   disabled?: boolean;
 }) {
   const isLongForm = ["creative_writing", "data_collection", "team_debate"].includes(challengeType);
+  const question = (content.question as string) || (content.text as string) || "";
 
   return (
     <div>
+      {question && (
+        <p className="text-base text-themed-text mb-3">{question}</p>
+      )}
       {isLongForm ? (
         <textarea
           value={answer}
@@ -711,7 +730,7 @@ function TextInput({
           placeholder="Your answer..."
           disabled={disabled}
           rows={5}
-          aria-label="Your answer"
+          aria-label={question || "Your answer"}
           className="w-full rounded-lg border border-themed-border bg-surface px-3 py-2 text-base text-themed-text placeholder:text-themed-muted focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand disabled:opacity-50 mb-3 resize-y"
         />
       ) : (
@@ -721,7 +740,7 @@ function TextInput({
           onChange={(e) => onAnswerChange(e.target.value)}
           placeholder="Your answer..."
           disabled={disabled}
-          aria-label="Your answer"
+          aria-label={question || "Your answer"}
           className="min-h-12 w-full rounded-lg border border-themed-border bg-surface px-3 py-2 text-base text-themed-text placeholder:text-themed-muted focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand disabled:opacity-50 mb-3"
           onKeyDown={(e) => e.key === "Enter" && onSubmit()}
         />

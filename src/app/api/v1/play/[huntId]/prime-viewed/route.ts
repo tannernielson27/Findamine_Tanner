@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
+import { getCompletion, insertCompletion } from "../../_lib/completions";
 
 export async function POST(
   request: NextRequest,
@@ -29,12 +30,7 @@ export async function POST(
     if (!session) throw new ApiError(404, "No active play session");
 
     // Get or create completion record
-    const { data: existing } = await supabase
-      .from("find_completions")
-      .select("id, metadata")
-      .eq("play_session_id", session.id)
-      .eq("find_id", find_id)
-      .maybeSingle();
+    const existing = await getCompletion(supabase, session.id, find_id);
 
     if (existing) {
       // Update with prime viewed timestamp
@@ -50,17 +46,9 @@ export async function POST(
     }
 
     // Create new completion
-    const { data: completion, error } = await supabase
-      .from("find_completions")
-      .insert({
-        play_session_id: session.id,
-        find_id,
-        metadata: { prime_viewed_at: new Date().toISOString() },
-      })
-      .select("id")
-      .single();
-
-    if (error) throw new ApiError(500, error.message);
+    const { row: completion } = await insertCompletion(supabase, session.id, find_id, {
+      metadata: { prime_viewed_at: new Date().toISOString() },
+    });
 
     return Response.json({ completion_id: completion.id, step: "prime" }, { status: 201 });
   } catch (error) {
