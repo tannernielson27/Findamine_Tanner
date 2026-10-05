@@ -4,11 +4,13 @@ import { forwardRef } from "react";
 import { cn } from "@/lib/utils/cn";
 import { useAgeBand } from "@/lib/themes/age-band-provider";
 
+// Every band is >=16px below `sm`: iOS Safari zooms the page when a focused
+// input's text is smaller than that. Teen/adult drop to 14px from `sm` up.
 const inputStyles = {
   primary: "rounded-2xl border-2 border-[var(--color-border)] bg-white px-4 py-3 text-lg placeholder:text-[var(--color-text-secondary)] focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-light)] focus:outline-none min-h-[48px]",
   intermediate: "rounded-xl border border-[var(--color-border)] bg-white px-3 py-2.5 text-base placeholder:text-[var(--color-text-secondary)] focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary-light)] focus:outline-none",
-  teen: "rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm placeholder:text-[var(--color-text-secondary)] focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary-light)] focus:outline-none",
-  adult: "rounded-md border border-[var(--color-border)] bg-white px-3 py-1.5 text-sm placeholder:text-[var(--color-text-secondary)] focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary-light)] focus:outline-none",
+  teen: "rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-base sm:text-sm placeholder:text-[var(--color-text-secondary)] focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary-light)] focus:outline-none",
+  adult: "rounded-md border border-[var(--color-border)] bg-white px-3 py-1.5 text-base sm:text-sm placeholder:text-[var(--color-text-secondary)] focus:border-[var(--color-primary)] focus:ring-1 focus:ring-[var(--color-primary-light)] focus:outline-none",
 };
 
 const labelStyles = {

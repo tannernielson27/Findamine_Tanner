@@ -8,16 +8,24 @@ export default function NotFound() {
       <p className="text-sm text-gray-500 mb-6 max-w-sm">
         The page you&apos;re looking for doesn&apos;t exist or has been moved.
       </p>
-      <div className="flex gap-3">
+      {/* Home first: this page is also what signed-out visitors see, and the
+          dashboard would only bounce them to sign-in. */}
+      <div className="flex flex-wrap justify-center gap-3">
+        <Link
+          href="/"
+          className="flex min-h-11 items-center rounded-md bg-sky-600 px-5 text-sm font-medium text-white hover:bg-sky-700"
+        >
+          Go Home
+        </Link>
         <Link
           href="/dashboard"
-          className="rounded-md bg-sky-600 px-5 py-2 text-sm font-medium text-white hover:bg-sky-700"
+          className="flex min-h-11 items-center rounded-md border border-gray-300 px-5 text-sm text-gray-700 hover:bg-gray-50"
         >
           Go to Dashboard
         </Link>
         <Link
           href="/browse"
-          className="rounded-md border border-gray-300 px-5 py-2 text-sm text-gray-700 hover:bg-gray-50"
+          className="flex min-h-11 items-center rounded-md border border-gray-300 px-5 text-sm text-gray-700 hover:bg-gray-50"
         >
           Browse Hunts
         </Link>

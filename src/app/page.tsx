@@ -40,12 +40,12 @@ export default async function Home() {
             />
           </div>
           <div className="flex items-center gap-4">
-            <Link href="/login" className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">
+            <Link href="/login" className="flex min-h-11 items-center px-1 text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">
               Sign In
             </Link>
             <Link
               href="/register"
-              className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white shadow-md shadow-brand/20 hover:shadow-lg hover:-translate-y-0.5 transition-all"
+              className="flex min-h-11 items-center rounded-full bg-brand px-4 text-sm font-semibold text-white shadow-md shadow-brand/20 hover:shadow-lg hover:-translate-y-0.5 transition-all"
             >
               Get Started
             </Link>
@@ -89,12 +89,12 @@ export default async function Home() {
             </Link>
           </div>
 
-          {/* Floating stats */}
+          {/* Floating highlights — deliberately not numbers: nothing here is a live count. */}
           <div className="mt-12 flex justify-center gap-8 sm:gap-12">
             {[
-              { label: "Hunts Created", value: "200+" },
-              { label: "Challenge Types", value: "10" },
-              { label: "Badges to Earn", value: "42" },
+              { label: "Real GPS navigation", value: "Outdoors" },
+              { label: "Solo or team play", value: "Together" },
+              { label: "Badges for effort", value: "Rewarding" },
             ].map((stat) => (
               <div key={stat.label} className="text-center">
                 <div className="font-[family-name:var(--font-display)] text-2xl sm:text-3xl font-bold text-gray-900">{stat.value}</div>
@@ -186,7 +186,7 @@ export default async function Home() {
             />
             <FeatureCard
               icon={<Trophy className="w-5 h-5" />}
-              title="42 Badges"
+              title="Badges to Earn"
               description="Mastery, creativity, teamwork, exploration. Growth-mindset rewards that celebrate effort."
               accent="bg-amber-500"
             />
@@ -198,7 +198,7 @@ export default async function Home() {
             />
             <FeatureCard
               icon={<BookOpen className="w-5 h-5" />}
-              title="200+ Curriculum Tasks"
+              title="Curriculum Tasks"
               description="Standards-aligned tasks across science, math, history, and more. Or create your own."
               accent="bg-rose-500"
             />

@@ -30,7 +30,9 @@ const buttonVariants = cva(
   }
 );
 
-// Age-band-specific style overrides
+// Age-band-specific style overrides.
+// Sizes shorter than 44px carry max-sm:min-h-11 so they stay a comfortable tap
+// target on phones without changing the denser desktop look.
 const bandStyles = {
   primary: {
     base: "rounded-2xl shadow-lg font-bold tracking-wide",
@@ -42,7 +44,7 @@ const bandStyles = {
       danger: "bg-[var(--color-error)] text-white hover:brightness-110",
     },
     sizes: {
-      sm: "h-10 px-4 text-base min-w-[48px]",
+      sm: "max-sm:min-h-11 h-10 px-4 text-base min-w-[48px]",
       md: "h-14 px-6 text-lg min-w-[48px]",
       lg: "h-16 px-8 text-xl min-w-[48px]",
     },
@@ -57,7 +59,7 @@ const bandStyles = {
       danger: "bg-[var(--color-error)] text-white hover:brightness-110",
     },
     sizes: {
-      sm: "h-9 px-3 text-sm",
+      sm: "max-sm:min-h-11 h-9 px-3 text-sm",
       md: "h-11 px-5 text-base",
       lg: "h-13 px-6 text-lg",
     },
@@ -72,8 +74,8 @@ const bandStyles = {
       danger: "bg-[var(--color-error)] text-white hover:brightness-110",
     },
     sizes: {
-      sm: "h-8 px-3 text-sm",
-      md: "h-10 px-4 text-sm",
+      sm: "max-sm:min-h-11 h-8 px-3 text-sm",
+      md: "max-sm:min-h-11 h-10 px-4 text-sm",
       lg: "h-12 px-6 text-base",
     },
   },
@@ -87,9 +89,9 @@ const bandStyles = {
       danger: "bg-[var(--color-error)] text-white hover:brightness-110",
     },
     sizes: {
-      sm: "h-7 px-2 text-xs",
-      md: "h-9 px-4 text-sm",
-      lg: "h-10 px-5 text-sm",
+      sm: "max-sm:min-h-11 h-7 px-2 text-xs",
+      md: "max-sm:min-h-11 h-9 px-4 text-sm",
+      lg: "max-sm:min-h-11 h-10 px-5 text-sm",
     },
   },
 };

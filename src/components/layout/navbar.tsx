@@ -7,7 +7,18 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useState } from "react";
 import NotificationBell from "./notification-bell";
 import SurveyNudge from "./survey-nudge";
-import { Compass, Map, PlusCircle, Users, ShieldCheck, Settings, LogOut, Menu, X, Lock } from "lucide-react";
+import { Compass, Map, PlusCircle, Users, ShieldCheck, Settings, LogOut, Menu, X, Lock, Trophy, type LucideIcon } from "lucide-react";
+import { navLinksFor, type NavIconKey } from "./nav-links";
+
+const NAV_ICONS: Record<NavIconKey, LucideIcon> = {
+  dashboard: Compass,
+  browse: Map,
+  leaderboard: Trophy,
+  create: PlusCircle,
+  rosters: Users,
+  admin: ShieldCheck,
+  privacy: Lock,
+};
 
 interface NavbarProps {
   user: {
@@ -15,8 +26,10 @@ interface NavbarProps {
     display_name: string | null;
     role: string;
     avatar_url: string | null;
-    /** Assigned friction condition — "low" surfaces Privacy in the main nav. */
+    /** Assigned friction condition — only an explicit "high" removes Privacy from the main nav. */
     privacy_friction?: "low" | "high" | null;
+    /** users.metadata, when the layout passes it — read only for the withdrawn flag. */
+    metadata?: Record<string, unknown> | null;
   } | null;
 }
 
@@ -32,29 +45,8 @@ export default function Navbar({ user }: NavbarProps) {
     router.refresh();
   }
 
-  const isCreator = user && ["teacher", "hunt_creator", "admin", "researcher"].includes(user.role);
-  const isAdmin = user && ["admin", "researcher"].includes(user.role);
-
-  const navLinks = user
-    ? [
-        { href: "/dashboard", label: "Dashboard", icon: Compass },
-        { href: "/browse", label: "Browse", icon: Map },
-        ...(isCreator
-          ? [
-              { href: "/dashboard/hunts/new", label: "Create", icon: PlusCircle },
-              { href: "/dashboard/rosters", label: "Rosters", icon: Users },
-            ]
-          : []),
-        ...(isAdmin
-          ? [{ href: "/admin", label: "Admin", icon: ShieldCheck }]
-          : []),
-        // LOW-friction condition: privacy is one prominent click from anywhere.
-        // (High-friction participants reach it via Settings → More → Privacy.)
-        ...(user.privacy_friction === "low"
-          ? [{ href: "/settings/privacy", label: "Privacy", icon: Lock }]
-          : []),
-      ]
-    : [];
+  // Role gating and the privacy_friction rule live in nav-links.ts (unit tested).
+  const navLinks = navLinksFor(user);
 
   return (
     <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-themed-border">
@@ -74,7 +66,7 @@ export default function Navbar({ user }: NavbarProps) {
         {/* Desktop nav: lg+ only; below that the creator/admin set collides with the account controls */}
         <nav aria-label="Main" className="hidden lg:flex min-w-0 items-center gap-1">
           {navLinks.map((link) => {
-            const Icon = link.icon;
+            const Icon = NAV_ICONS[link.icon];
             const active = pathname === link.href || (link.href !== "/dashboard" && pathname.startsWith(link.href));
             return (
               <Link
@@ -127,12 +119,12 @@ export default function Navbar({ user }: NavbarProps) {
             </>
           ) : (
             <>
-              <Link href="/login" className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">
+              <Link href="/login" className="flex min-h-11 items-center rounded-lg px-3 text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">
                 Sign in
               </Link>
               <Link
                 href="/register"
-                className="rounded-full bg-brand px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark transition-colors"
+                className="flex min-h-11 items-center rounded-full bg-brand px-4 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark transition-colors"
               >
                 Sign up
               </Link>
@@ -157,7 +149,7 @@ export default function Navbar({ user }: NavbarProps) {
       {menuOpen && user && (
         <nav aria-label="Main" className="lg:hidden border-t border-themed-border bg-white px-3 py-2 space-y-0.5">
           {navLinks.map((link) => {
-            const Icon = link.icon;
+            const Icon = NAV_ICONS[link.icon];
             const active = pathname === link.href || (link.href !== "/dashboard" && pathname.startsWith(link.href));
             return (
               <Link

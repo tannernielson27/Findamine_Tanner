@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { motion, AnimatePresence } from "framer-motion";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import {
@@ -13,49 +14,116 @@ import {
 
 interface OnboardingProps {
   role?: string;
+  /** Signed-in user's id. Optional: resolved from the browser session when absent. */
+  userId?: string;
 }
 
-export default function Onboarding({ role }: OnboardingProps) {
+/** Pre-per-user flag. It outlived logout, so the next person on a shared device got no tour. */
+const LEGACY_STORAGE_KEY = "onboarding_complete";
+/** Any other open modal (consent gate, first-choice gate, feature dialogs). */
+const OTHER_MODAL_SELECTOR = '[role="dialog"][aria-modal="true"]:not([data-onboarding-tour])';
+
+function storageKeyFor(userId: string): string {
+  return `${LEGACY_STORAGE_KEY}:${userId}`;
+}
+
+// localStorage can throw (private mode, blocked site data); the API stays authoritative.
+function readFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function writeFlag(key: string): void {
+  try {
+    localStorage.setItem(key, "true");
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+  } catch {
+    // Non-fatal: the tour is re-checked against the API next load.
+  }
+}
+
+function subscribeToModals(onChange: () => void): () => void {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.body, { childList: true, subtree: true });
+  return () => observer.disconnect();
+}
+
+const noopSubscribe = () => () => {};
+const isOtherModalOpen = () => document.querySelector(OTHER_MODAL_SELECTOR) !== null;
+const noModalOnServer = () => false;
+
+export default function Onboarding({ role, userId }: OnboardingProps) {
   const router = useRouter();
   const reducedMotion = useReducedMotion();
   const [show, setShow] = useState(false);
   const [step, setStep] = useState(0);
   const modalRef = useRef<HTMLDivElement>(null);
+  const storageKeyRef = useRef<string | null>(null);
+
+  // The consent / first-choice gates render above the tour. While one of them
+  // (or any other modal) is open the tour stands down entirely: not rendered,
+  // no key handling — so Escape meant for the gate can't dismiss a tour the
+  // user never saw. It comes back once the modal closes. Only observed while
+  // the tour is actually pending.
+  const blocked = useSyncExternalStore(
+    show ? subscribeToModals : noopSubscribe,
+    isOtherModalOpen,
+    noModalOnServer
+  );
+  const visible = show && !blocked;
 
   const steps = stepsForRole(role);
   const destination = onboardingDestination(role);
   const finalCta = finalCtaLabel(role);
 
   useEffect(() => {
-    // localStorage is the fast path; the API is authoritative.
-    if (localStorage.getItem("onboarding_complete") === "true") return;
+    let cancelled = false;
 
     async function check() {
       try {
+        // The flag is keyed by user so a shared device gives each person the tour.
+        let id = userId ?? null;
+        if (!id) {
+          const { data } = await createSupabaseBrowserClient().auth.getSession();
+          id = data.session?.user.id ?? null;
+        }
+        if (cancelled) return;
+        const key = id ? storageKeyFor(id) : null;
+        storageKeyRef.current = key;
+
+        // localStorage is the fast path; the API is authoritative.
+        if (key && readFlag(key)) return;
+
         const res = await fetch("/api/v1/onboarding");
-        if (res.ok) {
-          const data = await res.json();
-          const done =
-            data.onboarding_complete ||
-            (data.milestones || []).some(
-              (m: { milestone_type: string }) =>
-                m.milestone_type === ONBOARDING_MILESTONE
-            );
-          if (done) {
-            localStorage.setItem("onboarding_complete", "true");
-          } else {
-            setShow(true);
-          }
+        if (cancelled || !res.ok) return;
+        const data = await res.json();
+        const done =
+          data.onboarding_complete ||
+          (data.milestones || []).some(
+            (m: { milestone_type: string }) =>
+              m.milestone_type === ONBOARDING_MILESTONE
+          );
+        if (cancelled) return;
+        if (done) {
+          if (key) writeFlag(key);
+        } else {
+          setShow(true);
         }
       } catch {
-        // If the API fails, don't block the UI with a tutorial.
+        // If the session or API lookup fails, don't block the UI with a tutorial.
       }
     }
     check();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   const recordComplete = useCallback(async () => {
-    localStorage.setItem("onboarding_complete", "true");
+    if (storageKeyRef.current) writeFlag(storageKeyRef.current);
     try {
       await fetch("/api/v1/onboarding", {
         method: "POST",
@@ -63,7 +131,7 @@ export default function Onboarding({ role }: OnboardingProps) {
         body: JSON.stringify({ milestone_type: ONBOARDING_MILESTONE }),
       });
     } catch {
-      // localStorage already set — dismissal sticks even if the API call fails.
+      // The per-user flag is already set — dismissal sticks even if the API call fails.
     }
   }, []);
 
@@ -82,7 +150,7 @@ export default function Onboarding({ role }: OnboardingProps) {
 
   // Escape key + focus trap
   useEffect(() => {
-    if (!show) return;
+    if (!visible) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         handleSkip();
@@ -107,7 +175,7 @@ export default function Onboarding({ role }: OnboardingProps) {
     document.addEventListener("keydown", handleKeyDown);
     modalRef.current?.querySelector<HTMLElement>("button")?.focus();
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [show, handleSkip]);
+  }, [visible, handleSkip]);
 
   const handleNext = () => {
     if (step < steps.length - 1) {
@@ -117,7 +185,7 @@ export default function Onboarding({ role }: OnboardingProps) {
     }
   };
 
-  if (!show) return null;
+  if (!visible) return null;
 
   const current = steps[step];
   const isLast = step === steps.length - 1;
@@ -128,6 +196,7 @@ export default function Onboarding({ role }: OnboardingProps) {
       role="dialog"
       aria-modal="true"
       aria-label="Welcome tour"
+      data-onboarding-tour=""
     >
       <AnimatePresence mode="wait">
         <motion.div
