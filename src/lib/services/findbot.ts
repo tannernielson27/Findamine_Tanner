@@ -217,11 +217,31 @@ Keep it to 2-3 sentences. Make it engaging and informative.`,
 
 import OpenAI from "openai";
 import { sanitizeForPrompt } from "@/lib/utils/ai-validation";
+import { ApiError } from "@/lib/utils/api-auth";
 
 let _openai: OpenAI | null = null;
 function getOpenAI(): OpenAI {
   if (!_openai) _openai = new OpenAI();
   return _openai;
+}
+
+/**
+ * Error for creator-facing generators when the model can't produce real output.
+ * These used to return canned filler ("Head to the next location!", an empty
+ * "Custom Hunt") that the UI then presented as AI-written content. An ApiError
+ * reaches the creator as a plain message through the routes' errorResponse().
+ */
+function aiUnavailable(what: string): ApiError {
+  return new ApiError(
+    503,
+    process.env.OPENAI_API_KEY
+      ? `AI couldn't ${what} just now. Nothing was generated — try again, or write it yourself.`
+      : `AI assistance isn't set up on this server (no AI key configured), so it can't ${what}. You can still write it yourself.`
+  );
+}
+
+function nonEmptyString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 /**
@@ -316,16 +336,21 @@ Format as JSON: {"clue_text": "...", "clue_hints": ["hint1", "hint2", "hint3"]}`
     const text = response.choices[0]?.message?.content;
     if (text) {
       const parsed = JSON.parse(text);
-      return {
-        clue_text: parsed.clue_text || "Head to the next location!",
-        clue_hints: Array.isArray(parsed.clue_hints) ? parsed.clue_hints.slice(0, 3) : [],
-      };
+      const clueText = nonEmptyString(parsed.clue_text);
+      if (clueText) {
+        return {
+          clue_text: clueText,
+          clue_hints: Array.isArray(parsed.clue_hints)
+            ? parsed.clue_hints.filter((h: unknown) => nonEmptyString(h)).slice(0, 3)
+            : [],
+        };
+      }
     }
   } catch {
-    // Fall through to defaults
+    // Fall through: no key, network/model failure, or unparseable output
   }
 
-  return { clue_text: "Head to the next location!", clue_hints: [] };
+  throw aiUnavailable("write a clue");
 }
 
 /**
@@ -448,16 +473,22 @@ Format as JSON:
 
     const text = response.choices[0]?.message?.content;
     if (text) {
-      return JSON.parse(text);
+      const parsed = JSON.parse(text);
+      // Only hand back a module the model actually wrote: a titled primer and a
+      // task with a real question.
+      if (
+        nonEmptyString(parsed?.primer?.title) &&
+        nonEmptyString(parsed?.task?.title) &&
+        nonEmptyString(parsed?.task?.content?.question)
+      ) {
+        return parsed;
+      }
     }
   } catch {
-    // Fall through
+    // Fall through: no key, network/model failure, or unparseable output
   }
 
-  return {
-    primer: { title: topic, content: { text: `Learn about ${topic}.` }, learning_objectives: [] },
-    task: { title: `${topic} Challenge`, content: { question: `What did you learn about ${topic}?` }, learning_objectives: [] },
-  };
+  throw aiUnavailable(`generate content about "${topic}"`);
 }
 
 /**
@@ -537,18 +568,50 @@ Format as JSON:
 
     const text = response.choices[0]?.message?.content;
     if (text) {
-      return JSON.parse(text);
+      const parsed = JSON.parse(text);
+      const stops = validRecommendedStops(parsed?.stops, availableTasks, availablePrimers);
+      const title = nonEmptyString(parsed?.title);
+      if (title && stops.length > 0) {
+        return {
+          title,
+          description: nonEmptyString(parsed.description),
+          theme_narrative: nonEmptyString(parsed.theme_narrative),
+          stops,
+        };
+      }
     }
   } catch {
-    // Fall through
+    // Fall through: no key, network/model failure, or unparseable output
   }
 
-  return {
-    title: "Custom Hunt",
-    description: "A custom scavenger hunt.",
-    theme_narrative: "",
-    stops: [],
-  };
+  throw aiUnavailable("compose a hunt");
+}
+
+/**
+ * Keep only stops that point at a task we actually offered the model (an
+ * invented id would fail the finds.task_id foreign key later), drop invented
+ * primer ids, and renumber what's left.
+ */
+function validRecommendedStops(
+  raw: unknown,
+  availableTasks: { id: string }[],
+  availablePrimers: { id: string }[]
+): { task_id: string; primer_id: string; sort_order: number; suggested_clue: string; clue_hints: string[] }[] {
+  if (!Array.isArray(raw)) return [];
+  const taskIds = new Set(availableTasks.map((t) => t.id));
+  const primerIds = new Set(availablePrimers.map((p) => p.id));
+
+  return raw
+    .filter((stop) => stop && taskIds.has(stop.task_id) && nonEmptyString(stop.suggested_clue))
+    .map((stop, index) => ({
+      task_id: stop.task_id as string,
+      primer_id: primerIds.has(stop.primer_id) ? (stop.primer_id as string) : "",
+      sort_order: index,
+      suggested_clue: nonEmptyString(stop.suggested_clue),
+      clue_hints: Array.isArray(stop.clue_hints)
+        ? stop.clue_hints.filter((h: unknown) => nonEmptyString(h)).slice(0, 3)
+        : [],
+    }));
 }
 
 function getFallbackHint(level: number): string {

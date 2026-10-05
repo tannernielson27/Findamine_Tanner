@@ -1,7 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from "@react-google-maps/api";
+import { GoogleMap, Marker, InfoWindow } from "@react-google-maps/api";
+import { useGoogleMaps } from "@/components/maps/use-google-maps";
 
 interface Stop {
   order: number;
@@ -29,9 +30,7 @@ export default function HuntMap({ centerLat, centerLng, stops }: HuntMapProps) {
   const [selectedStop, setSelectedStop] = useState<Stop | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
 
-  const { isLoaded } = useJsApiLoader({
-    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "",
-  });
+  const { isLoaded, unavailableReason } = useGoogleMaps();
 
   // If no stops with coordinates and no center, don't render
   if (stops.length === 0 && !centerLat) return null;
@@ -57,6 +56,14 @@ export default function HuntMap({ centerLat, centerLng, stops }: HuntMapProps) {
       allPoints.forEach((p) => bounds.extend(p));
       map.fitBounds(bounds, 40);
     }
+  }
+
+  if (unavailableReason) {
+    return (
+      <div role="alert" className="mb-6 rounded-xl border border-themed-border bg-themed-bg px-4 py-3 text-sm text-themed-muted">
+        {unavailableReason}
+      </div>
+    );
   }
 
   if (!isLoaded) {

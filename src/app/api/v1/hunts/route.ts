@@ -10,6 +10,8 @@ import {
 import { generalLimiter } from "@/lib/utils/rate-limit";
 import { botGuard } from "@/lib/utils/bot-guard";
 
+const DIFFICULTY_PROGRESSIONS = ["ascending", "descending", "mixed", "plateau"];
+
 export async function GET(request: NextRequest) {
   const blocked = await botGuard(request);
   if (blocked) return blocked;
@@ -95,17 +97,20 @@ export async function POST(request: NextRequest) {
     requireRole(user, "teacher", "hunt_creator", "admin", "researcher");
 
     const body = await request.json();
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    if (!title) throw new ApiError(400, "Hunt title is required");
+
     const supabase = await createSupabaseServiceClient();
 
     const { data: hunt, error } = await supabase
       .from("hunts")
       .insert({
-        title: body.title,
+        title,
         description: body.description || null,
         target_audience: body.target_audience || "all",
         play_mode: body.play_mode || "solo",
-        center_latitude: body.center_latitude || null,
-        center_longitude: body.center_longitude || null,
+        center_latitude: body.center_latitude ?? null,
+        center_longitude: body.center_longitude ?? null,
         search_radius_km: body.search_radius_km || null,
         estimated_duration_min: body.estimated_duration_min || null,
         grade_range_min: body.grade_range_min || null,
@@ -117,6 +122,12 @@ export async function POST(request: NextRequest) {
         identity_mode: body.identity_mode || "codename_assigned",
         is_template: body.is_template || false,
         metadata: body.metadata || {},
+        theme: body.theme || null,
+        theme_narrative: body.theme_narrative || null,
+        // Column has a CHECK constraint; anything else falls back to the DB default.
+        ...(DIFFICULTY_PROGRESSIONS.includes(body.difficulty_progression)
+          ? { difficulty_progression: body.difficulty_progression }
+          : {}),
         created_by: user.id,
       })
       .select()

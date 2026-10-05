@@ -6,6 +6,28 @@ import {
   errorResponse,
   ApiError,
 } from "@/lib/utils/api-auth";
+import { parseCoordinates, parseRadius } from "../validation";
+
+type Supabase = Awaited<ReturnType<typeof createSupabaseServiceClient>>;
+
+/** Locations are only editable by whoever created them (or admin/researcher). */
+async function requireLocationOwner(
+  supabase: Supabase,
+  id: string,
+  user: { id: string; role: string }
+) {
+  const { data: existing } = await supabase
+    .from("locations")
+    .select("created_by")
+    .eq("id", id)
+    .is("deleted_at", null)
+    .single();
+
+  if (!existing) throw new ApiError(404, "Location not found");
+  if (existing.created_by !== user.id && !["admin", "researcher"].includes(user.role)) {
+    throw new ApiError(403, "You can only change locations you created");
+  }
+}
 
 export async function GET(
   request: NextRequest,
@@ -41,9 +63,10 @@ export async function PUT(
 
     const body = await request.json();
     const supabase = await createSupabaseServiceClient();
+    await requireLocationOwner(supabase, id, user);
 
     const allowedFields = [
-      "name", "description", "radius_meters", "address",
+      "name", "description", "address",
       "place_id", "location_type", "safety_notes", "is_library", "metadata",
     ];
 
@@ -52,11 +75,23 @@ export async function PUT(
       if (body[field] !== undefined) updates[field] = body[field];
     }
 
+    if (updates.name !== undefined && !String(updates.name || "").trim()) {
+      throw new ApiError(400, "Location name cannot be empty");
+    }
+
+    const radiusMeters = parseRadius(body.radius_meters);
+    if (radiusMeters !== undefined) updates.radius_meters = radiusMeters;
+
     // Update lat/lng + geography if provided
-    if (body.latitude !== undefined && body.longitude !== undefined) {
-      updates.latitude = body.latitude;
-      updates.longitude = body.longitude;
-      updates.coordinates = `SRID=4326;POINT(${body.longitude} ${body.latitude})`;
+    if (body.latitude !== undefined || body.longitude !== undefined) {
+      const { lat, lng } = parseCoordinates(body.latitude, body.longitude);
+      updates.latitude = lat;
+      updates.longitude = lng;
+      updates.coordinates = `SRID=4326;POINT(${lng} ${lat})`;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      throw new ApiError(400, "No editable fields provided");
     }
 
     const { data, error } = await supabase
@@ -84,6 +119,7 @@ export async function DELETE(
     requireRole(user, "teacher", "hunt_creator", "admin", "researcher");
 
     const supabase = await createSupabaseServiceClient();
+    await requireLocationOwner(supabase, id, user);
 
     const { error } = await supabase
       .from("locations")

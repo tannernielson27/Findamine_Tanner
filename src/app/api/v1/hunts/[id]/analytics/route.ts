@@ -5,6 +5,17 @@ import { generalLimiter } from "@/lib/utils/rate-limit";
 
 const MIN_PLAYS_FOR_PUBLIC = 5;
 
+interface StopAnalytics {
+  find_id: string;
+  /** 1-based position in the hunt's current stop order. */
+  stop_number: number;
+  name: string | null;
+  /** null when no completed session has reached this stop yet. */
+  avg_score: number | null;
+  avg_hints: number | null;
+  completion_count: number;
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -26,6 +37,7 @@ export async function GET(
       .from("hunts")
       .select("id, title, created_by, status")
       .eq("id", id)
+      .is("deleted_at", null)
       .single();
 
     if (!hunt) throw new ApiError(404, "Hunt not found");
@@ -68,9 +80,18 @@ export async function GET(
 
     const completionRate = allSessions ? Math.round((totalPlays / allSessions) * 100) : 0;
 
-    // Get stop-level analytics
+    // Get stop-level analytics. Stops are listed in hunt order (one entry per
+    // live stop, played or not) so "Stop N" here is the same stop N the
+    // creator sees in the editor and players see in the hunt.
+    const { data: finds } = await supabase
+      .from("finds")
+      .select("id, sort_order, locations(name)")
+      .eq("hunt_id", id)
+      .is("deleted_at", null)
+      .order("sort_order", { ascending: true });
+
     const sessionIds = (sessions || []).map((s) => s.id);
-    let stopAnalytics: { find_id: string; avg_score: number; avg_hints: number; completion_count: number }[] = [];
+    const findMap = new Map<string, { scores: number[]; hints: number[]; completed: number }>();
 
     if (sessionIds.length > 0) {
       const { data: completions } = await supabase
@@ -79,7 +100,6 @@ export async function GET(
         .in("play_session_id", sessionIds);
 
       // Aggregate per find
-      const findMap = new Map<string, { scores: number[]; hints: number[]; completed: number }>();
       for (const c of completions || []) {
         if (!findMap.has(c.find_id)) findMap.set(c.find_id, { scores: [], hints: [], completed: 0 });
         const entry = findMap.get(c.find_id)!;
@@ -87,17 +107,27 @@ export async function GET(
         entry.hints.push((c.hints_used || 0) + (c.clue_hints_used || 0) + (c.challenge_hints_used || 0));
         if (c.completed_at) entry.completed++;
       }
-
-      stopAnalytics = Array.from(findMap.entries()).map(([findId, data]) => ({
-        find_id: findId,
-        avg_score: Math.round(data.scores.reduce((a, b) => a + b, 0) / data.scores.length),
-        avg_hints: Math.round((data.hints.reduce((a, b) => a + b, 0) / data.hints.length) * 10) / 10,
-        completion_count: data.completed,
-      }));
     }
 
-    // Find hardest and easiest stops
-    const sortedStops = [...stopAnalytics].sort((a, b) => a.avg_score - b.avg_score);
+    const stopAnalytics: StopAnalytics[] = (finds || []).map((find, index) => {
+      const played = findMap.get(find.id);
+      const location = find.locations as { name?: string } | { name?: string }[] | null;
+      const name = (Array.isArray(location) ? location[0]?.name : location?.name) || null;
+      return {
+        find_id: find.id,
+        stop_number: index + 1,
+        // Stop names give away where the stops are; only the creator sees them.
+        name: isOwner ? name : null,
+        avg_score: played ? Math.round(played.scores.reduce((a, b) => a + b, 0) / played.scores.length) : null,
+        avg_hints: played ? Math.round((played.hints.reduce((a, b) => a + b, 0) / played.hints.length) * 10) / 10 : null,
+        completion_count: played ? played.completed : 0,
+      };
+    });
+
+    // Find hardest and easiest stops (among stops someone has actually played)
+    const sortedStops = stopAnalytics
+      .filter((s): s is StopAnalytics & { avg_score: number } => s.avg_score !== null)
+      .sort((a, b) => a.avg_score - b.avg_score);
     const hardestStop = sortedStops[0] || null;
     const easiestStop = sortedStops[sortedStops.length - 1] || null;
 

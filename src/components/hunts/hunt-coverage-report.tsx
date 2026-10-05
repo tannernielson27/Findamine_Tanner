@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 interface CoverageData {
   subjects: Record<string, number>;
@@ -13,8 +13,12 @@ interface CoverageData {
 interface HuntCoverageReportProps {
   huntId: string;
   finds: {
-    tasks?: { subject_domain?: string; challenge_type?: string; grade_range_min?: number; grade_range_max?: number; estimated_minutes?: number } | null;
+    tasks?: { subject_domain?: string | null; challenge_type?: string; grade_range_min?: number | null; grade_range_max?: number | null; estimated_minutes?: number | null } | null;
   }[];
+}
+
+function gradeLabel(grade: number): string {
+  return grade === 0 ? "K" : String(grade);
 }
 
 export default function HuntCoverageReport({ finds }: HuntCoverageReportProps) {
@@ -30,8 +34,10 @@ export default function HuntCoverageReport({ finds }: HuntCoverageReportProps) {
     estimatedMinutes: 0,
   };
 
-  let minGrade = 12;
-  let maxGrade = 0;
+  // Teacher-written tasks have no grade range (the columns are NULL), so only
+  // tasks that actually carry one count toward the hunt's range.
+  let minGrade: number | null = null;
+  let maxGrade: number | null = null;
 
   for (const find of finds) {
     const task = find.tasks;
@@ -43,12 +49,12 @@ export default function HuntCoverageReport({ finds }: HuntCoverageReportProps) {
     if (task.challenge_type) {
       coverage.challengeTypes[task.challenge_type] = (coverage.challengeTypes[task.challenge_type] || 0) + 1;
     }
-    if (task.grade_range_min !== undefined && task.grade_range_min < minGrade) minGrade = task.grade_range_min;
-    if (task.grade_range_max !== undefined && task.grade_range_max > maxGrade) maxGrade = task.grade_range_max;
+    if (task.grade_range_min != null && (minGrade === null || task.grade_range_min < minGrade)) minGrade = task.grade_range_min;
+    if (task.grade_range_max != null && (maxGrade === null || task.grade_range_max > maxGrade)) maxGrade = task.grade_range_max;
     coverage.estimatedMinutes += task.estimated_minutes || 5;
   }
 
-  if (minGrade <= maxGrade) {
+  if (minGrade !== null && maxGrade !== null && minGrade <= maxGrade) {
     coverage.gradeRange = { min: minGrade, max: maxGrade };
   }
 
@@ -105,7 +111,8 @@ export default function HuntCoverageReport({ finds }: HuntCoverageReportProps) {
           {/* Grade range */}
           {coverage.gradeRange && (
             <p className="text-[11px] text-gray-500">
-              Grade range: {coverage.gradeRange.min === 0 ? "K" : coverage.gradeRange.min}–{coverage.gradeRange.max}
+              Grade range: {gradeLabel(coverage.gradeRange.min)}
+              {coverage.gradeRange.max !== coverage.gradeRange.min && `–${gradeLabel(coverage.gradeRange.max)}`}
             </p>
           )}
 

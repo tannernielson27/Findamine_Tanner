@@ -7,11 +7,51 @@ import StandardsBrowser from "./standards-browser";
 import AiPromptTemplates from "./ai-prompt-templates";
 import AiModeIndicator, { detectMode, type AiMode } from "./ai-mode-indicator";
 
+/** An existing stop, as returned by GET /api/v1/hunts/{id} (finds with their relations). */
+export interface EditableFind {
+  id: string;
+  clue_text: string | null;
+  scaffolding_level?: string | null;
+  metadata?: Record<string, unknown> | null;
+  location_id: string | null;
+  task_id: string | null;
+  primer_id: string | null;
+  locations: { name: string; latitude: number; longitude: number; radius_meters?: number | null } | null;
+  tasks: {
+    title: string;
+    challenge_type: string;
+    content?: Record<string, unknown> | null;
+    is_library?: boolean | null;
+    description?: string | null;
+    subject_domain?: string | null;
+    grade_range_min?: number | null;
+    grade_range_max?: number | null;
+    difficulty_level?: number | null;
+    feedback?: Record<string, unknown> | null;
+  } | null;
+  primers: { title: string; content?: Record<string, unknown> | null } | null;
+}
+
 interface FindEditorProps {
   huntId: string;
   onSaved: () => void;
   onCancel: () => void;
+  /** When set, the form edits this stop instead of adding a new one. */
+  find?: EditableFind;
   experimentCondition?: string; // "control" | "scaffolding" | "feedback" | "full"
+}
+
+const MIN_RADIUS_METERS = 5;
+const MAX_RADIUS_METERS = 1000;
+
+function strings(value: unknown): string[] | null {
+  return Array.isArray(value) && value.every((v) => typeof v === "string") ? (value as string[]) : null;
+}
+
+/** Read the server's error message off a failed response, with a fallback. */
+async function errorFrom(res: Response, fallback: string): Promise<string> {
+  const data = await res.json().catch(() => null);
+  return data?.error ? `${fallback}: ${data.error}` : `${fallback} (error ${res.status})`;
 }
 
 const CHALLENGE_TYPES = [
@@ -26,44 +66,67 @@ const CHALLENGE_TYPES = [
 ];
 
 /**
- * Form to create a new find (stop) within a hunt.
+ * Form to create a new find (stop) within a hunt, or edit an existing one.
  * Creates location + task + find in sequence via API calls.
+ *
+ * Editing never modifies a location/task/primer row in place: cloned hunts share
+ * those rows with the hunt they were copied from, so a changed part is saved as
+ * a new row and the stop is re-pointed at it.
  */
-export default function FindEditor({ huntId, onSaved, onCancel, experimentCondition }: FindEditorProps) {
+export default function FindEditor({ huntId, onSaved, onCancel, find, experimentCondition }: FindEditorProps) {
+  const isEdit = !!find;
+  const existingContent = (find?.tasks?.content || {}) as Record<string, unknown>;
+  const existingPrimerText = typeof find?.primers?.content?.text === "string" ? find.primers.content.text : "";
   // Experiment: scaffolding features only show for scaffolding/full conditions
   const showScaffolding = !experimentCondition || experimentCondition === "scaffolding" || experimentCondition === "full";
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showLibrary, setShowLibrary] = useState(false);
-  const [libraryTaskId, setLibraryTaskId] = useState<string | null>(null);
+  // A library task is used as-is (its fields are read-only below).
+  const [libraryTaskId, setLibraryTaskId] = useState<string | null>(
+    find?.tasks?.is_library ? find.task_id : null
+  );
 
   // Location fields
-  const [locationName, setLocationName] = useState("");
-  const [latitude, setLatitude] = useState("");
-  const [longitude, setLongitude] = useState("");
-  const [radiusMeters, setRadiusMeters] = useState("50");
+  const [locationName, setLocationName] = useState(find?.locations?.name || "");
+  const [latitude, setLatitude] = useState(find?.locations ? String(find.locations.latitude) : "");
+  const [longitude, setLongitude] = useState(find?.locations ? String(find.locations.longitude) : "");
+  const [radiusMeters, setRadiusMeters] = useState(String(find?.locations?.radius_meters ?? 50));
 
   // Stop settings
-  const [scaffoldingLevel, setScaffoldingLevel] = useState("medium");
+  const [scaffoldingLevel, setScaffoldingLevel] = useState(find?.scaffolding_level || "medium");
 
   // Clue
-  const [clueText, setClueText] = useState("");
+  const [clueText, setClueText] = useState(find?.clue_text || "");
 
   // Task fields
-  const [taskTitle, setTaskTitle] = useState("");
-  const [challengeType, setChallengeType] = useState("multiple_choice");
-  const [question, setQuestion] = useState("");
-  const [correctAnswer, setCorrectAnswer] = useState("");
+  const [taskTitle, setTaskTitle] = useState(find?.tasks?.title || "");
+  const [challengeType, setChallengeType] = useState(find?.tasks?.challenge_type || "multiple_choice");
+  const [question, setQuestion] = useState(typeof existingContent.question === "string" ? existingContent.question : "");
+  const [correctAnswer, setCorrectAnswer] = useState(
+    typeof existingContent.correct_answer === "string" || typeof existingContent.correct_answer === "number"
+      ? String(existingContent.correct_answer)
+      : ""
+  );
 
   // Multiple choice options
-  const [options, setOptions] = useState(["", "", "", ""]);
+  const [options, setOptions] = useState(strings(existingContent.options) || ["", "", "", ""]);
 
   // Sorting items
-  const [sortingItems, setSortingItems] = useState(["", "", ""]);
+  const [sortingItems, setSortingItems] = useState(
+    strings(existingContent.correct_order) || strings(existingContent.items) || ["", "", ""]
+  );
 
   // Primer (optional)
-  const [primerTitle, setPrimerTitle] = useState("");
-  const [primerText, setPrimerText] = useState("");
+  const [primerTitle, setPrimerTitle] = useState(find?.primers?.title || "");
+  const [primerText, setPrimerText] = useState(existingPrimerText);
+
+  // Snapshots of what was loaded, so an edit only replaces the parts that changed.
+  const locationKey = JSON.stringify([locationName, latitude, longitude, radiusMeters]);
+  const taskKey = JSON.stringify([libraryTaskId, taskTitle, challengeType, question, correctAnswer, options, sortingItems]);
+  const primerKey = JSON.stringify([primerTitle, primerText]);
+  const [initialKeys] = useState({ location: locationKey, task: taskKey, primer: primerKey });
+  const needsPlacement = find?.metadata?.needs_placement === true;
 
   // AI generation
   const [generatingClue, setGeneratingClue] = useState(false);
@@ -90,6 +153,10 @@ export default function FindEditor({ huntId, onSaved, onCancel, experimentCondit
   };
 
   const handleGenerateClue = async () => {
+    if (!primerText.trim() && !question.trim()) {
+      setError("To generate a clue, first write the challenge question or the primer text — the AI builds the clue from them.");
+      return;
+    }
     setGeneratingClue(true);
     setError("");
     try {
@@ -103,10 +170,18 @@ export default function FindEditor({ huntId, onSaved, onCancel, experimentCondit
           difficulty_tier: "medium",
         }),
       });
-      const data = await res.json();
-      if (data.clue_text) setClueText(data.clue_text);
+      if (!res.ok) {
+        setError(await errorFrom(res, "No clue was generated"));
+        return;
+      }
+      const data = await res.json().catch(() => null);
+      if (typeof data?.clue_text === "string" && data.clue_text.trim()) {
+        setClueText(data.clue_text);
+      } else {
+        setError("No clue was generated: the AI returned an empty answer. Try again, or write the clue yourself.");
+      }
     } catch {
-      setError("Failed to generate clue");
+      setError("No clue was generated: couldn't reach the server. Check your connection, or write the clue yourself.");
     } finally {
       setGeneratingClue(false);
     }
@@ -126,7 +201,15 @@ export default function FindEditor({ huntId, onSaved, onCancel, experimentCondit
           challenge_type: challengeType,
         }),
       });
-      const data = await res.json();
+      if (!res.ok) {
+        setError(await errorFrom(res, "Nothing was generated"));
+        return;
+      }
+      const data = await res.json().catch(() => null);
+      if (!data?.primer && !data?.task) {
+        setError("Nothing was generated: the AI returned an empty answer. Try again, or write the challenge yourself.");
+        return;
+      }
       if (data.primer) {
         setPrimerTitle(data.primer.title || "");
         const pc = data.primer.content;
@@ -149,7 +232,7 @@ export default function FindEditor({ huntId, onSaved, onCancel, experimentCondit
       }
       setShowLessonPlan(false);
     } catch {
-      setError("Failed to generate from lesson plan");
+      setError("Nothing was generated: couldn't reach the server. Check your connection, or write the challenge yourself.");
     } finally {
       setGeneratingModule(false);
     }
@@ -160,52 +243,83 @@ export default function FindEditor({ huntId, onSaved, onCancel, experimentCondit
 
     // Validate required fields
     if (!locationName.trim()) return setError("Location name is required");
-    if (!latitude || !longitude) return setError("Coordinates are required");
+    if (!latitude || !longitude) return setError("Coordinates are required — click the map, search for an address, or type them in");
+
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) return setError("Latitude must be a number between -90 and 90");
+    if (!Number.isFinite(lng) || lng < -180 || lng > 180) return setError("Longitude must be a number between -180 and 180");
+
+    const radius = Number(radiusMeters);
+    if (radiusMeters.trim() === "" || !Number.isFinite(radius) || radius < MIN_RADIUS_METERS || radius > MAX_RADIUS_METERS) {
+      return setError(`Arrival radius must be between ${MIN_RADIUS_METERS} and ${MAX_RADIUS_METERS} meters (50 is a good default)`);
+    }
+
     if (!taskTitle.trim()) return setError("Challenge title is required");
     if (!clueText.trim()) return setError("Clue text is required");
 
-    if (challengeType === "multiple_choice") {
-      const filledOptions = options.filter((o) => o.trim());
+    // A library task is used as-is, so only hand-written challenges are checked.
+    if (!libraryTaskId && challengeType === "multiple_choice") {
+      const filledOptions = options.map((o) => o.trim()).filter(Boolean);
       if (filledOptions.length < 2) return setError("At least 2 answer options are required");
-      if (!correctAnswer) return setError("Select the correct answer");
+      if (new Set(filledOptions).size !== filledOptions.length) return setError("Two answer options are the same — make each option different");
+      if (!correctAnswer.trim() || !filledOptions.includes(correctAnswer.trim())) {
+        return setError("Select the correct answer (click the radio button next to one of the options)");
+      }
     }
 
-    if (challengeType === "sorting_ordering") {
+    if (!libraryTaskId && challengeType === "sorting_ordering") {
       const filledItems = sortingItems.filter((i) => i.trim());
       if (filledItems.length < 2) return setError("At least 2 items to sort are required");
     }
 
+    // (An untouched existing primer is kept as-is, whatever shape its content has.)
+    if (primerKey !== initialKeys.primer && !!primerTitle.trim() !== !!primerText.trim()) {
+      return setError("A primer needs both a title and text — fill in both, or clear both to skip the primer");
+    }
+
+    const locationChanged = !isEdit || !find.location_id || locationKey !== initialKeys.location;
+    const taskChanged = !isEdit || !find.task_id || taskKey !== initialKeys.task;
+    const primerChanged = !isEdit || primerKey !== initialKeys.primer;
+    // Only actually moving the pin counts as placing a placeholder stop — renaming it does not.
+    const pinMoved =
+      isEdit && (Number(find.locations?.latitude) !== lat || Number(find.locations?.longitude) !== lng);
+
     setSaving(true);
 
     try {
-      // 1. Create location
-      const locRes = await fetch("/api/v1/locations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: locationName,
-          latitude: parseFloat(latitude),
-          longitude: parseFloat(longitude),
-          radius_meters: parseInt(radiusMeters) || 50,
-        }),
-      });
-      if (!locRes.ok) {
-        const d = await locRes.json();
-        throw new Error(d.error || "Failed to create location");
+      // 1. Create location (when editing: only if it changed)
+      let locationId = find?.location_id ?? null;
+      if (locationChanged) {
+        const locRes = await fetch("/api/v1/locations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: locationName.trim(),
+            latitude: lat,
+            longitude: lng,
+            radius_meters: radius,
+          }),
+        });
+        if (!locRes.ok) throw new Error(await errorFrom(locRes, "Failed to save location"));
+        const locData = await locRes.json();
+        locationId = locData.location?.id ?? null;
+        if (!locationId) throw new Error("Failed to save location: the server returned no location");
       }
-      const locData = await locRes.json();
-      const locationId = locData.location?.id;
 
       // 2. Get or create task
       let taskId = libraryTaskId; // Use library task if selected
+      if (!taskId && !taskChanged) taskId = find?.task_id ?? null;
 
       if (!taskId) {
-      // Build task content based on challenge type
-      const content: Record<string, unknown> = { question };
+      // Build task content based on challenge type. When editing a task of the
+      // same type, keep the parts of its content this form doesn't show (hints…).
+      const sameType = isEdit && !find.tasks?.is_library && find.tasks?.challenge_type === challengeType;
+      const content: Record<string, unknown> = { ...(sameType ? existingContent : {}), question };
 
       if (challengeType === "multiple_choice") {
-        content.options = options.filter((o) => o.trim());
-        content.correct_answer = correctAnswer;
+        content.options = options.map((o) => o.trim()).filter(Boolean);
+        content.correct_answer = correctAnswer.trim();
       } else if (challengeType === "numeric_entry") {
         content.correct_answer = correctAnswer;
       } else if (challengeType === "sorting_ordering") {
@@ -220,54 +334,67 @@ export default function FindEditor({ huntId, onSaved, onCancel, experimentCondit
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: taskTitle,
+          title: taskTitle.trim(),
           challenge_type: challengeType,
           content,
+          // Carry over the classification of the task being replaced.
+          ...(sameType && find.tasks
+            ? {
+                description: find.tasks.description ?? undefined,
+                subject_domain: find.tasks.subject_domain ?? undefined,
+                grade_range_min: find.tasks.grade_range_min ?? undefined,
+                grade_range_max: find.tasks.grade_range_max ?? undefined,
+                difficulty_level: find.tasks.difficulty_level ?? undefined,
+                feedback: find.tasks.feedback ?? undefined,
+              }
+            : {}),
         }),
       });
-      if (!taskRes.ok) {
-        const d = await taskRes.json();
-        throw new Error(d.error || "Failed to create task");
-      }
+      if (!taskRes.ok) throw new Error(await errorFrom(taskRes, "Failed to save challenge"));
       const taskData = await taskRes.json();
       taskId = taskData.record?.id || taskData.task?.id;
+      if (!taskId) throw new Error("Failed to save challenge: the server returned no challenge");
       } // end if (!taskId)
 
-      // 4. Optionally create primer
-      let primerId = null;
-      if (primerTitle.trim() && primerText.trim()) {
+      // 4. Optionally create primer (when editing: only if it changed)
+      let primerId: string | null = primerChanged ? null : find?.primer_id ?? null;
+      if (primerChanged && primerTitle.trim() && primerText.trim()) {
         const primerRes = await fetch("/api/v1/primers", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            title: primerTitle,
+            title: primerTitle.trim(),
             content: { text: primerText },
-            content_type: "text",
           }),
         });
-        if (primerRes.ok) {
-          const primerData = await primerRes.json();
-          primerId = primerData.record?.id || primerData.primer?.id;
-        }
+        if (!primerRes.ok) throw new Error(await errorFrom(primerRes, "Failed to save primer"));
+        const primerData = await primerRes.json();
+        primerId = primerData.record?.id || primerData.primer?.id || null;
+        if (!primerId) throw new Error("Failed to save primer: the server returned no primer");
       }
 
-      // 5. Create the find
-      const findRes = await fetch(`/api/v1/hunts/${huntId}/finds`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          location_id: locationId,
-          task_id: taskId,
-          primer_id: primerId,
-          clue_text: clueText,
-          hot_cold_enabled: true,
-          scaffolding_level: scaffoldingLevel,
-        }),
-      });
-      if (!findRes.ok) {
-        const d = await findRes.json();
-        throw new Error(d.error || "Failed to create find");
-      }
+      // 5. Create (or update) the find
+      const findRes = await fetch(
+        isEdit ? `/api/v1/hunts/${huntId}/finds/${find.id}` : `/api/v1/hunts/${huntId}/finds`,
+        {
+          method: isEdit ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            location_id: locationId,
+            task_id: taskId,
+            primer_id: primerId,
+            clue_text: clueText,
+            scaffolding_level: scaffoldingLevel,
+            ...(isEdit
+              ? // Moving a placeholder stop is what marks it as placed.
+                pinMoved && needsPlacement
+                ? { metadata: { ...(find.metadata || {}), needs_placement: false } }
+                : {}
+              : { hot_cold_enabled: true }),
+          }),
+        }
+      );
+      if (!findRes.ok) throw new Error(await errorFrom(findRes, isEdit ? "Failed to save stop" : "Failed to add stop"));
 
       onSaved();
     } catch (err) {
@@ -279,11 +406,17 @@ export default function FindEditor({ huntId, onSaved, onCancel, experimentCondit
 
   return (
     <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-6">
-      <h3 className="text-base font-semibold text-gray-900 mb-4">Add New Stop</h3>
+      <h3 className="text-base font-semibold text-gray-900 mb-4">{isEdit ? "Edit Stop" : "Add New Stop"}</h3>
 
       {error && (
-        <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700 mb-4">
+        <div role="alert" className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700 mb-4">
           {error}
+        </div>
+      )}
+
+      {needsPlacement && (
+        <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800 mb-4">
+          This stop was generated by AI and has a placeholder location near the hunt center. Give it a real name and move the pin to where players should actually go.
         </div>
       )}
 
@@ -318,14 +451,17 @@ export default function FindEditor({ huntId, onSaved, onCancel, experimentCondit
               value={radiusMeters}
               onChange={(e) => setRadiusMeters(e.target.value)}
               placeholder="Radius (m)"
+              aria-label="Arrival radius in meters"
               type="number"
+              min={MIN_RADIUS_METERS}
+              max={MAX_RADIUS_METERS}
               className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
             />
           </div>
           <LocationPicker
             latitude={latitude ? parseFloat(latitude) : null}
             longitude={longitude ? parseFloat(longitude) : null}
-            radiusMeters={parseInt(radiusMeters) || 50}
+            radiusMeters={Number(radiusMeters) > 0 ? Number(radiusMeters) : 50}
             onLocationChange={(lat, lng) => {
               setLatitude(lat.toFixed(6));
               setLongitude(lng.toFixed(6));
@@ -508,7 +644,7 @@ export default function FindEditor({ huntId, onSaved, onCancel, experimentCondit
 
         {libraryTaskId && (
           <div className="rounded-md bg-sky-50 border border-sky-200 px-3 py-2 mb-3 flex items-center justify-between">
-            <span className="text-xs text-sky-700">Using library task: <strong>{taskTitle}</strong></span>
+            <span className="text-xs text-sky-700">Using library task: <strong>{taskTitle}</strong> — it is used exactly as written, so the fields below are read-only. Clear it to write your own challenge.</span>
             <button
               type="button"
               onClick={() => { setLibraryTaskId(null); setTaskTitle(""); setQuestion(""); setChallengeType("multiple_choice"); }}
@@ -518,7 +654,7 @@ export default function FindEditor({ huntId, onSaved, onCancel, experimentCondit
             </button>
           </div>
         )}
-        <div className="space-y-3">
+        <fieldset disabled={!!libraryTaskId} className="space-y-3 disabled:opacity-60">
           <input
             value={taskTitle}
             onChange={(e) => setTaskTitle(e.target.value)}
@@ -570,7 +706,12 @@ export default function FindEditor({ huntId, onSaved, onCancel, experimentCondit
                   />
                   {options.length > 2 && (
                     <button
-                      onClick={() => setOptions(options.filter((_, i) => i !== idx))}
+                      type="button"
+                      onClick={() => {
+                        setOptions(options.filter((_, i) => i !== idx));
+                        // Removing the option marked correct must not leave it as the answer.
+                        if (correctAnswer === opt) setCorrectAnswer("");
+                      }}
                       className="text-gray-500 hover:text-red-500 text-xs"
                     >
                       Remove
@@ -636,7 +777,7 @@ export default function FindEditor({ huntId, onSaved, onCancel, experimentCondit
               className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
             />
           )}
-        </div>
+        </fieldset>
       </fieldset>
 
       {/* ── Primer (optional) ── */}
@@ -662,13 +803,16 @@ export default function FindEditor({ huntId, onSaved, onCancel, experimentCondit
       </fieldset>
 
       {/* ── Actions ── */}
+      {error && (
+        <p role="alert" className="text-sm text-red-700 mb-2">{error}</p>
+      )}
       <div className="flex gap-3">
         <button
           onClick={handleSave}
           disabled={saving}
           className="rounded-md bg-sky-600 px-5 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
         >
-          {saving ? "Saving..." : "Save Stop"}
+          {saving ? "Saving..." : isEdit ? "Save Changes" : "Save Stop"}
         </button>
         <button
           onClick={onCancel}

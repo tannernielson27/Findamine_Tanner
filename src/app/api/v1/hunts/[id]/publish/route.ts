@@ -31,15 +31,40 @@ export async function POST(
       throw new ApiError(403, "You can only publish your own hunts");
     }
 
-    // Verify hunt has at least one find
-    const { count } = await supabase
+    // Verify the hunt is actually playable: at least one stop, and every stop
+    // has a real location players can walk to.
+    const { data: finds, error: findsError } = await supabase
       .from("finds")
-      .select("*", { count: "exact", head: true })
+      .select("id, sort_order, location_id, metadata")
       .eq("hunt_id", id)
-      .is("deleted_at", null);
+      .is("deleted_at", null)
+      .order("sort_order", { ascending: true });
 
-    if (!count || count === 0) {
-      throw new ApiError(400, "Hunt must have at least one find before publishing");
+    if (findsError) throw new ApiError(500, findsError.message);
+    if (!finds || finds.length === 0) {
+      throw new ApiError(400, "Add at least one stop before publishing this hunt");
+    }
+
+    type FindRow = { location_id: string | null; metadata: unknown };
+    /** e.g. "stop 3 has" / "stops 1, 2 have" for the stops matching a problem, or "" if none. */
+    const stopsThat = (matches: (find: FindRow) => boolean) => {
+      const numbers = finds.flatMap((find, index) => (matches(find) ? [index + 1] : []));
+      if (numbers.length === 0) return "";
+      return numbers.length === 1 ? `stop ${numbers[0]} has` : `stops ${numbers.join(", ")} have`;
+    };
+
+    const missingLocation = stopsThat((f) => !f.location_id);
+    if (missingLocation) {
+      throw new ApiError(400, `Can't publish yet: ${missingLocation} no location. Edit to set one.`);
+    }
+    const needsPlacement = stopsThat(
+      (f) => (f.metadata as { needs_placement?: boolean } | null)?.needs_placement === true
+    );
+    if (needsPlacement) {
+      throw new ApiError(
+        400,
+        `Can't publish yet: ${needsPlacement} a placeholder location from the AI builder. Edit and move the pin to the real spot.`
+      );
     }
 
     const { data: hunt, error } = await supabase

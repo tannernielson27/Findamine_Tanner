@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { ChevronRight, X } from "lucide-react";
-import { GoogleMap, useJsApiLoader, Marker } from "@react-google-maps/api";
+import { GoogleMap, Marker } from "@react-google-maps/api";
+import { useGoogleMaps } from "@/components/maps/use-google-maps";
 
 interface StopData {
   id: string;
@@ -27,9 +28,7 @@ interface StopDetailModalProps {
 export default function StopDetailModal({ stop, onClose }: StopDetailModalProps) {
   const [showHints, setShowHints] = useState(false);
 
-  const { isLoaded } = useJsApiLoader({
-    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "",
-  });
+  const { isLoaded } = useGoogleMaps();
 
   const hasCoords = stop.lat !== 0 && stop.lng !== 0;
 

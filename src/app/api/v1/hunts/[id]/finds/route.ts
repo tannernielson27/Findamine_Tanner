@@ -6,6 +6,8 @@ import {
   errorResponse,
   ApiError,
 } from "@/lib/utils/api-auth";
+import { parseFindFields } from "../../find-fields";
+import { canSeeAnswerKeys, redactAnswerKeys } from "../../redact-finds";
 
 export async function GET(
   request: NextRequest,
@@ -38,7 +40,10 @@ export async function GET(
 
     if (error) throw new ApiError(500, error.message);
 
-    return Response.json({ finds: finds || [] });
+    const rows = finds || [];
+    return Response.json({
+      finds: canSeeAnswerKeys(user, hunt?.created_by ?? null) ? rows : redactAnswerKeys(rows),
+    });
   } catch (error) {
     return errorResponse(error);
   }
@@ -54,26 +59,45 @@ export async function POST(
     requireRole(user, "teacher", "hunt_creator", "admin", "researcher");
 
     const body = await request.json();
+    const fields = parseFindFields(body);
     const supabase = await createSupabaseServiceClient();
 
-    // Get next sort order
-    const { count } = await supabase
+    // Verify hunt ownership
+    const { data: hunt } = await supabase
+      .from("hunts")
+      .select("created_by")
+      .eq("id", id)
+      .is("deleted_at", null)
+      .single();
+
+    if (!hunt) throw new ApiError(404, "Hunt not found");
+    if (hunt.created_by !== user.id && !["admin", "researcher"].includes(user.role)) {
+      throw new ApiError(403, "You can only add finds to your own hunts");
+    }
+
+    // Next sort order goes after the current last stop. (Counting live stops
+    // instead would collide with an existing sort_order after any delete.)
+    const { data: last } = await supabase
       .from("finds")
-      .select("*", { count: "exact", head: true })
+      .select("sort_order")
       .eq("hunt_id", id)
-      .is("deleted_at", null);
+      .is("deleted_at", null)
+      .order("sort_order", { ascending: false })
+      .limit(1);
+    const nextOrder = last && last.length > 0 ? (last[0].sort_order as number) + 1 : 0;
 
     const { data: find, error } = await supabase
       .from("finds")
       .insert({
+        location_id: null,
+        task_id: null,
+        primer_id: null,
+        sort_order: nextOrder,
+        clue_text: null,
+        hot_cold_enabled: true,
+        metadata: {},
+        ...fields,
         hunt_id: id,
-        location_id: body.location_id || null,
-        task_id: body.task_id || null,
-        primer_id: body.primer_id || null,
-        sort_order: body.sort_order ?? (count || 0),
-        clue_text: body.clue_text || null,
-        hot_cold_enabled: body.hot_cold_enabled ?? true,
-        metadata: body.metadata || {},
       })
       .select("*, locations(*), tasks(*), primers(*)")
       .single();

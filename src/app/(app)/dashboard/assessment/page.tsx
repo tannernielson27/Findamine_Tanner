@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 // TIPI (Ten Item Personality Inventory) — validated short Big 5 measure
 const TIPI_ITEMS = [
@@ -41,9 +41,19 @@ const DIMENSION_LABELS: Record<string, { label: string; highDesc: string; lowDes
   conscientiousness: { label: "Conscientiousness", highDesc: "Organized & reliable", lowDesc: "Flexible & spontaneous", color: "bg-sky-500" },
   extraversion: { label: "Extraversion", highDesc: "Outgoing & energetic", lowDesc: "Reflective & reserved", color: "bg-amber-500" },
   agreeableness: { label: "Agreeableness", highDesc: "Cooperative & trusting", lowDesc: "Analytical & direct", color: "bg-emerald-500" },
+  // Items are scored toward neuroticism (anxious = high). The profile shows the
+  // friendlier inverse, so the bar is flipped with displayScore() below.
   neuroticism: { label: "Emotional Stability", highDesc: "Calm & resilient", lowDesc: "Sensitive & aware", color: "bg-rose-500" },
   growth_mindset: { label: "Growth Mindset", highDesc: "Believes abilities can grow", lowDesc: "Believes abilities are fixed", color: "bg-teal-500" },
 };
+
+// Dimensions whose label describes the opposite pole of the stored score.
+const INVERTED_FOR_DISPLAY = new Set(["neuroticism"]);
+
+/** Score as shown next to a dimension's label, on the same 1-7 scale. */
+function displayScore(dimension: string, score: number): number {
+  return INVERTED_FOR_DISPLAY.has(dimension) ? Math.round((8 - score) * 10) / 10 : score;
+}
 
 interface ExistingScores {
   [key: string]: number;
@@ -52,23 +62,7 @@ interface ExistingScores {
 export default function AssessmentPage() {
   const [responses, setResponses] = useState<(number | null)[]>(new Array(ALL_ITEMS.length).fill(null));
   const [scores, setScores] = useState<ExistingScores | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  // Check for existing assessment
-  useEffect(() => {
-    fetch("/api/v1/auth/me")
-      .then((r) => r.json())
-      .then(async (data) => {
-        if (data.user?.id) {
-          // Check for existing assessment via app_events or player_assessments
-          // For now, just show the form
-        }
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
 
   function calculateScores(): ExistingScores {
     const dimensionScores: Record<string, number[]> = {};
@@ -92,38 +86,18 @@ export default function AssessmentPage() {
     return result;
   }
 
-  async function handleSubmit() {
+  function handleSubmit() {
     if (responses.some((r) => r === null)) return;
-    setSubmitting(true);
 
-    const calculatedScores = calculateScores();
-    setScores(calculatedScores);
-
-    // Save assessment
-    try {
-      await fetch("/api/v1/app-events", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          event_type: "personality_assessment",
-          metadata: {
-            instrument: "TIPI",
-            responses: responses,
-            scores: calculatedScores,
-          },
-        }),
-      });
-    } catch { /* non-critical */ }
-
+    // Results are computed in the browser only. There is no endpoint that stores
+    // an assessment yet (this used to POST to /api/v1/app-events, which is the
+    // admin-only calendar-events API and silently rejected it), so nothing is
+    // sent and the results view says plainly that nothing was saved.
+    setScores(calculateScores());
     setSubmitted(true);
-    setSubmitting(false);
   }
 
   const allAnswered = responses.every((r) => r !== null);
-
-  if (loading) {
-    return <main className="mx-auto max-w-2xl px-4 py-4"><p className="text-sm text-gray-500">Loading...</p></main>;
-  }
 
   // Results view
   if (submitted && scores) {
@@ -134,7 +108,7 @@ export default function AssessmentPage() {
 
         <div className="space-y-3 mb-6">
           {Object.entries(DIMENSION_LABELS).map(([key, dim]) => {
-            const score = scores[key] || 4;
+            const score = displayScore(key, scores[key] || 4);
             const pct = Math.round(((score - 1) / 6) * 100);
             return (
               <div key={key}>
@@ -154,9 +128,9 @@ export default function AssessmentPage() {
           })}
         </div>
 
-        <div className="rounded-lg bg-sky-50 border border-sky-200 p-3 mb-4">
-          <p className="text-xs text-sky-800">
-            Your personality profile helps form balanced teams. When your teacher creates teams using personality-based strategies, this data helps create groups where members complement each other.
+        <div role="status" className="rounded-lg bg-amber-50 border border-amber-200 p-3 mb-4">
+          <p className="text-xs text-amber-900">
+            <strong>These results were not saved.</strong> They are shown here for you only and will be gone when you leave this page. Saving profiles (and using them to form balanced teams) isn&apos;t available yet.
           </p>
         </div>
 
@@ -175,7 +149,7 @@ export default function AssessmentPage() {
     <main className="mx-auto max-w-2xl px-4 py-4">
       <h1 className="text-base font-bold text-gray-900 mb-1">Personality Assessment</h1>
       <p className="text-xs text-gray-500 mb-4">
-        Rate how well each statement describes you. There are no right or wrong answers — just be honest. This takes about 2 minutes.
+        Rate how well each statement describes you. There are no right or wrong answers — just be honest. This takes about 2 minutes. Your answers stay in this browser and are not saved.
       </p>
 
       <div className="space-y-4 mb-6">
@@ -214,10 +188,10 @@ export default function AssessmentPage() {
 
       <button
         onClick={handleSubmit}
-        disabled={!allAnswered || submitting}
+        disabled={!allAnswered}
         className="w-full bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors px-6 py-2 text-sm font-medium disabled:opacity-50"
       >
-        {submitting ? "Saving..." : allAnswered ? "See My Results" : `Answer all ${ALL_ITEMS.length - responses.filter(r => r !== null).length} remaining`}
+        {allAnswered ? "See My Results" : `Answer all ${ALL_ITEMS.length - responses.filter(r => r !== null).length} remaining`}
       </button>
     </main>
   );

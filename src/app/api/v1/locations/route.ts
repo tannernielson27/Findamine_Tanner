@@ -6,6 +6,7 @@ import {
   errorResponse,
   ApiError,
 } from "@/lib/utils/api-auth";
+import { parseCoordinates, parseRadius } from "./validation";
 
 export async function GET(request: NextRequest) {
   try {
@@ -60,16 +61,11 @@ export async function POST(request: NextRequest) {
     requireRole(user, "teacher", "hunt_creator", "admin", "researcher");
 
     const body = await request.json();
-    if (!body.latitude || !body.longitude) {
-      throw new ApiError(400, "Latitude and longitude are required");
+    if (!body.name || !String(body.name).trim()) {
+      throw new ApiError(400, "Location name is required");
     }
-
-    // Validate coordinates are valid numbers in range
-    const lat = parseFloat(body.latitude);
-    const lng = parseFloat(body.longitude);
-    if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-      throw new ApiError(400, "Invalid coordinates: latitude must be -90 to 90, longitude -180 to 180");
-    }
+    const { lat, lng } = parseCoordinates(body.latitude, body.longitude);
+    const radiusMeters = parseRadius(body.radius_meters) ?? 50;
 
     const supabase = await createSupabaseServiceClient();
 
@@ -79,7 +75,7 @@ export async function POST(request: NextRequest) {
       p_description: body.description || null,
       p_latitude: lat,
       p_longitude: lng,
-      p_radius_meters: body.radius_meters || 50,
+      p_radius_meters: radiusMeters,
       p_address: body.address || null,
       p_place_id: body.place_id || null,
       p_location_type: body.location_type || null,
@@ -98,7 +94,7 @@ export async function POST(request: NextRequest) {
           latitude: lat,
           longitude: lng,
           coordinates: `SRID=4326;POINT(${lng} ${lat})`,
-          radius_meters: body.radius_meters || 50,
+          radius_meters: radiusMeters,
           address: body.address || null,
           place_id: body.place_id || null,
           location_type: body.location_type || null,

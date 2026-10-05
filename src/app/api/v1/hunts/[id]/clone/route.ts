@@ -7,6 +7,21 @@ import {
   ApiError,
 } from "@/lib/utils/api-auth";
 
+type Row = Record<string, unknown>;
+
+// Columns the database fills in itself, stripped before re-inserting a row.
+// hunts.search_vector is GENERATED ALWAYS (migration 005) and rejects any
+// explicit value; finds, locations, tasks and primers have no generated or
+// identity columns as of migration 069.
+const SERVER_MANAGED = ["id", "created_at", "updated_at", "deleted_at"];
+const HUNT_GENERATED = ["search_vector"];
+
+function omit(row: Row, keys: string[]): Row {
+  const copy: Row = { ...row };
+  for (const key of keys) delete copy[key];
+  return copy;
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -26,12 +41,18 @@ export async function POST(
       .from("hunts")
       .select("*, finds(*, locations(*), tasks(*), primers(*))")
       .eq("id", id)
+      .is("deleted_at", null)
       .single();
 
     if (fetchError || !source) throw new ApiError(404, "Hunt not found");
 
-    // Clone the hunt
-    const { id: _sid, created_at: _sca, updated_at: _sua, finds, ...huntData } = source;
+    // Someone else's unpublished draft is not visible, so it is not clonable.
+    const isOwner =
+      source.created_by === user.id || ["admin", "researcher"].includes(user.role);
+    if (source.status === "draft" && !isOwner) throw new ApiError(404, "Hunt not found");
+
+    const { finds, ...sourceHunt } = source as Row & { finds: Row[] | null };
+    const huntData = omit(sourceHunt, [...SERVER_MANAGED, ...HUNT_GENERATED]);
 
     const { data: newHunt, error: huntError } = await supabase
       .from("hunts")
@@ -42,12 +63,13 @@ export async function POST(
         is_public: false,
         source_template_id: id,
         created_by: user.id,
-        deleted_at: null,
       })
       .select()
       .single();
 
-    if (huntError) throw new ApiError(500, huntError.message);
+    if (huntError || !newHunt) {
+      throw new ApiError(500, huntError?.message || "Failed to copy hunt");
+    }
 
     // Clone finds
     // By default (shallow): finds keep their original location_id, task_id, primer_id
@@ -56,77 +78,83 @@ export async function POST(
     //
     // With ?deep=true: sub-resources are also cloned as independent copies
     // owned by the current user, so edits won't affect the originals.
-    if (finds && finds.length > 0) {
+    //
+    // Removed (soft-deleted) stops are not copied, and the copies are
+    // renumbered 0..n-1 so the clone starts with a clean ordering.
+    const liveFinds = (finds || [])
+      .filter((f) => !f.deleted_at)
+      .sort((a, b) => (a.sort_order as number) - (b.sort_order as number));
+
+    try {
       // Dedup maps for deep clone (same resource referenced by multiple finds → clone once)
-      const locationMap = new Map<string, string>(); // old_id → new_id
-      const taskMap = new Map<string, string>();
-      const primerMap = new Map<string, string>();
+      const cloned = {
+        locations: new Map<string, string>(), // old_id → new_id
+        tasks: new Map<string, string>(),
+        primers: new Map<string, string>(),
+      };
 
-      for (const f of finds) {
-        const { id: _fid, hunt_id: _fhid, created_at: _fca, updated_at: _fua, locations, tasks, primers, ...findData } = f as {
-          id: string; hunt_id: string; created_at: string; updated_at: string;
-          locations: Record<string, unknown> | null;
-          tasks: Record<string, unknown> | null;
-          primers: Record<string, unknown> | null;
-          [key: string]: unknown;
+      const cloneResource = async (
+        table: "locations" | "tasks" | "primers",
+        oldId: string | null,
+        row: Row | null
+      ): Promise<string | null> => {
+        if (!oldId || !row) return oldId;
+        const existing = cloned[table].get(oldId);
+        if (existing) return existing;
+
+        const data = omit(row, SERVER_MANAGED);
+        if (table === "locations") {
+          // Rebuild the PostGIS point from lat/lng rather than echoing back
+          // whatever wire format the geography column was read in.
+          data.coordinates = `SRID=4326;POINT(${row.longitude} ${row.latitude})`;
+        }
+        const { data: created, error } = await supabase
+          .from(table)
+          .insert({ ...data, is_library: false, created_by: user.id })
+          .select("id")
+          .single();
+        if (error || !created) {
+          throw new ApiError(500, `Failed to copy ${table}: ${error?.message || "unknown error"}`);
+        }
+        cloned[table].set(oldId, created.id as string);
+        return created.id as string;
+      };
+
+      for (const [index, f] of liveFinds.entries()) {
+        const { locations, tasks, primers, ...rest } = f as Row & {
+          locations: Row | null;
+          tasks: Row | null;
+          primers: Row | null;
         };
+        const findData = omit(rest, [...SERVER_MANAGED, "hunt_id"]);
 
-        let locationId = findData.location_id as string | null;
-        let taskId = findData.task_id as string | null;
-        let primerId = findData.primer_id as string | null;
+        let locationId = (findData.location_id as string | null) ?? null;
+        let taskId = (findData.task_id as string | null) ?? null;
+        let primerId = (findData.primer_id as string | null) ?? null;
 
         if (deep) {
-          // Clone location if not already cloned
-          if (locationId && locations && !locationMap.has(locationId)) {
-            const { id: _lid, created_at: _lca, updated_at: _lua, ...locData } = locations as Record<string, unknown>;
-            const { data: newLoc } = await supabase
-              .from("locations")
-              .insert({ ...locData, is_library: false, created_by: user.id })
-              .select("id")
-              .single();
-            if (newLoc) locationMap.set(locationId, newLoc.id);
-          }
-
-          // Clone task if not already cloned
-          if (taskId && tasks && !taskMap.has(taskId)) {
-            const { id: _tid, created_at: _tca, updated_at: _tua, ...taskData } = tasks as Record<string, unknown>;
-            const { data: newTask } = await supabase
-              .from("tasks")
-              .insert({ ...taskData, is_library: false, created_by: user.id })
-              .select("id")
-              .single();
-            if (newTask) taskMap.set(taskId, newTask.id);
-          }
-
-          // Clone primer if not already cloned
-          if (primerId && primers && !primerMap.has(primerId)) {
-            const { id: _pid, created_at: _pca, updated_at: _pua, ...primerData } = primers as Record<string, unknown>;
-            const { data: newPrimer } = await supabase
-              .from("primers")
-              .insert({ ...primerData, is_library: false, created_by: user.id })
-              .select("id")
-              .single();
-            if (newPrimer) primerMap.set(primerId, newPrimer.id);
-          }
-
-          // Remap foreign keys to cloned resources
-          if (locationId && locationMap.has(locationId)) locationId = locationMap.get(locationId)!;
-          if (taskId && taskMap.has(taskId)) taskId = taskMap.get(taskId)!;
-          if (primerId && primerMap.has(primerId)) primerId = primerMap.get(primerId)!;
+          locationId = await cloneResource("locations", locationId, locations);
+          taskId = await cloneResource("tasks", taskId, tasks);
+          primerId = await cloneResource("primers", primerId, primers);
         }
 
-        await supabase.from("finds").insert({
+        const { error: findError } = await supabase.from("finds").insert({
           ...findData,
           hunt_id: newHunt.id,
           location_id: locationId,
           task_id: taskId,
           primer_id: primerId,
-          deleted_at: null,
+          sort_order: index,
         });
+        if (findError) throw new ApiError(500, `Failed to copy stop ${index + 1}: ${findError.message}`);
       }
+    } catch (copyError) {
+      // Don't leave a half-copied hunt behind looking like a finished clone.
+      await supabase.from("hunts").delete().eq("id", newHunt.id);
+      throw copyError;
     }
 
-    return Response.json({ hunt: newHunt, deep }, { status: 201 });
+    return Response.json({ hunt: newHunt, deep, stops_copied: liveFinds.length }, { status: 201 });
   } catch (error) {
     return errorResponse(error);
   }

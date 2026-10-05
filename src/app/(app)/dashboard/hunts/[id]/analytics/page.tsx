@@ -10,10 +10,30 @@ interface AnalyticsData {
   avg_score: number;
   completion_rate: number;
   avg_duration_min: number;
-  stops: { find_id: string; avg_score: number; avg_hints: number; completion_count: number }[];
-  hardest_stop: { find_id: string; avg_score: number } | null;
-  easiest_stop: { find_id: string; avg_score: number } | null;
+  // One entry per stop, in hunt order. avg_* are null until someone has played that stop.
+  stops: StopRow[];
+  hardest_stop: StopRow | null;
+  easiest_stop: StopRow | null;
   message?: string;
+}
+
+interface StopRow {
+  find_id: string;
+  stop_number: number;
+  name: string | null;
+  avg_score: number | null;
+  avg_hints: number | null;
+  completion_count: number;
+}
+
+function stopLabel(stop: StopRow): string {
+  return stop.name ? `Stop ${stop.stop_number}: ${stop.name}` : `Stop ${stop.stop_number}`;
+}
+
+function csvCell(value: string | number | null): string {
+  if (value === null) return "";
+  const text = String(value);
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 export default function HuntAnalyticsPage() {
@@ -21,16 +41,23 @@ export default function HuntAnalyticsPage() {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [huntTitle, setHuntTitle] = useState("");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    Promise.all([
-      fetch(`/api/v1/hunts/${id}/analytics`).then((r) => r.json()),
-      fetch(`/api/v1/hunts/${id}`).then((r) => r.json()),
-    ]).then(([analytics, huntData]) => {
-      setData(analytics);
-      setHuntTitle(huntData.hunt?.title || "Hunt");
-      setLoading(false);
-    }).catch(() => setLoading(false));
+    // The title is a nicety; a failure there must not hide the analytics.
+    fetch(`/api/v1/hunts/${id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((huntData) => setHuntTitle(huntData?.hunt?.title || "Hunt"))
+      .catch(() => setHuntTitle("Hunt"));
+
+    fetch(`/api/v1/hunts/${id}/analytics`)
+      .then(async (r) => {
+        const body = await r.json().catch(() => null);
+        if (!r.ok) throw new Error(body?.error || `Analytics request failed (${r.status})`);
+        setData(body);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "Could not load analytics"))
+      .finally(() => setLoading(false));
   }, [id]);
 
   if (loading) {
@@ -39,8 +66,10 @@ export default function HuntAnalyticsPage() {
 
   function handleExportCSV() {
     if (!data?.stops) return;
-    const headers = "Stop,Avg Score,Avg Hints,Completions";
-    const rows = data.stops.map((s, i) => `${i + 1},${s.avg_score},${s.avg_hints},${s.completion_count}`);
+    const headers = "Stop,Name,Avg Score,Avg Hints,Completions";
+    const rows = data.stops.map((s) =>
+      [s.stop_number, s.name, s.avg_score, s.avg_hints, s.completion_count].map(csvCell).join(",")
+    );
     const csv = [headers, ...rows].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -59,10 +88,19 @@ export default function HuntAnalyticsPage() {
 
       <h1 className="text-base font-bold text-gray-900 mb-1">Analytics: {huntTitle}</h1>
 
-      {!data?.analytics_available ? (
+      {error || !data ? (
+        <div role="alert" className="rounded-md bg-red-50 border border-red-200 p-4 text-sm text-red-700">
+          Couldn&apos;t load analytics for this hunt: {error || "no data returned"}. Reload the page to try again.
+        </div>
+      ) : !data.analytics_available ? (
         <div className="rounded-lg border-2 border-dashed border-gray-200 p-8 text-center">
-          <p className="text-gray-500">{data?.message || "Not enough data yet."}</p>
-          <p className="text-xs text-gray-400 mt-1">{data?.total_plays || 0} plays so far</p>
+          <p className="text-gray-500">{data.message || "Not enough data yet."}</p>
+          <p className="text-xs text-gray-400 mt-1">{data.total_plays || 0} plays so far</p>
+        </div>
+      ) : data.total_plays === 0 ? (
+        <div className="rounded-lg border-2 border-dashed border-gray-200 p-8 text-center">
+          <p className="text-gray-500">No one has finished this hunt yet.</p>
+          <p className="text-xs text-gray-400 mt-1">Analytics appear here after the first completed play.</p>
         </div>
       ) : (
         <>
@@ -98,21 +136,25 @@ export default function HuntAnalyticsPage() {
 
               {/* Bar chart */}
               <div className="space-y-2 mb-4">
-                {data.stops.map((stop, i) => (
+                {data.stops.map((stop) => (
                   <div key={stop.find_id} className="flex items-center gap-2 text-xs">
-                    <span className="w-14 text-gray-500 shrink-0">Stop {i + 1}</span>
+                    <span className="w-14 text-gray-500 shrink-0" title={stopLabel(stop)}>Stop {stop.stop_number}</span>
                     <div className="flex-1 bg-gray-100 rounded-full h-4 relative">
-                      <div
-                        className="h-4 rounded-full transition-all flex items-center justify-end pr-1"
-                        style={{
-                          width: `${Math.max(stop.avg_score, 5)}%`,
-                          backgroundColor: stop.avg_score >= 70 ? "#22c55e" : stop.avg_score >= 40 ? "#f59e0b" : "#ef4444",
-                        }}
-                      >
-                        <span className="text-[10px] text-white font-medium">{stop.avg_score}</span>
-                      </div>
+                      {stop.avg_score !== null && (
+                        <div
+                          className="h-4 rounded-full transition-all flex items-center justify-end pr-1"
+                          style={{
+                            width: `${Math.min(Math.max(stop.avg_score, 5), 100)}%`,
+                            backgroundColor: stop.avg_score >= 70 ? "#22c55e" : stop.avg_score >= 40 ? "#f59e0b" : "#ef4444",
+                          }}
+                        >
+                          <span className="text-[10px] text-white font-medium">{stop.avg_score}</span>
+                        </div>
+                      )}
                     </div>
-                    <span className="w-16 text-right text-gray-400 shrink-0">{stop.avg_hints} hints</span>
+                    <span className="w-20 text-right text-gray-400 shrink-0">
+                      {stop.avg_hints !== null ? `${stop.avg_hints} hints` : "not played yet"}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -129,15 +171,19 @@ export default function HuntAnalyticsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.stops.map((stop, i) => (
+                    {data.stops.map((stop) => (
                       <tr key={stop.find_id} className="border-b border-gray-100">
-                        <td className="py-1.5 pr-3 text-gray-900">Stop {i + 1}</td>
+                        <td className="py-1.5 pr-3 text-gray-900">{stopLabel(stop)}</td>
                         <td className="text-right py-1.5 px-3">
-                          <span className={`font-medium ${stop.avg_score >= 70 ? "text-green-600" : stop.avg_score >= 40 ? "text-amber-600" : "text-red-600"}`}>
-                            {stop.avg_score}
-                          </span>
+                          {stop.avg_score !== null ? (
+                            <span className={`font-medium ${stop.avg_score >= 70 ? "text-green-600" : stop.avg_score >= 40 ? "text-amber-600" : "text-red-600"}`}>
+                              {stop.avg_score}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
                         </td>
-                        <td className="text-right py-1.5 px-3 text-gray-600">{stop.avg_hints}</td>
+                        <td className="text-right py-1.5 px-3 text-gray-600">{stop.avg_hints ?? "—"}</td>
                         <td className="text-right py-1.5 pl-3 text-gray-600">{stop.completion_count}</td>
                       </tr>
                     ))}
@@ -148,19 +194,19 @@ export default function HuntAnalyticsPage() {
           )}
 
           {/* Insights */}
-          {data.hardest_stop && data.easiest_stop && data.stops.length > 2 && (
+          {data.hardest_stop && data.easiest_stop && data.hardest_stop.find_id !== data.easiest_stop.find_id && (
             <div className="grid grid-cols-2 gap-3 mb-6">
               <div className="rounded-lg bg-red-50 border border-red-200 p-3">
                 <p className="text-xs font-medium text-red-700">Hardest Stop</p>
                 <p className="text-sm text-red-600 font-bold">
-                  Stop {data.stops.findIndex(s => s.find_id === data.hardest_stop!.find_id) + 1}
+                  {stopLabel(data.hardest_stop)}
                 </p>
                 <p className="text-xs text-red-500">Avg score: {data.hardest_stop.avg_score}</p>
               </div>
               <div className="rounded-lg bg-green-50 border border-green-200 p-3">
                 <p className="text-xs font-medium text-green-700">Easiest Stop</p>
                 <p className="text-sm text-green-600 font-bold">
-                  Stop {data.stops.findIndex(s => s.find_id === data.easiest_stop!.find_id) + 1}
+                  {stopLabel(data.easiest_stop)}
                 </p>
                 <p className="text-xs text-green-500">Avg score: {data.easiest_stop.avg_score}</p>
               </div>

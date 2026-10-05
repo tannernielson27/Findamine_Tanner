@@ -9,9 +9,10 @@ interface Analytics {
   avg_score?: number;
   completion_rate?: number;
   avg_duration_min?: number;
-  hardest_stop?: { find_id: string; avg_score: number } | null;
-  easiest_stop?: { find_id: string; avg_score: number } | null;
-  stops?: { find_id: string; avg_score: number; avg_hints: number; completion_count: number }[];
+  hardest_stop?: { find_id: string; stop_number: number; avg_score: number } | null;
+  easiest_stop?: { find_id: string; stop_number: number; avg_score: number } | null;
+  // One entry per stop in hunt order; avg_* are null until someone has played that stop.
+  stops?: { find_id: string; stop_number: number; avg_score: number | null; avg_hints: number | null; completion_count: number }[];
   message?: string;
 }
 
@@ -91,17 +92,25 @@ export default function HuntAnalytics({ huntId, compact = false }: HuntAnalytics
             <div>
               <p className="mb-1 text-sm font-medium text-themed-muted">Per-Stop Performance</p>
               <div className="space-y-1.5">
-                {data.stops.map((stop, i) => (
+                {data.stops.map((stop) => (
                   <div key={stop.find_id} className="flex items-center gap-2 text-sm tabular-nums">
-                    <span className="w-7 shrink-0 text-themed-muted">#{i + 1}</span>
+                    <span className="w-7 shrink-0 text-themed-muted">#{stop.stop_number}</span>
                     <div className="h-2 min-w-0 flex-1 rounded-full bg-themed-bg">
-                      <div
-                        className={`h-2 rounded-full ${scoreBarClass(stop.avg_score)}`}
-                        style={{ width: `${stop.avg_score}%` }}
-                      />
+                      {stop.avg_score !== null && (
+                        <div
+                          className={`h-2 rounded-full ${scoreBarClass(stop.avg_score)}`}
+                          style={{ width: `${Math.min(stop.avg_score, 100)}%` }}
+                        />
+                      )}
                     </div>
-                    <span className="w-14 shrink-0 text-right text-themed-text">{stop.avg_score} pts</span>
-                    <span className="w-20 shrink-0 text-right text-themed-muted">{stop.avg_hints} hints</span>
+                    {stop.avg_score !== null ? (
+                      <>
+                        <span className="w-14 shrink-0 text-right text-themed-text">{stop.avg_score} pts</span>
+                        <span className="w-20 shrink-0 text-right text-themed-muted">{stop.avg_hints} hints</span>
+                      </>
+                    ) : (
+                      <span className="w-34 shrink-0 text-right text-themed-muted">not played yet</span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -113,11 +122,11 @@ export default function HuntAnalytics({ huntId, compact = false }: HuntAnalytics
             <div className="flex flex-col gap-2 text-sm tabular-nums sm:flex-row">
               <div className="flex-1 rounded-lg bg-error/10 p-2">
                 <span className="font-medium text-error">Hardest stop:</span>
-                <span className="ml-1 text-themed-text">#{data.stops.findIndex(s => s.find_id === data.hardest_stop!.find_id) + 1} ({data.hardest_stop.avg_score} pts avg)</span>
+                <span className="ml-1 text-themed-text">#{data.hardest_stop.stop_number} ({data.hardest_stop.avg_score} pts avg)</span>
               </div>
               <div className="flex-1 rounded-lg bg-secondary/10 p-2">
                 <span className="font-medium text-secondary">Easiest stop:</span>
-                <span className="ml-1 text-themed-text">#{data.stops.findIndex(s => s.find_id === data.easiest_stop!.find_id) + 1} ({data.easiest_stop.avg_score} pts avg)</span>
+                <span className="ml-1 text-themed-text">#{data.easiest_stop.stop_number} ({data.easiest_stop.avg_score} pts avg)</span>
               </div>
             </div>
           )}

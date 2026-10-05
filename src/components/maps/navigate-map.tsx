@@ -1,7 +1,8 @@
 "use client";
 
-import { GoogleMap, useJsApiLoader, CircleF, MarkerF } from "@react-google-maps/api";
-import { useCallback, useState } from "react";
+import { GoogleMap, CircleF, MarkerF } from "@react-google-maps/api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useGoogleMaps } from "./use-google-maps";
 
 interface NavigateMapProps {
   /** Target location center */
@@ -34,15 +35,49 @@ export default function NavigateMap({
   userLng,
   zone,
 }: NavigateMapProps) {
-  const { isLoaded } = useJsApiLoader({
-    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "",
-  });
+  const { isLoaded, unavailableReason } = useGoogleMaps();
 
   const [map, setMap] = useState<google.maps.Map | null>(null);
+  // Which target the view was last framed for, so we frame once per stop
+  // instead of yanking the map back on every GPS fix.
+  const framedFor = useRef<string | null>(null);
 
   const onLoad = useCallback((map: google.maps.Map) => {
     setMap(map);
   }, []);
+
+  const hasUser = userLat != null && userLng != null;
+  const target = useMemo(() => ({ lat: targetLat, lng: targetLng }), [targetLat, targetLng]);
+
+  // Frame the player and the target together on the first fix for each stop.
+  // After that the player is free to pan and zoom; "Recenter" re-frames on demand.
+  const frame = useCallback(() => {
+    if (!map) return;
+    if (userLat == null || userLng == null) {
+      map.panTo(target);
+      return;
+    }
+    const bounds = new google.maps.LatLngBounds();
+    bounds.extend(target);
+    bounds.extend({ lat: userLat, lng: userLng });
+    map.fitBounds(bounds, 48);
+  }, [map, target, userLat, userLng]);
+
+  useEffect(() => {
+    if (!map || !hasUser) return;
+    const key = `${targetLat},${targetLng}`;
+    if (framedFor.current === key) return;
+    framedFor.current = key;
+    frame();
+  }, [map, hasUser, targetLat, targetLng, frame]);
+
+  if (unavailableReason) {
+    return (
+      <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+        {unavailableReason} You can still follow the clue to find this stop.
+      </div>
+    );
+  }
 
   if (!isLoaded) {
     return (
@@ -52,59 +87,66 @@ export default function NavigateMap({
     );
   }
 
-  // Center on user if available, otherwise target
-  const center = userLat && userLng
-    ? { lat: userLat, lng: userLng }
-    : { lat: targetLat, lng: targetLng };
-
   const zoneColor = zone ? ZONE_COLORS[zone] || "#6B7280" : "#6B7280";
 
   return (
-    <GoogleMap
-      mapContainerStyle={containerStyle}
-      center={center}
-      zoom={16}
-      onLoad={onLoad}
-      options={{
-        disableDefaultUI: true,
-        zoomControl: true,
-        mapTypeControl: false,
-        streetViewControl: false,
-        fullscreenControl: false,
-        styles: [
-          // Subtle map style — reduce visual noise
-          { featureType: "poi", stylers: [{ visibility: "off" }] },
-          { featureType: "transit", stylers: [{ visibility: "off" }] },
-        ],
-      }}
-    >
-      {/* Target area circle */}
-      <CircleF
-        center={{ lat: targetLat, lng: targetLng }}
-        radius={radiusMeters}
+    <div className="relative">
+      <GoogleMap
+        mapContainerStyle={containerStyle}
+        center={target}
+        zoom={16}
+        onLoad={onLoad}
         options={{
-          fillColor: "#10B981",
-          fillOpacity: 0.15,
-          strokeColor: "#10B981",
-          strokeWeight: 2,
-          strokeOpacity: 0.5,
+          disableDefaultUI: true,
+          zoomControl: true,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+          styles: [
+            // Subtle map style — reduce visual noise
+            { featureType: "poi", stylers: [{ visibility: "off" }] },
+            { featureType: "transit", stylers: [{ visibility: "off" }] },
+          ],
         }}
-      />
-
-      {/* User position marker */}
-      {userLat && userLng && (
-        <MarkerF
-          position={{ lat: userLat, lng: userLng }}
-          icon={{
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 10,
-            fillColor: zoneColor,
-            fillOpacity: 1,
-            strokeColor: "#fff",
-            strokeWeight: 3,
+      >
+        {/* Target area circle */}
+        <CircleF
+          center={target}
+          radius={radiusMeters}
+          options={{
+            fillColor: "#10B981",
+            fillOpacity: 0.15,
+            strokeColor: "#10B981",
+            strokeWeight: 2,
+            strokeOpacity: 0.5,
           }}
         />
+
+        {/* User position marker */}
+        {hasUser && (
+          <MarkerF
+            position={{ lat: userLat, lng: userLng }}
+            icon={{
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 10,
+              fillColor: zoneColor,
+              fillOpacity: 1,
+              strokeColor: "#fff",
+              strokeWeight: 3,
+            }}
+          />
+        )}
+      </GoogleMap>
+
+      {hasUser && (
+        <button
+          type="button"
+          onClick={frame}
+          className="absolute left-2 top-2 rounded-md bg-white/95 px-2.5 py-1.5 text-xs font-medium text-gray-700 shadow hover:bg-white"
+        >
+          Recenter
+        </button>
       )}
-    </GoogleMap>
+    </div>
   );
 }

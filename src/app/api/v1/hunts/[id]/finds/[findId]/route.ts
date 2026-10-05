@@ -6,6 +6,7 @@ import {
   errorResponse,
   ApiError,
 } from "@/lib/utils/api-auth";
+import { parseFindFields } from "../../../find-fields";
 
 export async function PUT(
   request: NextRequest,
@@ -32,24 +33,22 @@ export async function PUT(
       throw new ApiError(403, "You can only edit finds in your own hunts");
     }
 
-    const allowedFields = [
-      "location_id", "task_id", "primer_id", "sort_order",
-      "clue_text", "hot_cold_enabled", "metadata",
-    ];
-
-    const updates: Record<string, unknown> = {};
-    for (const field of allowedFields) {
-      if (body[field] !== undefined) updates[field] = body[field];
+    const updates = parseFindFields(body);
+    if (Object.keys(updates).length === 0) {
+      throw new ApiError(400, "No editable fields provided");
     }
 
     const { data: find, error } = await supabase
       .from("finds")
       .update(updates)
       .eq("id", findId)
+      .eq("hunt_id", id)
+      .is("deleted_at", null)
       .select("*, locations(*), tasks(*), primers(*)")
-      .single();
+      .maybeSingle();
 
     if (error) throw new ApiError(500, error.message);
+    if (!find) throw new ApiError(404, "Stop not found in this hunt");
 
     return Response.json({ find });
   } catch (error) {
@@ -81,12 +80,16 @@ export async function DELETE(
       throw new ApiError(403, "You can only delete finds in your own hunts");
     }
 
-    const { error } = await supabase
+    const { data: removed, error } = await supabase
       .from("finds")
       .update({ deleted_at: new Date().toISOString() })
-      .eq("id", findId);
+      .eq("id", findId)
+      .eq("hunt_id", id)
+      .is("deleted_at", null)
+      .select("id");
 
     if (error) throw new ApiError(500, error.message);
+    if (!removed || removed.length === 0) throw new ApiError(404, "Stop not found in this hunt");
 
     return Response.json({ message: "Find deleted" });
   } catch (error) {
