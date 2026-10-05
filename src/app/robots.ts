@@ -23,6 +23,10 @@ const DISALLOWED_PATHS = [
   "/dashboard",
   "/settings",
   "/leaderboard",
+  // Same reasoning as /leaderboard: profile pages render display names.
+  "/profile",
+  "/surveys",
+  "/debrief",
   "/consent-pending",
   "/consent-verified",
   "/forgot-password",
