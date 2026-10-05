@@ -26,17 +26,24 @@ export default function FeatureImportanceChart({
   const [pfiData, setPfiData] = useState<ImportanceEntry[]>([]);
   const [shapData, setShapData] = useState<ShapEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const getJson = async (url: string) => {
+      const r = await fetch(url);
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.error || `Request failed (${r.status})`);
+      return body;
+    };
     if (mode === "pfi") {
-      fetch("/api/v1/admin/feature-importance")
-        .then((r) => r.json())
-        .then((d) => setPfiData(d.importance || []))
+      getJson("/api/v1/admin/feature-importance")
+        .then((d) => { setPfiData(d.importance || []); setError(null); })
+        .catch((e: Error) => setError(e.message))
         .finally(() => setLoading(false));
     } else if (mode === "shap" && sessionId) {
-      fetch(`/api/v1/admin/shap-explain?session_id=${encodeURIComponent(sessionId)}`)
-        .then((r) => r.json())
-        .then((d) => setShapData(d.contributions || []))
+      getJson(`/api/v1/admin/shap-explain?session_id=${encodeURIComponent(sessionId)}`)
+        .then((d) => { setShapData(d.contributions || []); setError(null); })
+        .catch((e: Error) => setError(e.message))
         .finally(() => setLoading(false));
     }
   }, [mode, sessionId]);
@@ -47,6 +54,7 @@ export default function FeatureImportanceChart({
 
   return (
     <div>
+      {error && <p role="alert" className="mb-2 text-xs text-red-600">Could not load feature importance: {error}</p>}
       {/* Mode toggle */}
       {sessionId && (
         <div className="flex gap-1 mb-3">

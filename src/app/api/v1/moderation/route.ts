@@ -3,6 +3,12 @@ import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, requireRole, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { socialLimiter } from "@/lib/utils/rate-limit";
 
+const STORED_ENTITY_TYPE: Record<string, string> = {
+  team_message: "message",
+  hunt: "content",
+  review: "content",
+};
+
 export async function GET(request: NextRequest) {
   try {
     const user = await getAuthUser(request);
@@ -13,12 +19,13 @@ export async function GET(request: NextRequest) {
 
     const supabase = await createSupabaseServiceClient();
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("moderation_reports")
       .select("*, reporter:users!reporter_id(id, display_name)")
       .eq("status", status)
       .order("created_at");
 
+    if (error) throw new ApiError(500, error.message);
     return Response.json({ reports: data || [] });
   } catch (error) {
     return errorResponse(error);
@@ -47,14 +54,22 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createSupabaseServiceClient();
 
+    // The entity_type CHECK (migration 004) has no team_message/hunt/review;
+    // store those under the nearest allowed value and keep the original in details.
+    const stored = STORED_ENTITY_TYPE[body.entity_type as string] ?? body.entity_type;
+    const details =
+      [stored === body.entity_type ? "" : `[${body.entity_type}]`, body.details || ""]
+        .filter(Boolean)
+        .join(" ") || null;
+
     const { data, error } = await supabase
       .from("moderation_reports")
       .insert({
         reporter_id: user.id,
-        entity_type: body.entity_type,
+        entity_type: stored,
         entity_id: body.entity_id,
         reason: body.reason,
-        details: body.details || null,
+        details,
       })
       .select()
       .single();

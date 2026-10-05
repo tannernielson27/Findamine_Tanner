@@ -1,8 +1,16 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
-import { getAuthUser, requireRole, errorResponse } from "@/lib/utils/api-auth";
+import { getAuthUser, requireRole, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { extractThreatFeatures } from "@/lib/ml/threat-features";
 import { scoreThreat } from "@/lib/ml/threat-scorer";
+import {
+  THREAT_EVENT_COLUMNS,
+  groupThreatEvents,
+  groupIpHash,
+  groupUserAgent,
+  toFeatureEvents,
+  type ThreatEventRow,
+} from "../_lib/threat-events";
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,34 +19,27 @@ export async function GET(request: NextRequest) {
 
     const supabase = await createSupabaseServiceClient();
 
-    // Fetch recent behavioral events grouped by session
-    const { data: events } = await supabase
+    // Most recent behavioral events, grouped by session below.
+    const { data, error } = await supabase
       .from("behavioral_events")
-      .select("id, user_id, event_type, payload, created_at, ip_address, user_agent")
+      .select(THREAT_EVENT_COLUMNS)
       .order("created_at", { ascending: false })
       .limit(5000);
+    if (error) throw new ApiError(500, error.message);
 
-    if (!events || events.length === 0) {
-      return Response.json({ sessions: [] });
-    }
+    const events = (data || []) as ThreatEventRow[];
+    const { groups, ungrouped } = groupThreatEvents(events);
 
-    // Group by ip_hash (since we may not have session_id)
-    const byIp = new Map<string, typeof events>();
-    for (const e of events) {
-      const key = (e.ip_address as string) || "unknown";
-      if (!byIp.has(key)) byIp.set(key, []);
-      byIp.get(key)!.push(e);
-    }
-
-    // Score each group
+    // Score each group. ip_hash / user_agent are null unless bot-guard or a
+    // failed login recorded them — they are not collected on ordinary events.
     const scored = [];
-    for (const [ipHash, sessionEvents] of byIp) {
-      const features = extractThreatFeatures(sessionEvents as never[]);
+    for (const [key, sessionEvents] of groups) {
+      const features = extractThreatFeatures(toFeatureEvents(sessionEvents));
       const result = scoreThreat(features);
       scored.push({
-        session_id: ipHash,
-        ip_hash: ipHash,
-        user_agent: sessionEvents[0]?.user_agent || null,
+        session_id: key,
+        ip_hash: groupIpHash(sessionEvents),
+        user_agent: groupUserAgent(sessionEvents),
         event_count: sessionEvents.length,
         first_seen: sessionEvents[sessionEvents.length - 1]?.created_at,
         last_seen: sessionEvents[0]?.created_at,
@@ -52,7 +53,11 @@ export async function GET(request: NextRequest) {
     // Sort by threat score descending, return top 50
     scored.sort((a, b) => b.threat_score - a.threat_score);
 
-    return Response.json({ sessions: scored.slice(0, 50) });
+    return Response.json({
+      sessions: scored.slice(0, 50),
+      events_scanned: events.length,
+      events_without_session: ungrouped,
+    });
   } catch (error) {
     return errorResponse(error);
   }

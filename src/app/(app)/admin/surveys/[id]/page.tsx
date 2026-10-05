@@ -37,6 +37,8 @@ interface SurveyMeta {
   title: string;
   description: string | null;
   status: string;
+  /** Embedded count from GET /api/v1/surveys/[id]. */
+  survey_responses?: { count: number }[] | null;
 }
 
 function blankQuestion(existing: EditQ[]): EditQ {
@@ -65,6 +67,26 @@ export default function SurveyEditorPage() {
   const [questions, setQuestions] = useState<EditQ[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [responseCount, setResponseCount] = useState(0);
+
+  // Browser-level guard (reload, tab close, typing a new URL) for unsaved edits.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  /** Guard for in-app links out of the editor. */
+  function confirmLeave(e: { preventDefault: () => void }) {
+    if (dirty && !window.confirm("You have unsaved changes to this survey. Leave without saving?")) {
+      e.preventDefault();
+    }
+  }
 
   useEffect(() => {
     if (!surveyId) return;
@@ -81,6 +103,7 @@ export default function SurveyEditorPage() {
       .then(([surveyData, qData]) => {
         const survey: SurveyMeta = surveyData.survey;
         setMeta(survey);
+        setResponseCount(survey.survey_responses?.[0]?.count ?? 0);
         setTitle(survey.title);
         setDescription(survey.description ?? "");
         const loaded: EditQ[] = (qData.questions || []).map((q: Record<string, unknown>) => ({
@@ -107,6 +130,7 @@ export default function SurveyEditorPage() {
       return next;
     });
     setMessage(null);
+    setDirty(true);
   }
 
   function updateScale(i: number, patch: Partial<ScaleConfig>) {
@@ -116,6 +140,7 @@ export default function SurveyEditorPage() {
       next[i] = { ...next[i], scale_config: { ...next[i].scale_config, ...patch } };
       return next;
     });
+    setDirty(true);
   }
 
   function changeType(i: number, questionType: string) {
@@ -130,14 +155,28 @@ export default function SurveyEditorPage() {
       return next;
     });
     setMessage(null);
+    setDirty(true);
   }
 
   function addQuestion() {
     setQuestions((prev) => [...(prev || []), blankQuestion(prev || [])]);
+    setDirty(true);
   }
 
   function removeQuestion(i: number) {
+    const q = questions?.[i];
+    if (!q) return;
+    const name = q.item_code.trim() || `Q${i + 1}`;
+    const text = q.question_text.trim();
+    const warning =
+      responseCount > 0
+        ? `
+
+This survey already has ${responseCount} response${responseCount === 1 ? "" : "s"}; answers stored under "${name}" will no longer map to a question.`
+        : "";
+    if (!window.confirm(`Delete question ${name}${text ? ` ("${text.slice(0, 80)}")` : ""}?${warning}`)) return;
     setQuestions((prev) => (prev ? prev.filter((_, idx) => idx !== i) : prev));
+    setDirty(true);
   }
 
   function move(i: number, dir: -1 | 1) {
@@ -149,6 +188,7 @@ export default function SurveyEditorPage() {
       [next[i], next[j]] = [next[j], next[i]];
       return next;
     });
+    setDirty(true);
   }
 
   async function saveDetails(): Promise<string | null> {
@@ -197,6 +237,7 @@ export default function SurveyEditorPage() {
     setSaving(false);
     if (res.ok) {
       setMessage({ kind: "ok", text: "Saved." });
+      setDirty(false);
     } else {
       const err = await res.json().catch(() => ({}));
       setMessage({ kind: "err", text: err.error || "Failed to save." });
@@ -229,9 +270,21 @@ export default function SurveyEditorPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-4">
-      <Link href="/admin/surveys" className="text-sm text-brand hover:underline mb-4 inline-block">
+      <Link
+        href="/admin/surveys"
+        onClick={confirmLeave}
+        className="text-sm text-brand hover:underline mb-4 inline-block"
+      >
         &larr; Surveys
       </Link>
+
+      {responseCount > 0 && (
+        <div role="alert" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          This survey already has {responseCount} response{responseCount === 1 ? "" : "s"}. Changing an item
+          code, type, scale, or reverse-coding — or deleting a question — changes how those existing answers
+          are scored and exported. Fix wording typos only; for anything else, create a new survey.
+        </div>
+      )}
 
       <div className="flex items-center gap-2 mb-1">
         <h1 className="text-lg font-semibold text-gray-900">{meta?.title || "Survey"}</h1>
@@ -249,6 +302,7 @@ export default function SurveyEditorPage() {
             onChange={(e) => {
               setTitle(e.target.value);
               setMessage(null);
+              setDirty(true);
             }}
             className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
           />
@@ -260,6 +314,7 @@ export default function SurveyEditorPage() {
             onChange={(e) => {
               setDescription(e.target.value);
               setMessage(null);
+              setDirty(true);
             }}
             rows={2}
             className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
@@ -421,6 +476,7 @@ export default function SurveyEditorPage() {
             {message.text}
           </span>
         )}
+        {dirty && !message && <span className="text-sm text-amber-600">Unsaved changes</span>}
       </div>
     </main>
   );

@@ -60,14 +60,29 @@ export async function PUT(
       updates.status = body.status;
     }
 
+    if (Object.keys(updates).length === 0) throw new ApiError(400, "Provide role or status");
+
+    // An admin who demotes or deactivates themselves locks themselves out of
+    // this page with no way back; another admin has to make that change.
+    if (id === user.id) {
+      if (updates.role !== undefined && updates.role !== "admin") {
+        throw new ApiError(400, "You can't change your own admin role. Ask another admin.");
+      }
+      if (updates.status !== undefined && updates.status !== "active") {
+        throw new ApiError(400, "You can't deactivate your own account. Ask another admin.");
+      }
+    }
+
     const { data, error } = await supabase
       .from("users")
       .update(updates)
       .eq("id", id)
-      .select()
-      .single();
+      .is("deleted_at", null)
+      .select("id, display_name, email, role, status, avatar_url, created_at")
+      .maybeSingle();
 
     if (error) throw new ApiError(500, error.message);
+    if (!data) throw new ApiError(404, "User not found");
     return Response.json({ user: data });
   } catch (error) {
     return errorResponse(error);

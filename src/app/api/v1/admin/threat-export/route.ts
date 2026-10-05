@@ -23,7 +23,8 @@ export async function GET(request: NextRequest) {
 
     if (error) throw new ApiError(500, error.message);
     if (!data || data.length === 0) {
-      return new Response("No data", { status: 204 });
+      // 204 must not carry a body: `new Response("No data", { status: 204 })` throws.
+      return new Response(null, { status: 204 });
     }
 
     // Build CSV with formula injection protection

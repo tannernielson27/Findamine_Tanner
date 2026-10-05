@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
-import { getAuthUser, requireRole, errorResponse } from "@/lib/utils/api-auth";
+import { getAuthUser, requireRole, errorResponse, ApiError } from "@/lib/utils/api-auth";
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,50 +21,57 @@ export async function GET(request: NextRequest) {
 
     const supabase = await createSupabaseServiceClient();
 
-    // Use find_completions which have GPS coordinates
-    const { data: completions } = await supabase
+    // Recent completions, each joined to the location of the find completed.
+    // locations (migration 002) has name/address/latitude/longitude only — there
+    // is no city/region/country column, so activity is reported per location.
+    const { data: completions, error } = await supabase
       .from("find_completions")
-      .select("id, play_session_id, score, completed_at")
+      .select("id, completed_at, finds:finds!find_id(location_id, locations:locations!location_id(id, name, address, latitude, longitude))")
       .gte("completed_at", since.toISOString())
       .not("completed_at", "is", null)
       .order("completed_at", { ascending: false })
       .limit(2000);
+    if (error) throw new ApiError(500, error.message);
 
-    // Also get locations for GPS data
-    const { data: locations } = await supabase
-      .from("locations")
-      .select("id, name, city, region, country");
-
-    // Build location lookup
-    const locMap = new Map((locations || []).map((l) => [l.id, l]));
-
-    // Get finds with location_id to map completions to locations
-    const findIds = [...new Set((completions || []).map((c) => c.play_session_id))];
-    const { data: sessions } = await supabase
-      .from("play_sessions")
-      .select("id, hunt_id")
-      .in("id", findIds.slice(0, 100));
-
-    // Aggregate by location
-    const locationCounts = new Map<string, { count: number; city: string; country: string }>();
-    for (const loc of locations || []) {
-      const key = `${loc.city || "Unknown"}, ${loc.country || "Unknown"}`;
-      const existing = locationCounts.get(key);
-      if (existing) {
-        existing.count++;
-      } else {
-        locationCounts.set(key, { count: 1, city: loc.city || "Unknown", country: loc.country || "Unknown" });
-      }
+    interface LocationPoint {
+      location_id: string;
+      location: string;
+      address: string | null;
+      latitude: number;
+      longitude: number;
+      count: number;
     }
 
-    const points = Array.from(locationCounts.entries())
-      .map(([key, val]) => ({ location: key, ...val }))
+    const counts = new Map<string, LocationPoint>();
+    let withoutLocation = 0;
+    for (const c of completions || []) {
+      const find = c.finds as unknown as {
+        locations: { id: string; name: string; address: string | null; latitude: number; longitude: number } | null;
+      } | null;
+      const loc = find?.locations;
+      if (!loc) {
+        withoutLocation++;
+        continue;
+      }
+      const existing = counts.get(loc.id);
+      counts.set(loc.id, {
+        location_id: loc.id,
+        location: loc.name,
+        address: loc.address,
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        count: (existing?.count || 0) + 1,
+      });
+    }
+
+    const points = Array.from(counts.values())
       .sort((a, b) => b.count - a.count)
       .slice(0, 100);
 
     return Response.json({
       range,
       total_completions: completions?.length || 0,
+      completions_without_location: withoutLocation,
       points,
     });
   } catch (error) {

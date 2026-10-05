@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient, createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getStudyHealth, getDefaultStudyId } from "@/lib/services/research-dashboard";
+import ResearchExportButtons from "@/components/admin/research-export-buttons";
 
 export const dynamic = "force-dynamic";
 
@@ -41,13 +42,19 @@ export default async function ResearchPage() {
         </div>
       ) : (
         <>
-          <p className="text-sm text-gray-500 mb-6">
+          <p className="text-sm text-gray-500 mb-1">
             {health.study.name} <span className="text-gray-400">({health.study.study_code} · {health.study.status})</span>
+          </p>
+          <p className="text-xs text-gray-400 mb-6">
+            Study ID <code className="select-all font-mono">{health.study.id}</code>
           </p>
 
           {/* Enrollment + logging completeness */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5 mb-8">
-            <Stat label="Enrolled" value={`${health.study.current_sample_size}${health.study.target_sample_size ? ` / ${health.study.target_sample_size}` : ""}`} />
+            <Stat
+              label={`Enrolled now${health.enrollment.withdrawn > 0 ? ` · ${health.enrollment.withdrawn} withdrawn` : ""}`}
+              value={`${health.enrollment.active}${health.study.target_sample_size ? ` / ${health.study.target_sample_size}` : ""}`}
+            />
             <Stat
               label="Enrollment failures (7d)"
               value={health.enrollment_failures_7d}
@@ -140,6 +147,15 @@ export default async function ResearchPage() {
               <Stat label="Referral points awarded" value={health.referral.referral_points_total} />
               <Stat label="Privacy events (total)" value={health.logging.privacy_events_total} />
             </div>
+          </section>
+
+          {/* Data export */}
+          <section className="mb-8">
+            <h2 className="text-sm font-semibold text-gray-900 mb-1">Export data</h2>
+            <p className="text-xs text-gray-500 mb-3">
+              Downloads cover currently enrolled participants of this study ({health.enrollment.active}).
+            </p>
+            <ResearchExportButtons studyId={health.study.id} studyCode={health.study.study_code} />
           </section>
 
           <p className="text-xs text-gray-400">

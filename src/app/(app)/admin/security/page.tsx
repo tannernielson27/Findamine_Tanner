@@ -1,17 +1,13 @@
-import { redirect } from "next/navigation";
 import Link from "next/link";
-import { createSupabaseServerClient, createSupabaseServiceClient } from "@/lib/supabase/server";
+import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import ThreatExportButtons from "@/components/admin/threat-export-buttons";
+import { getAdminAreaRole, AdminOnlyNotice } from "../_lib/admin-access";
 
 export default async function SecurityDashboard() {
-  const supabase = await createSupabaseServerClient();
-  const { data: { user: authUser } } = await supabase.auth.getUser();
-  if (!authUser) redirect("/login");
+  const role = await getAdminAreaRole();
+  if (role !== "admin") return <AdminOnlyNotice area="Security" />;
 
   const service = await createSupabaseServiceClient();
-  const { data: profile } = await service
-    .from("users").select("role").eq("auth_id", authUser.id).single();
-  if (!profile || profile.role !== "admin") redirect("/dashboard");
 
   // Fetch summary stats
   const [scores, blocked, labeled, clusters] = await Promise.all([
@@ -118,8 +114,8 @@ export default async function SecurityDashboard() {
           ) : (
             <div className="space-y-2">
               {recentThreats.map((t) => (
-                <div key={t.session_id + t.created_at} className="flex items-center justify-between text-xs">
-                  <span className="font-mono text-gray-600 truncate w-32">{t.session_id.slice(0, 16)}...</span>
+                <div key={`${t.session_id}-${t.created_at}`} className="flex items-center justify-between text-xs">
+                  <span className="font-mono text-gray-600 truncate w-32">{(t.session_id || "unknown").slice(0, 16)}...</span>
                   <span className={`rounded-full px-2 py-0.5 font-medium ${
                     t.classification === "threat" ? "bg-red-100 text-red-800" : "bg-orange-100 text-orange-800"
                   }`}>

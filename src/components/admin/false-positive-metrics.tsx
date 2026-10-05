@@ -13,13 +13,20 @@ interface Metrics {
 
 export default function FalsePositiveMetrics() {
   const [data, setData] = useState<Metrics | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/v1/admin/false-positive-metrics")
-      .then((r) => r.json())
-      .then(setData);
+      .then(async (r) => {
+        const body = await r.json().catch(() => ({}));
+        // An error body has no confusion_matrix; rendering it would crash.
+        if (!r.ok) throw new Error(body.error || `Request failed (${r.status})`);
+        setData(body);
+      })
+      .catch((e: Error) => setError(e.message));
   }, []);
 
+  if (error) return <p role="alert" className="text-xs text-red-600">Could not load model metrics: {error}</p>;
   if (!data) return <div className="h-32 animate-pulse bg-gray-100 rounded" />;
 
   const cm = data.confusion_matrix;
@@ -65,7 +72,7 @@ export default function FalsePositiveMetrics() {
           <div className="space-y-1">
             {data.recent_relabels.map((r, i) => (
               <div key={i} className="flex items-center gap-2 text-xs text-gray-600">
-                <span className="font-mono truncate w-24">{r.session_id.slice(0, 12)}...</span>
+                <span className="font-mono truncate w-24">{(r.session_id || "").slice(0, 12)}...</span>
                 <span className="rounded bg-gray-100 px-1.5 py-0.5">{r.previous_label}</span>
                 <span className="text-gray-400">&rarr;</span>
                 <span className="rounded bg-gray-100 px-1.5 py-0.5">{r.new_label}</span>

@@ -3,6 +3,7 @@ import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, requireRole, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { extractThreatFeatures } from "@/lib/ml/threat-features";
 import { scoreThreat, computeShapContributions } from "@/lib/ml/threat-scorer";
+import { fetchGroupEvents, toFeatureEvents } from "../_lib/threat-events";
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,19 +15,16 @@ export async function GET(request: NextRequest) {
 
     const supabase = await createSupabaseServiceClient();
 
-    const { data: events } = await supabase
-      .from("behavioral_events")
-      .select("id, user_id, event_type, payload, created_at")
-      .eq("ip_address", sessionId)
-      .order("created_at")
-      .limit(5000);
+    // session_id is the key threat-sessions returned for this group.
+    const events = await fetchGroupEvents(supabase, sessionId, 5000);
 
-    const features = extractThreatFeatures((events as never[]) || []);
+    const features = extractThreatFeatures(toFeatureEvents(events));
     const { score, classification } = scoreThreat(features);
     const contributions = computeShapContributions(features);
 
     return Response.json({
       session_id: sessionId,
+      event_count: events.length,
       score,
       classification,
       features,

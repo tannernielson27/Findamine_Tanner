@@ -10,6 +10,13 @@ import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { extractThreatFeatures, FEATURE_NAMES, type ThreatFeatures } from "@/lib/ml/threat-features";
 import { scoreThreat } from "@/lib/ml/threat-scorer";
+import {
+  THREAT_EVENT_COLUMNS,
+  groupThreatEvents,
+  groupIpHash,
+  toFeatureEvents,
+  type ThreatEventRow,
+} from "@/app/api/v1/admin/_lib/threat-events";
 
 export const maxDuration = 60; // seconds
 
@@ -25,36 +32,42 @@ export async function GET(request: NextRequest) {
   const since = new Date(Date.now() - 48 * 3_600_000).toISOString();
 
   // Fetch events from last 48 hours
-  const { data: events } = await supabase
+  // behavioral_events has no ip_address/user_agent column (see threat-events.ts).
+  const { data, error } = await supabase
     .from("behavioral_events")
-    .select("id, user_id, event_type, payload, created_at, ip_address, user_agent")
+    .select(THREAT_EVENT_COLUMNS)
     .gte("created_at", since)
     .order("created_at")
     .limit(10_000);
+  if (error) {
+    return Response.json({ error: `behavioral_events read failed: ${error.message}` }, { status: 500 });
+  }
 
-  if (!events || events.length === 0) {
+  const events = (data || []) as ThreatEventRow[];
+  if (events.length === 0) {
     return Response.json({ sessions_analyzed: 0, clusters_found: 0 });
   }
 
-  // Group by IP
-  const byIp = new Map<string, typeof events>();
-  for (const e of events) {
-    const key = (e.ip_address as string) || "unknown";
-    if (!byIp.has(key)) byIp.set(key, []);
-    byIp.get(key)!.push(e);
+  // Group by session (falling back to a recorded ip hash); events with
+  // neither cannot be attributed and are skipped.
+  const { groups, ungrouped } = groupThreatEvents(events);
+  if (groups.size === 0) {
+    return Response.json({ sessions_analyzed: 0, clusters_found: 0, events_without_session: ungrouped });
   }
 
-  // Extract features and score each session
-  const sessions: { ip: string; features: ThreatFeatures; score: number; vector: number[] }[] = [];
-  for (const [ip, sessionEvents] of byIp) {
-    const features = extractThreatFeatures(sessionEvents as never[]);
+  // Extract features and score each session. `ip` is null when no ip hash was
+  // recorded for the session — such sessions are scored but never auto-blocked.
+  const sessions: { key: string; ip: string | null; features: ThreatFeatures; score: number; vector: number[] }[] = [];
+  for (const [key, sessionEvents] of groups) {
+    const features = extractThreatFeatures(toFeatureEvents(sessionEvents));
     const result = scoreThreat(features);
     const vector = FEATURE_NAMES.map((f) => features[f]);
-    sessions.push({ ip, features, score: result.score, vector });
+    const ip = groupIpHash(sessionEvents);
+    sessions.push({ key, ip, features, score: result.score, vector });
 
     // Store threat score
     await supabase.from("threat_scores").insert({
-      session_id: ip,
+      session_id: key,
       ip_hash: ip,
       threat_score: result.score,
       classification: result.classification,
@@ -84,7 +97,7 @@ export async function GET(request: NextRequest) {
   for (const [clusterId, members] of clusterMap) {
     const avgScore = members.reduce((s, m) => s + m.score, 0) / members.length;
     const center = computeCenter(members.map((m) => m.vector));
-    const memberIps = members.map((m) => m.ip);
+    const memberIps = [...new Set(members.map((m) => m.ip).filter((ip): ip is string => ip !== null))];
 
     // Store cluster
     await supabase.from("threat_clusters").insert({
@@ -120,6 +133,7 @@ export async function GET(request: NextRequest) {
     clusters_found: clusterMap.size,
     noise_points: noiseCount,
     auto_blocked: autoBlocked,
+    events_without_session: ungrouped,
   });
 }
 

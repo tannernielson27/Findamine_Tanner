@@ -43,11 +43,17 @@ const eventBadge = (type: string) => {
 export default function TrafficPage() {
   const [data, setData] = useState<TrafficData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/v1/admin/traffic-stats")
-      .then((r) => r.json())
-      .then(setData)
+      .then(async (r) => {
+        const body = await r.json().catch(() => ({}));
+        // An error body has no overview/daily_activity; rendering it would crash.
+        if (!r.ok) throw new Error(r.status === 403 ? "Admin accounts only." : body.error || `Request failed (${r.status})`);
+        setData(body);
+      })
+      .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
 
@@ -64,7 +70,16 @@ export default function TrafficPage() {
     );
   }
 
-  if (!data) return <main className="mx-auto max-w-5xl px-4 py-4"><p className="text-gray-500">Failed to load traffic data.</p></main>;
+  if (!data) {
+    return (
+      <main className="mx-auto max-w-5xl px-4 py-4">
+        <Link href="/admin/security" className="text-sm text-brand hover:underline">&larr; Security</Link>
+        <div role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          Could not load traffic data{error ? `: ${error}` : "."}
+        </div>
+      </main>
+    );
+  }
 
   const o = data.overview;
   const maxSessions = Math.max(...data.daily_activity.map((d) => d.sessions), 1);

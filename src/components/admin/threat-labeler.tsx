@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 
 interface ThreatSession {
   session_id: string;
-  ip_hash: string;
+  /** Null when no IP hash was recorded for the session (not collected on ordinary events). */
+  ip_hash: string | null;
   user_agent: string | null;
   event_count: number;
   first_seen: string;
@@ -38,13 +39,36 @@ export default function ThreatLabeler() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [shap, setShap] = useState<ShapContribution[] | null>(null);
   const [labeled, setLabeled] = useState<Set<string>>(new Set());
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [unattributed, setUnattributed] = useState(0);
 
   useEffect(() => {
     fetch("/api/v1/admin/threat-sessions")
-      .then((r) => r.json())
-      .then((d) => setSessions(d.sessions || []))
+      .then(async (r) => {
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`);
+        setSessions(d.sessions || []);
+        setUnattributed(typeof d.events_without_session === "number" ? d.events_without_session : 0);
+      })
+      .catch((e: Error) => setLoadError(e.message))
       .finally(() => setLoading(false));
   }, []);
+
+  async function post(url: string, body: unknown): Promise<string | null> {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) return null;
+      const data = await res.json().catch(() => ({}));
+      return data.error || `request failed (${res.status})`;
+    } catch {
+      return "network error";
+    }
+  }
 
   async function toggleExpand(sid: string) {
     if (expanded === sid) {
@@ -54,26 +78,40 @@ export default function ThreatLabeler() {
     }
     setExpanded(sid);
     setShap(null);
-    const res = await fetch(`/api/v1/admin/shap-explain?session_id=${encodeURIComponent(sid)}`);
-    const data = await res.json();
-    setShap(data.contributions || []);
+    try {
+      const res = await fetch(`/api/v1/admin/shap-explain?session_id=${encodeURIComponent(sid)}`);
+      const data = await res.json().catch(() => ({}));
+      setShap(res.ok ? data.contributions || [] : []);
+    } catch {
+      setShap([]);
+    }
   }
 
-  async function labelSession(sessionId: string, ipHash: string, attackType: string) {
-    await fetch("/api/v1/admin/label-threat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId, ip_hash: ipHash, attack_type: attackType }),
+  async function labelSession(sessionId: string, ipHash: string | null, attackType: string) {
+    setActionError(null);
+    const err = await post("/api/v1/admin/label-threat", {
+      session_id: sessionId,
+      ip_hash: ipHash,
+      attack_type: attackType,
     });
+    if (err) {
+      setActionError(`Label was not saved: ${err}`);
+      return;
+    }
     setLabeled((prev) => new Set([...prev, sessionId]));
   }
 
   async function blockIp(ipHash: string) {
-    await fetch("/api/v1/admin/block-ip", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ip_hash: ipHash, reason: "Manual block from threat labeler", expires_in_days: 30 }),
+    setActionError(null);
+    const err = await post("/api/v1/admin/block-ip", {
+      ip_hash: ipHash,
+      reason: "Manual block from threat labeler",
+      expires_in_days: 30,
     });
+    if (err) {
+      setActionError(`IP was not blocked: ${err}`);
+      return;
+    }
     setLabeled((prev) => new Set([...prev, `block_${ipHash}`]));
   }
 
@@ -87,8 +125,23 @@ export default function ThreatLabeler() {
         Top Threat Sessions ({sessions.length})
       </h3>
 
-      {sessions.length === 0 && (
-        <p className="text-sm text-gray-500">No sessions with behavioral events yet.</p>
+      {loadError && (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          Could not load threat sessions: {loadError}
+        </p>
+      )}
+      {actionError && (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {actionError}
+        </p>
+      )}
+
+      {!loadError && sessions.length === 0 && (
+        <p className="text-sm text-gray-500">
+          No sessions to score yet.
+          {unattributed > 0 &&
+            ` ${unattributed} recent event${unattributed === 1 ? " has" : "s have"} no session id or IP hash and cannot be grouped.`}
+        </p>
       )}
 
       {sessions.map((s) => (
@@ -103,7 +156,7 @@ export default function ThreatLabeler() {
                 {s.threat_score}
               </span>
               <span className="text-sm text-gray-600 truncate font-mono">
-                {s.ip_hash.slice(0, 16)}...
+                {(s.ip_hash || s.session_id).slice(0, 16)}...
               </span>
               <span className="text-xs text-gray-400">
                 {s.event_count} events
@@ -118,8 +171,9 @@ export default function ThreatLabeler() {
           {expanded === s.session_id && (
             <div className="border-t border-gray-100 px-4 py-3 space-y-3">
               <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
-                <div><span className="font-medium">IP:</span> {s.ip_hash}</div>
-                <div><span className="font-medium">UA:</span> {s.user_agent?.slice(0, 60) || "—"}</div>
+                <div><span className="font-medium">Session:</span> {s.session_id}</div>
+                <div><span className="font-medium">IP hash:</span> {s.ip_hash || "not collected"}</div>
+                <div><span className="font-medium">UA:</span> {s.user_agent?.slice(0, 60) || "not collected"}</div>
                 <div><span className="font-medium">First:</span> {new Date(s.first_seen).toLocaleString()}</div>
                 <div><span className="font-medium">Last:</span> {new Date(s.last_seen).toLocaleString()}</div>
               </div>
@@ -172,11 +226,12 @@ export default function ThreatLabeler() {
                   </button>
                 ))}
                 <button
-                  onClick={() => blockIp(s.ip_hash)}
-                  disabled={labeled.has(`block_${s.ip_hash}`)}
+                  onClick={() => s.ip_hash && blockIp(s.ip_hash)}
+                  disabled={!s.ip_hash || labeled.has(`block_${s.ip_hash}`)}
+                  title={s.ip_hash ? undefined : "No IP hash was recorded for this session"}
                   className="rounded px-2 py-1 text-xs font-medium bg-gray-800 text-white hover:bg-gray-900 disabled:opacity-50"
                 >
-                  Block IP (30d)
+                  {s.ip_hash ? "Block IP (30d)" : "Block IP (no IP recorded)"}
                 </button>
               </div>
             </div>

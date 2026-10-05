@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, requireRole, errorResponse, ApiError } from "@/lib/utils/api-auth";
+import { writeAudit } from "../_lib/audit";
 
 const VALID_TYPES = ["safe", "scanner", "scraper", "credential_stuffing", "injection", "ddos", "other"];
 
@@ -31,33 +32,46 @@ export async function POST(request: NextRequest) {
     }
 
     // Insert classification
-    await supabase.from("threat_classifications").insert({
-      session_id,
-      ip_hash,
-      attack_type,
-      severity: severity || "low",
-      notes,
-      labeled_by: user.id,
-    });
+    const { data: label, error: labelError } = await supabase
+      .from("threat_classifications")
+      .insert({
+        session_id,
+        ip_hash,
+        attack_type,
+        severity: severity || "low",
+        notes,
+        labeled_by: user.id,
+      })
+      .select("id")
+      .single();
+    if (labelError || !label) throw new ApiError(500, labelError?.message || "Label was not saved");
 
     // Track relabels
     if (previousLabel && previousLabel !== attack_type) {
-      await supabase.from("threat_label_history").insert({
+      const { error: historyError } = await supabase.from("threat_label_history").insert({
         session_id,
         previous_label: previousLabel,
         new_label: attack_type,
         relabeled_by: user.id,
         reason: notes,
       });
+      if (historyError) console.error("threat_label_history write failed:", historyError.message);
     }
 
     // Audit log
-    await supabase.from("audit_log").insert({
+    await writeAudit(supabase, {
       user_id: user.id,
-      action: previousLabel ? "relabel_threat" : "label_threat",
+      action: "create",
       entity_type: "threat_classification",
-      entity_id: session_id || ip_hash,
-      new_values: { attack_type, severity, notes },
+      entity_id: label.id,
+      new_values: {
+        op: previousLabel ? "relabel_threat" : "label_threat",
+        session_id: session_id || null,
+        ip_hash: ip_hash || null,
+        attack_type,
+        severity: severity || "low",
+        notes: notes || null,
+      },
       old_values: previousLabel ? { attack_type: previousLabel } : null,
     });
 

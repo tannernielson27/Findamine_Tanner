@@ -1,6 +1,21 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, requireRole, errorResponse, ApiError } from "@/lib/utils/api-auth";
+import { fetchAllRows, fetchAllByIds } from "@/lib/utils/paginate";
+
+interface EnrollmentRow {
+  id: string;
+  user_id: string;
+  [column: string]: unknown;
+}
+
+interface AssignmentRow {
+  id: string;
+  user_id: string;
+  dimension_id: string;
+  level: string;
+  [column: string]: unknown;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -24,13 +39,53 @@ export async function GET(request: NextRequest) {
     const studyId = searchParams.get("study_id");
     if (!studyId) throw new ApiError(400, "study_id required");
 
-    const { data } = await supabase
-      .from("study_enrollments")
-      .select("*, users(id, display_name, role), dimension_assignments(*, treatment_dimensions(name))")
-      .eq("study_id", studyId)
-      .is("withdrawn_at", null);
+    // study_enrollments has no foreign key to dimension_assignments (both hang
+    // off users), so PostgREST cannot embed one in the other: the old embedded
+    // select failed and this route always returned []. Read them separately
+    // and join on user_id.
+    const enrollments = await fetchAllRows<EnrollmentRow>((from, to) =>
+      supabase
+        .from("study_enrollments")
+        .select("*, users(id, display_name, role)")
+        .eq("study_id", studyId)
+        .is("withdrawn_at", null)
+        .order("id", { ascending: true })
+        .range(from, to)
+    );
 
-    return Response.json({ participants: data || [] });
+    const { data: studyDims, error: dimsError } = await supabase
+      .from("treatment_study_dimensions")
+      .select("dimension_id")
+      .eq("study_id", studyId);
+    if (dimsError) throw new ApiError(500, dimsError.message);
+    const dimensionIds = (studyDims || []).map((d) => d.dimension_id as string);
+
+    const assignments =
+      dimensionIds.length === 0
+        ? []
+        : await fetchAllByIds<AssignmentRow>(
+            enrollments.map((e) => e.user_id),
+            (ids, from, to) =>
+              supabase
+                .from("dimension_assignments")
+                .select("*, treatment_dimensions(name)")
+                .in("user_id", ids)
+                .in("dimension_id", dimensionIds)
+                .order("id", { ascending: true })
+                .range(from, to)
+          );
+
+    const byUser = new Map<string, AssignmentRow[]>();
+    for (const a of assignments) {
+      byUser.set(a.user_id, [...(byUser.get(a.user_id) || []), a]);
+    }
+
+    const participants = enrollments.map((e) => ({
+      ...e,
+      dimension_assignments: byUser.get(e.user_id) || [],
+    }));
+
+    return Response.json({ participants });
   } catch (error) {
     return errorResponse(error);
   }

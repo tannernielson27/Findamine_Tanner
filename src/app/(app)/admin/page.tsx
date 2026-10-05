@@ -18,6 +18,8 @@ export default async function AdminPage() {
     redirect("/dashboard");
   }
 
+  const isAdmin = profile.role === "admin";
+
   const [users, hunts, sessions, reports] = await Promise.all([
     serviceClient.from("users").select("*", { count: "exact", head: true }).is("deleted_at", null),
     serviceClient.from("hunts").select("*", { count: "exact", head: true }).is("deleted_at", null),
@@ -46,12 +48,27 @@ export default async function AdminPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <AdminLink href="/admin/security" title="Security &amp; Threats" desc="Threat detection, IP blocking, and traffic analysis" />
-        <AdminLink href="/admin/users" title="User Management" desc="View and manage user accounts and roles" />
-        <AdminLink href="/admin/moderation" title="Moderation Queue" desc="Review flagged content and reports" />
+        {isAdmin && (
+          <AdminLink href="/admin/security" title="Security &amp; Threats" desc="Threat detection, IP blocking, and traffic analysis" />
+        )}
+        <AdminLink
+          href="/admin/users"
+          title="User Management"
+          desc={isAdmin ? "View and manage user accounts and roles" : "View user accounts and roles"}
+        />
+        {isAdmin && (
+          <AdminLink href="/admin/moderation" title="Moderation Queue" desc="Review flagged content and reports" />
+        )}
         <AdminLink href="/admin/research" title="Research Studies" desc="Manage treatment studies and dimensions" />
         <AdminLink href="/admin/surveys" title="Surveys" desc="Create and manage surveys" />
       </div>
+
+      {!isAdmin && (
+        <p className="mt-4 text-xs text-gray-500">
+          Security and the moderation queue are admin-only and are hidden for your researcher role. Ask an
+          admin to review any pending reports.
+        </p>
+      )}
     </main>
   );
 }

@@ -1,19 +1,12 @@
-import { redirect } from "next/navigation";
 import Link from "next/link";
-import { createSupabaseServerClient, createSupabaseServiceClient } from "@/lib/supabase/server";
+import { getAdminAreaRole, AdminOnlyNotice } from "../../_lib/admin-access";
 import ThreatLabeler from "@/components/admin/threat-labeler";
 import FeatureImportanceChart from "@/components/admin/feature-importance-chart";
 import FalsePositiveMetrics from "@/components/admin/false-positive-metrics";
 
 export default async function ThreatsPage() {
-  const supabase = await createSupabaseServerClient();
-  const { data: { user: authUser } } = await supabase.auth.getUser();
-  if (!authUser) redirect("/login");
-
-  const service = await createSupabaseServiceClient();
-  const { data: profile } = await service
-    .from("users").select("role").eq("auth_id", authUser.id).single();
-  if (!profile || profile.role !== "admin") redirect("/dashboard");
+  const role = await getAdminAreaRole();
+  if (role !== "admin") return <AdminOnlyNotice area="Security" />;
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-4">

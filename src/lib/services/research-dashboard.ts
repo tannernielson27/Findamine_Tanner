@@ -9,6 +9,7 @@
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { checkBalance } from "@/lib/services/randomization";
 import { ENROLLMENT_FAILED_EVENT } from "@/lib/services/enrollment";
+import { fetchAllRows, fetchAllByIds, ID_CHUNK } from "@/lib/utils/paginate";
 
 export interface StudyHealth {
   study: {
@@ -19,6 +20,11 @@ export interface StudyHealth {
     current_sample_size: number;
     target_sample_size: number | null;
   } | null;
+  /**
+   * Counted from study_enrollments. Use this, not study.current_sample_size:
+   * that column is incremented on enrollment and never decremented on withdrawal.
+   */
+  enrollment: { active: number; withdrawn: number };
   /**
    * research/study_enrollment_failed behavioral_events in the last 7 days (B7).
    * Not study-scoped: a failure can happen before the study is even resolved.
@@ -59,12 +65,26 @@ export async function getStudyHealth(studyId: string): Promise<StudyHealth> {
     .eq("id", studyId)
     .maybeSingle();
 
-  const { data: enrollments } = await supabase
+  // Every read below that grows with participants or events is paginated:
+  // PostgREST silently caps an unpaginated select at 1000 rows.
+  const enrollments = await fetchAllRows<{ user_id: string }>((from, to) =>
+    supabase
+      .from("study_enrollments")
+      .select("user_id")
+      .eq("study_id", studyId)
+      .is("withdrawn_at", null)
+      .order("id", { ascending: true })
+      .range(from, to)
+  );
+  const userIds = enrollments.map((e) => e.user_id);
+
+  // treatment_studies.current_sample_size is only ever incremented (it is not
+  // decremented on withdrawal), so enrollment is counted from the rows instead.
+  const { count: withdrawnCount } = await supabase
     .from("study_enrollments")
-    .select("user_id")
+    .select("*", { count: "exact", head: true })
     .eq("study_id", studyId)
-    .is("withdrawn_at", null);
-  const userIds = (enrollments || []).map((e) => e.user_id);
+    .not("withdrawn_at", "is", null);
 
   const balance = await checkBalance(studyId);
 
@@ -82,44 +102,51 @@ export async function getStudyHealth(studyId: string): Promise<StudyHealth> {
   let privacyEventsTotal = 0;
   let eventsLast24h = 0;
   const since = Date.now() - 24 * 3_600_000;
-  if (userIds.length > 0) {
-    const { data: events } = await supabase
+  const events = await fetchAllByIds<{ user_id: string; created_at: string }>(userIds, (ids, from, to) =>
+    supabase
       .from("privacy_events")
       .select("user_id, created_at")
-      .in("user_id", userIds);
-    for (const e of events || []) {
-      usersWithEvents.add(e.user_id);
-      privacyEventsTotal++;
-      if (new Date(e.created_at).getTime() >= since) eventsLast24h++;
-    }
+      .in("user_id", ids)
+      .order("id", { ascending: true })
+      .range(from, to)
+  );
+  for (const e of events) {
+    usersWithEvents.add(e.user_id);
+    privacyEventsTotal++;
+    if (new Date(e.created_at).getTime() >= since) eventsLast24h++;
   }
 
   const usersWithSnapshots = new Set<string>();
-  if (userIds.length > 0) {
-    const { data: snaps } = await supabase
+  const snaps = await fetchAllByIds<{ user_id: string }>(userIds, (ids, from, to) =>
+    supabase
       .from("privacy_index_snapshots")
       .select("user_id")
-      .in("user_id", userIds);
-    for (const s of snaps || []) usersWithSnapshots.add(s.user_id);
-  }
+      .in("user_id", ids)
+      .order("id", { ascending: true })
+      .range(from, to)
+  );
+  for (const s of snaps) usersWithSnapshots.add(s.user_id);
 
-  // Referral mechanic.
+  // Referral mechanic. Counts are summed per id chunk so the URL stays short.
   let minionLinks = 0;
-  let referralPointsTotal = 0;
-  if (userIds.length > 0) {
+  for (let i = 0; i < userIds.length; i += ID_CHUNK) {
     const { count } = await supabase
       .from("minion_links")
       .select("*", { count: "exact", head: true })
-      .in("recruiter_id", userIds);
-    minionLinks = count || 0;
+      .in("recruiter_id", userIds.slice(i, i + ID_CHUNK));
+    minionLinks += count || 0;
+  }
 
-    const { data: refPoints } = await supabase
+  const refPoints = await fetchAllByIds<{ amount: number | null }>(userIds, (ids, from, to) =>
+    supabase
       .from("points_ledger")
       .select("amount")
       .eq("source_type", "referral")
-      .in("user_id", userIds);
-    referralPointsTotal = (refPoints || []).reduce((s, r) => s + (r.amount || 0), 0);
-  }
+      .in("user_id", ids)
+      .order("id", { ascending: true })
+      .range(from, to)
+  );
+  const referralPointsTotal = refPoints.reduce((s, r) => s + (r.amount || 0), 0);
 
   // Survey delivery/submission funnel per timepoint — one of the four pilot
   // validation checks (prospectus §7c: survey timing/delivery).
@@ -142,13 +169,18 @@ export async function getStudyHealth(studyId: string): Promise<StudyHealth> {
     .sort((a, b) => a.timepoint.localeCompare(b.timepoint));
 
   if (scheduleRows.length > 0 && userIds.length > 0) {
-    const { data: deliveries } = await supabase
-      .from("survey_deliveries")
-      .select("survey_id, status")
-      .in("user_id", userIds)
-      .in("survey_id", scheduleRows.map((r) => r.surveyId));
+    const surveyIds = [...new Set(scheduleRows.map((r) => r.surveyId))];
+    const deliveries = await fetchAllByIds<{ survey_id: string; status: string }>(userIds, (ids, from, to) =>
+      supabase
+        .from("survey_deliveries")
+        .select("survey_id, status")
+        .in("user_id", ids)
+        .in("survey_id", surveyIds)
+        .order("id", { ascending: true })
+        .range(from, to)
+    );
     for (const row of scheduleRows) {
-      const mine = (deliveries || []).filter((d) => d.survey_id === row.surveyId);
+      const mine = deliveries.filter((d) => d.survey_id === row.surveyId);
       surveys.push({
         timepoint: row.timepoint,
         survey_title: row.title,
@@ -175,6 +207,7 @@ export async function getStudyHealth(studyId: string): Promise<StudyHealth> {
 
   return {
     study: study || null,
+    enrollment: { active: userIds.length, withdrawn: withdrawnCount || 0 },
     enrollment_failures_7d: enrollmentFailures7d || 0,
     balance,
     logging: {

@@ -21,20 +21,39 @@ export default function AdminStandardsPage() {
   const [frameworks, setFrameworks] = useState<Framework[]>([]);
   const [standards, setStandards] = useState<Standard[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const getJson = async (url: string) => {
+      const r = await fetch(url);
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.error || `Request failed (${r.status})`);
+      return body;
+    };
     Promise.all([
-      fetch("/api/v1/curriculum?type=frameworks").then((r) => r.json()),
-      fetch("/api/v1/curriculum?type=standards&limit=300").then((r) => r.json()),
-    ]).then(([fwData, stdData]) => {
-      setFrameworks(fwData.frameworks || []);
-      setStandards(stdData.standards || []);
-      setLoading(false);
-    });
+      getJson("/api/v1/curriculum?type=frameworks"),
+      getJson("/api/v1/curriculum?type=standards&limit=300"),
+    ])
+      .then(([fwData, stdData]) => {
+        setFrameworks(fwData.frameworks || []);
+        setStandards(stdData.standards || []);
+      })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) {
     return <main className="mx-auto max-w-4xl px-4 py-4"><p className="text-sm text-gray-500">Loading...</p></main>;
+  }
+
+  if (error) {
+    return (
+      <main className="mx-auto max-w-4xl px-4 py-4">
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          Could not load standards: {error}
+        </div>
+      </main>
+    );
   }
 
   // Group standards by framework
