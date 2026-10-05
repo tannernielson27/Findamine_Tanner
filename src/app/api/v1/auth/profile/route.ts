@@ -9,7 +9,13 @@ import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { diffVisibility, classifyChange } from "@/lib/utils/privacy-tracking";
 import { computePrivacyIndex } from "@/lib/utils/privacy-index";
 import { recordPrivacyIndexSnapshot } from "@/lib/services/privacy-snapshots";
-import { conditionsFromMetadata, DIMENSION_META_PREFIX, WITHDRAWN_META_KEY } from "@/lib/utils/conditions";
+import {
+  conditionsFromMetadata,
+  isWithdrawn,
+  DIMENSION_META_PREFIX,
+  WITHDRAWN_META_KEY,
+} from "@/lib/utils/conditions";
+import { getParticipationStatus } from "@/lib/services/participant-conditions";
 import {
   sanitizeOverrides,
   overridesEqual,
@@ -26,6 +32,25 @@ interface PrivacyMeta {
   session_id?: string;
   /** The S5 norm line shown on this page view (migration 062); validated as the caller's. */
   norm_exposure_id?: string;
+  /** The save includes edits restored from a survey-gate draft (not made in this page view). */
+  draft_restored?: boolean;
+}
+
+type Db = Awaited<ReturnType<typeof createSupabaseServiceClient>>;
+
+/**
+ * Study rows may be written only for an enrolled participant (enrollment
+ * requires research consent) who has not withdrawn. Fails closed: if the status
+ * can't be read, nothing is recorded — the profile save itself already succeeded.
+ */
+async function mayRecordStudyData(supabase: Db, userId: string, meta: Record<string, unknown>): Promise<boolean> {
+  if (isWithdrawn(meta)) return false;
+  try {
+    return (await getParticipationStatus(userId, supabase)) === "participant";
+  } catch (err) {
+    console.error("[profile] participation check failed; privacy change not recorded", err);
+    return false;
+  }
 }
 
 export async function PUT(request: NextRequest) {
@@ -148,8 +173,9 @@ export async function PUT(request: NextRequest) {
       throw new ApiError(500, "Failed to update profile");
     }
 
-    // Authoritative privacy-change record + index snapshot, with condition context.
-    if (changed) {
+    // Authoritative privacy-change record + index snapshot, with condition
+    // context — for study participants only (consent promise to everyone else).
+    if (changed && (await mayRecordStudyData(supabase, user.id, existingMeta))) {
       const treatment = (existingMeta.privacy_treatment as string) ?? null;
       const privacyDefault = (existingMeta.privacy_default as string) ?? null;
       const privacyFriction = (existingMeta.privacy_friction as string) ?? null;
@@ -184,6 +210,7 @@ export async function PUT(request: NextRequest) {
           override_count_before: countOverrides(oldOverrides),
           override_count_after: countOverrides(effectiveOverrides),
           overrides_changed: overridesChanged,
+          ...(meta.draft_restored === true ? { draft_restored: true } : {}),
           source: "server", // authoritative; distinguishes from client telemetry
         },
       });

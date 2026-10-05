@@ -8,6 +8,10 @@ import {
   type CheckinResponseAction,
 } from "@/lib/services/privacy-checkin";
 
+/** `notifications.type` written by the survey reminder cron (survey-delivery.ts). */
+const SURVEY_REMINDER_TYPE = "survey_reminder";
+const SURVEYS_PATH = "/surveys";
+
 interface Notification {
   id: string;
   type: string;
@@ -99,13 +103,19 @@ export default function NotificationBell() {
     }
   }, [open]);
 
+  /** Show a notification as read only once the server has accepted it. */
   async function handleMarkRead(id: string) {
-    await fetch("/api/v1/notifications", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
-      keepalive: true,
-    });
+    try {
+      const res = await fetch("/api/v1/notifications", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+        keepalive: true,
+      });
+      if (!res.ok) return;
+    } catch {
+      return; // still unread; the next poll shows the true state
+    }
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, read: true } : n))
     );
@@ -116,15 +126,27 @@ export default function NotificationBell() {
     for (const n of notifications) {
       if (!n.read && n.type === PRIVACY_CHECKIN_TYPE) logCheckinResponse(n.id, "dismissed", "mark_all");
     }
-    await fetch("/api/v1/notifications", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mark_all_read: true }),
-    });
+    try {
+      const res = await fetch("/api/v1/notifications", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mark_all_read: true }),
+      });
+      if (!res.ok) return;
+    } catch {
+      return;
+    }
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   }
 
   async function handleSelect(n: Notification) {
+    if (n.type === SURVEY_REMINDER_TYPE) {
+      // A survey reminder opens the surveys list.
+      if (!n.read) await handleMarkRead(n.id);
+      setOpen(false);
+      router.push(SURVEYS_PATH);
+      return;
+    }
     if (n.type !== PRIVACY_CHECKIN_TYPE) {
       if (!n.read) await handleMarkRead(n.id);
       return;

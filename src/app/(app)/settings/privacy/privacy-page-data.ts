@@ -4,6 +4,79 @@
  */
 
 import type { Scheme, SchemeSelectionState } from "@/lib/utils/scheme-selection";
+import {
+  PROFILE_FIELD_KEYS,
+  isVisibilityLevel,
+  type VisibilityLevel,
+  type VisibilityOverrides,
+} from "@/lib/utils/privacy";
+
+/**
+ * Unsaved edits parked while the participant answers a gating questionnaire
+ * (B2), so the round trip to the survey doesn't discard them. Lives in
+ * sessionStorage, keyed to the user, and is consumed on the next page load.
+ */
+export interface PrivacyDraft {
+  visibility: Record<string, VisibilityLevel>;
+  overrides: VisibilityOverrides;
+}
+
+const DRAFT_KEY_PREFIX = "findamine:privacy-draft:";
+
+/** Parse a stored draft, keeping only known fields and valid levels. Pure. */
+export function parsePrivacyDraft(raw: string | null): PrivacyDraft | null {
+  if (!raw) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const { visibility, overrides } = parsed as { visibility?: unknown; overrides?: unknown };
+  const cleanLevels = (value: unknown): Record<string, VisibilityLevel> => {
+    const out: Record<string, VisibilityLevel> = {};
+    if (!value || typeof value !== "object" || Array.isArray(value)) return out;
+    for (const [key, level] of Object.entries(value as Record<string, unknown>)) {
+      if (PROFILE_FIELD_KEYS.includes(key) && isVisibilityLevel(level)) out[key] = level;
+    }
+    return out;
+  };
+  const cleanOverrides: VisibilityOverrides = {};
+  if (overrides && typeof overrides === "object" && !Array.isArray(overrides)) {
+    for (const [personId, fields] of Object.entries(overrides as Record<string, unknown>)) {
+      const cleaned = cleanLevels(fields);
+      if (Object.keys(cleaned).length > 0) cleanOverrides[personId] = cleaned;
+    }
+  }
+  return { visibility: cleanLevels(visibility), overrides: cleanOverrides };
+}
+
+/** Park unsaved edits for `userId`. Best-effort: storage may be unavailable. */
+export function savePrivacyDraft(userId: string, draft: PrivacyDraft): void {
+  if (!userId) return;
+  try {
+    window.sessionStorage.setItem(DRAFT_KEY_PREFIX + userId, JSON.stringify(draft));
+  } catch {
+    // private mode / quota: the edits are simply not carried across
+  }
+}
+
+/** Read and remove `userId`'s parked edits (one-shot). */
+export function takePrivacyDraft(userId: string): PrivacyDraft | null {
+  if (!userId) return null;
+  try {
+    const key = DRAFT_KEY_PREFIX + userId;
+    const draft = parsePrivacyDraft(window.sessionStorage.getItem(key));
+    window.sessionStorage.removeItem(key);
+    return draft;
+  } catch {
+    return null;
+  }
+}
+
+/** Where the survey page sends the participant back to once they finish. */
+export const PRIVACY_PAGE_PATH = "/settings/privacy";
 
 /** Someone a per-person rule can apply to (migration 057). */
 export type OverridePerson = { id: string; name: string; kind: "friend" | "minion" };

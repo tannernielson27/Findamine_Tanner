@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BookOpen, ArrowLeft } from "lucide-react";
-import WithdrawButton from "@/components/research/withdraw-button";
+import WithdrawControl from "./withdraw-control";
 import { createSupabaseServerClient, createSupabaseServiceClient } from "@/lib/supabase/server";
 import {
   getParticipantConditions,
+  getParticipationStatus,
   type ConditionDimension,
+  type ParticipationStatus,
 } from "@/lib/services/participant-conditions";
 
 /**
@@ -28,7 +30,7 @@ export default async function DebriefPage() {
   const serviceClient = await createSupabaseServiceClient();
   const { data: profile } = await serviceClient
     .from("users")
-    .select("id")
+    .select("id, role")
     .eq("auth_id", authUser.id)
     .is("deleted_at", null)
     .maybeSingle();
@@ -36,6 +38,51 @@ export default async function DebriefPage() {
   const conditions = profile
     ? await getParticipantConditions(profile.id)
     : { study: null, dimensions: [] };
+
+  // Someone who never enrolled (declined consent, a teacher, not yet enrolled)
+  // was not in the study: no thanks-for-taking-part, no group list, nothing to
+  // withdraw from. Study staff keep the full view so they can review the copy.
+  // If the status can't be read, say nothing false in either direction.
+  let participation: ParticipationStatus | "unknown" = "none";
+  if (profile) {
+    try {
+      participation = await getParticipationStatus(profile.id, serviceClient);
+    } catch {
+      participation = "unknown";
+    }
+  }
+  const isStaff = ["admin", "researcher"].includes(profile?.role ?? "");
+
+  if (participation === "none" && !isStaff) {
+    return (
+      <main className="mx-auto max-w-2xl px-4 py-6">
+        <Link
+          href="/settings"
+          className="inline-flex min-h-11 items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 mb-4"
+        >
+          <ArrowLeft aria-hidden="true" className="w-4 h-4" />
+          Settings
+        </Link>
+
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold text-gray-900 flex items-center gap-2 mb-4">
+          <BookOpen aria-hidden="true" className="w-6 h-6 shrink-0 text-brand" />
+          About this research study
+        </h1>
+
+        <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-6 space-y-4 text-sm text-gray-600">
+          <p>
+            Findamine is part of a research study on how people manage their privacy settings
+            over time.
+          </p>
+          <p className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-gray-700">
+            You are not taking part in this study. You were not placed in any study group, and
+            there is nothing here for you to withdraw from.
+          </p>
+          <p>If you have questions about the study, please contact the research team.</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
@@ -97,7 +144,13 @@ export default async function DebriefPage() {
         </p>
 
         <div className="border-t border-gray-100 pt-4">
-          <WithdrawButton />
+          {participation === "withdrawn" ? (
+            <p className="text-sm text-gray-700">
+              You have withdrawn from this study. Your study data is no longer being collected.
+            </p>
+          ) : (
+            <WithdrawControl />
+          )}
         </div>
       </div>
     </main>

@@ -18,13 +18,20 @@ export async function POST(
     // Get delivery
     const { data: delivery } = await supabase
       .from("survey_deliveries")
-      .select("survey_id, status")
+      .select("survey_id, status, expires_at")
       .eq("id", deliveryId)
       .eq("user_id", user.id)
       .single();
 
     if (!delivery) throw new ApiError(404, "Delivery not found");
     if (delivery.status === "submitted") throw new ApiError(409, "Already submitted");
+    // Only a live delivery can be answered: not one that expired, was closed
+    // out (withdrawal), or is past its deadline but not yet swept by the cron.
+    const pastDeadline =
+      Boolean(delivery.expires_at) && new Date(delivery.expires_at).getTime() <= Date.now();
+    if (!["pending", "opened"].includes(delivery.status) || pastDeadline) {
+      throw new ApiError(410, "This survey has closed");
+    }
 
     const answers = (body.answers && typeof body.answers === "object" ? body.answers : {}) as Record<
       string,

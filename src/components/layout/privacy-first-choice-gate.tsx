@@ -28,8 +28,14 @@ export default function PrivacyFirstChoiceGate() {
       .catch(() => setNeedsChoice(false)); // fail open: never trap the user in a broken gate
   }, [pathname]);
 
-  // Never cover the page where the choice is actually made.
-  if (!needsChoice || pathname?.startsWith("/settings/privacy")) return null;
+  // Never cover the page where the choice is actually made — nor the survey
+  // routes: a pending check-in blocks Save on the privacy page until it is
+  // answered, so covering the survey too would leave no way to make the choice.
+  const exempt =
+    pathname?.startsWith("/settings/privacy") ||
+    pathname === "/surveys" ||
+    pathname?.startsWith("/surveys/");
+  if (!needsChoice || exempt) return null;
 
   return (
     <div

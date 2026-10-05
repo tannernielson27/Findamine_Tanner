@@ -47,18 +47,24 @@ export default function ConsentGate() {
     if (decidedRef.current) return;
     setSubmitting(true);
     setError(null);
-    const res = await fetch("/api/v1/consent", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        consent_type: "research",
-        granted,
-        form_version: CONSENT_FORM_VERSION,
-        signature_name: granted ? signature.trim() || null : null,
-      }),
-    });
+    let ok = false;
+    try {
+      const res = await fetch("/api/v1/consent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          consent_type: "research",
+          granted,
+          form_version: CONSENT_FORM_VERSION,
+          signature_name: granted ? signature.trim() || null : null,
+        }),
+      });
+      ok = res.ok;
+    } catch {
+      ok = false; // network failure: re-enable the buttons and say so
+    }
     setSubmitting(false);
-    if (!res.ok) {
+    if (!ok) {
       setError("Something went wrong recording your choice. Please try again.");
       return;
     }

@@ -54,6 +54,8 @@ function seed(): SupabaseDouble {
       privacy_index_snapshots: [],
       friend_connections: [],
       minion_links: [],
+      // The saver is an enrolled participant: only they get a privacy_change row.
+      study_enrollments: [{ study_id: "study", user_id: "s1", withdrawn_at: null }],
     },
     {
       authTokens: { [TOKEN]: { id: "auth-s1" } },

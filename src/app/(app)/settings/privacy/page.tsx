@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { countOverrides, type VisibilityOverrides } from "@/lib/utils/privacy";
+import { countOverrides, overridesEqual, type VisibilityOverrides } from "@/lib/utils/privacy";
 import Link from "next/link";
 import {
   PROFILE_FIELDS, VISIBILITY_LABELS, CATEGORIES,
@@ -17,7 +17,8 @@ import SchemeSwitch from "@/components/privacy/scheme-switch";
 import { schemeSelectionState, type Scheme, type SchemeSelectionState } from "@/lib/utils/scheme-selection";
 import {
   fetchSurveyGate, fetchNormLine, fetchOverridePeople, postSchemeChoice,
-  type NormLineData, type OverridePerson,
+  savePrivacyDraft, takePrivacyDraft, PRIVACY_PAGE_PATH,
+  type NormLineData, type OverridePerson, type PrivacyDraft,
 } from "./privacy-page-data";
 
 const VISIBILITY_LEVELS: VisibilityLevel[] = ["nobody", "team", "class", "everyone"];
@@ -39,12 +40,33 @@ const OVERRIDE_CHOICES: { value: OverrideChoice; label: string }[] = [
 const GATE_TIMEPOINTS = ["T1", "T3"] as const;
 const GATE_POLL_MS = 20_000;
 
+type DefaultCondition = "private" | "neutral" | "public";
+const DEFAULT_CONDITIONS: readonly string[] = ["private", "neutral", "public"];
+
+/**
+ * What to show for fields with no stored level. A participant's assigned
+ * default condition decides it (neutral → nothing pre-selected). Without one —
+ * not enrolled — show what enforcement actually applies to an unset field,
+ * which is "everyone" (resolveFieldLevel), so the label never understates
+ * who can see it.
+ */
+function levelsWhenUnset(defaultCondition: unknown): Record<string, VisibilityLevel> {
+  if (typeof defaultCondition === "string" && DEFAULT_CONDITIONS.includes(defaultCondition)) {
+    return getDefaults("", defaultCondition as DefaultCondition);
+  }
+  return Object.fromEntries(PROFILE_FIELDS.map((f) => [f.key, "everyone" as VisibilityLevel]));
+}
+
 export default function PrivacySettingsPage() {
   const [visibility, setVisibility] = useState<Record<string, VisibilityLevel>>({});
   const [treatment, setTreatment] = useState<PrivacyTreatment>("moderate");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [ageBand] = useState("intermediate");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // Nothing scheme-specific renders until /auth/me has told us the scheme and
+  // the stored settings; a failed load is retryable rather than a blank form.
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   // ── Friction manipulation (prospectus Factor B) ─────────────────
   // high: controls sit behind an extra "show controls" step, and protective
@@ -76,6 +98,9 @@ export default function PrivacySettingsPage() {
   const [overrides, setOverrides] = useState<VisibilityOverrides>({});
   const [people, setPeople] = useState<OverridePerson[]>([]);
   const overridesRef = useRef<VisibilityOverrides>({});
+  const savedOverridesRef = useRef<VisibilityOverrides>({}); // last saved/loaded overrides
+  const draftRestoredRef = useRef(false); // edits on screen came from a survey-gate draft
+  const parkedDraftRef = useRef<PrivacyDraft | null | undefined>(undefined); // undefined = not read yet
   const gateBlockedLoggedRef = useRef(false);
 
   // ── Research instrumentation (Task A3) ──────────────────────────
@@ -150,61 +175,86 @@ export default function PrivacySettingsPage() {
     const from = new URLSearchParams(window.location.search).get("from");
     entrySourceRef.current = from && (ENTRY_SOURCES as readonly string[]).includes(from) ? from : null;
 
+    let shown = false; // once the controls are up, a later failure must not replace them
     fetch("/api/v1/auth/me")
-      .then((r) => r.json())
-      .then(async (data) => {
-        if (data.user) {
-          // Get treatment from metadata
-          const t = data.user.metadata?.privacy_treatment || "moderate";
-          setTreatment(t);
-          treatmentRef.current = t;
-
-          // Friction condition: high-friction participants must take one extra
-          // step before the controls render (each step is logged).
-          const f = data.user.metadata?.privacy_friction ?? null;
-          if (f === "low" || f === "high") {
-            setFriction(f);
-            frictionRef.current = f;
-            if (f === "high") setControlsRevealed(false);
-          }
-
-          // Get existing visibility, else condition-aware defaults. For the
-          // "neutral" default condition getDefaults returns {} → nothing is
-          // pre-selected and the user must choose on first use.
-          const existing = data.user.profile_visibility || {};
-          const defaultCondition = data.user.metadata?.privacy_default ?? null;
-          const loaded = { ...getDefaults(ageBand, defaultCondition), ...existing };
-          setVisibility(loaded);
-          originalRef.current = loaded;
-          currentRef.current = loaded;
-          openedAtRef.current = Date.now();
-
-          // Per-person overrides (the people list loads with the view, complex only).
-          const loadedOverrides = (data.user.profile_visibility_overrides || {}) as VisibilityOverrides;
-          setOverrides(loadedOverrides);
-          overridesRef.current = loadedOverrides;
-          userIdRef.current = data.user.id ?? "";
-          setUserId(data.user.id ?? "");
-
-          // S5 norm line, fetched before the view is logged so the view and
-          // any save carry the exposure id.
-          const norm = await fetchNormLine();
-          setNormLine(norm);
-          normExposureIdRef.current = norm?.exposureId ?? null;
-
-          // S2: the controls, the view event and the T1 trigger all wait
-          // until the scheme preview is submitted.
-          const sel = schemeSelectionState(data.user.metadata);
-          setSelection(sel);
-          if (sel.needsPreview) {
-            setPreviewOpen(true);
-            return;
-          }
-          await announceView(t, "load");
-        }
+      .then((r) => {
+        if (!r.ok) throw new Error("Could not load privacy settings");
+        return r.json();
       })
-      .catch(() => {});
-  }, [ageBand, announceView]);
+      .then(async (data) => {
+        if (!data.user) throw new Error("Could not load privacy settings");
+
+        // Get treatment from metadata
+        const t = data.user.metadata?.privacy_treatment || "moderate";
+        setTreatment(t);
+        treatmentRef.current = t;
+
+        // Friction condition: high-friction participants must take one extra
+        // step before the controls render (each step is logged).
+        const f = data.user.metadata?.privacy_friction ?? null;
+        if (f === "low" || f === "high") {
+          setFriction(f);
+          frictionRef.current = f;
+          if (f === "high") setControlsRevealed(false);
+        }
+
+        // Get existing visibility, else condition-aware defaults. For the
+        // "neutral" default condition getDefaults returns {} → nothing is
+        // pre-selected and the user must choose on first use.
+        const existing = data.user.profile_visibility || {};
+        const defaultCondition = data.user.metadata?.privacy_default ?? null;
+        const loaded = { ...levelsWhenUnset(defaultCondition), ...existing };
+        const loadedOverrides = (data.user.profile_visibility_overrides || {}) as VisibilityOverrides;
+        userIdRef.current = data.user.id ?? "";
+        setUserId(data.user.id ?? "");
+
+        // Edits parked before a trip to the gating questionnaire come back as
+        // unsaved edits: the baseline stays the stored state and nothing is
+        // logged here — the change is recorded when (and only if) it is saved.
+        if (parkedDraftRef.current === undefined) {
+          parkedDraftRef.current = takePrivacyDraft(userIdRef.current); // one-shot read
+        }
+        const draft = parkedDraftRef.current;
+        const shownLevels = draft ? { ...loaded, ...draft.visibility } : loaded;
+        const shownOverrides = draft ? draft.overrides : loadedOverrides;
+        draftRestoredRef.current =
+          diffVisibility(loaded, shownLevels).length > 0 || !overridesEqual(loadedOverrides, shownOverrides);
+
+        setVisibility(shownLevels);
+        originalRef.current = loaded;
+        currentRef.current = shownLevels;
+
+        // Per-person overrides (the people list loads with the view, complex only).
+        setOverrides(shownOverrides);
+        overridesRef.current = shownOverrides;
+        savedOverridesRef.current = loadedOverrides;
+
+        // S5 norm line, fetched before the view is logged so the view and
+        // any save carry the exposure id.
+        const norm = await fetchNormLine();
+        setNormLine(norm);
+        normExposureIdRef.current = norm?.exposureId ?? null;
+
+        // S2: the controls, the view event and the T1 trigger all wait
+        // until the scheme preview is submitted.
+        const sel = schemeSelectionState(data.user.metadata);
+        setSelection(sel);
+        if (sel.needsPreview) setPreviewOpen(true);
+        openedAtRef.current = Date.now(); // timing starts when the surface appears
+        shown = true;
+        setLoadState("ready");
+        if (sel.needsPreview) return;
+        await announceView(t, "load");
+      })
+      .catch(() => {
+        if (!shown) setLoadState("error");
+      });
+  }, [announceView, loadAttempt]);
+
+  function retryLoad() {
+    setLoadState("loading");
+    setLoadAttempt((n) => n + 1);
+  }
 
   /** Put a scheme returned by the scheme-choice route into force on the page. */
   function applyScheme(scheme: Scheme, state: SchemeSelectionState) {
@@ -399,35 +449,66 @@ export default function PrivacySettingsPage() {
 
   async function doSave() {
     setSaving(true);
+    setSaveError(null);
+    const savedLevels = visibility;
+    const savedOverrides = overrides;
 
     // The authoritative privacy_change event + index snapshot are written
     // server-side by the profile PUT (with condition context), so they can never
     // be lost to best-effort client telemetry. We pass the interaction timing the
     // server can't observe (how long the surface was open, how many clicks).
-    await fetch("/api/v1/auth/profile", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        profile_visibility: visibility,
-        profile_visibility_overrides: overrides,
-        privacy_meta: {
-          duration_ms: Date.now() - openedAtRef.current,
-          click_count: clickCountRef.current,
-          session_id: sessionIdRef.current,
-          norm_exposure_id: normExposureIdRef.current,
-        },
-      }),
-    });
+    let ok = false;
+    try {
+      const res = await fetch("/api/v1/auth/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profile_visibility: savedLevels,
+          profile_visibility_overrides: savedOverrides,
+          privacy_meta: {
+            duration_ms: Date.now() - openedAtRef.current,
+            click_count: clickCountRef.current,
+            session_id: sessionIdRef.current,
+            norm_exposure_id: normExposureIdRef.current,
+            ...(draftRestoredRef.current ? { draft_restored: true } : {}),
+          },
+        }),
+      });
+      ok = res.ok;
+    } catch {
+      ok = false; // network failure
+    }
+    setSaving(false);
+
+    if (!ok) {
+      // Nothing was saved: keep the edits on screen and the baseline where it
+      // was, so a retry sends (and the server logs) the same change.
+      setSaveError("Your settings were not saved. Your choices are still here. Please try again.");
+      return;
+    }
 
     // Reset the baseline so subsequent saves diff from this saved state.
-    originalRef.current = visibility;
+    originalRef.current = savedLevels;
+    savedOverridesRef.current = savedOverrides;
+    draftRestoredRef.current = false;
     openedAtRef.current = Date.now();
     clickCountRef.current = 0;
     abandonLoggedRef.current = false;
 
-    setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  }
+
+  /**
+   * Leaving for the gating questionnaire: park unsaved edits so they are still
+   * here on return (the page remounts and reloads the stored settings).
+   */
+  function parkDraftForSurvey() {
+    const dirty =
+      diffVisibility(originalRef.current, currentRef.current).length > 0 ||
+      !overridesEqual(savedOverridesRef.current, overridesRef.current);
+    if (!dirty) return;
+    savePrivacyDraft(userIdRef.current, { visibility: currentRef.current, overrides: overridesRef.current });
   }
 
   /**
@@ -502,7 +583,8 @@ export default function PrivacySettingsPage() {
   // so the first logged choice is a full, deliberate configuration.
   const unsetCount = PROFILE_FIELDS.filter((f) => !visibility[f.key]).length;
   const surveyGated = gateDeliveryId !== null;
-  const showControls = controlsRevealed && !previewOpen;
+  const ready = loadState === "ready";
+  const showControls = ready && controlsRevealed && !previewOpen;
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-4">
@@ -527,6 +609,29 @@ export default function PrivacySettingsPage() {
         </p>
       </div>
 
+      {loadState === "loading" && (
+        <div role="status" aria-busy="true" className="animate-pulse space-y-3 mb-6">
+          <span className="sr-only">Loading your privacy settings</span>
+          <div className="h-20 rounded-lg bg-gray-100" />
+          <div className="h-20 rounded-lg bg-gray-100" />
+          <div className="h-20 rounded-lg bg-gray-100" />
+        </div>
+      )}
+
+      {loadState === "error" && (
+        <div role="alert" className="rounded-lg border border-gray-200 bg-white p-4 mb-6">
+          <p className="text-sm text-gray-700 mb-3">
+            We couldn&apos;t load your privacy settings. Nothing has been changed.
+          </p>
+          <button
+            onClick={retryLoad}
+            className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 transition"
+          >
+            Try again
+          </button>
+        </div>
+      )}
+
       {/* Survey gate (B2): non-dismissable until the T1 or T3 check-in is submitted. */}
       {surveyGated && (
         <div
@@ -545,7 +650,8 @@ export default function PrivacySettingsPage() {
             as soon as you finish.
           </p>
           <Link
-            href={`/surveys/${gateDeliveryId}`}
+            href={`/surveys/${gateDeliveryId}?return=${encodeURIComponent(PRIVACY_PAGE_PATH)}`}
+            onClick={parkDraftForSurvey}
             className="inline-flex min-h-11 items-center rounded-lg bg-violet-600 px-4 py-2 text-xs font-semibold text-white hover:bg-violet-700 transition"
           >
             Answer the questionnaire
@@ -569,7 +675,7 @@ export default function PrivacySettingsPage() {
       )}
 
       {/* HIGH-friction gate: controls stay collapsed behind one more step. */}
-      {!controlsRevealed && (
+      {ready && !controlsRevealed && (
         <div className="rounded-lg border border-gray-200 bg-white p-4 mb-6">
           <p className="text-sm text-gray-700 mb-1">
             Your profile is currently using your saved sharing preferences.
@@ -786,6 +892,9 @@ export default function PrivacySettingsPage() {
             </button>
             {saved && <span className="text-xs text-green-700">Saved!</span>}
           </div>
+          {saveError && (
+            <p role="alert" className="text-xs text-red-700 mt-2">{saveError}</p>
+          )}
           {selection?.canSwitch && (
             <SchemeSwitch
               current={selection.currentScheme}

@@ -22,7 +22,13 @@ export async function GET(request: NextRequest) {
         .eq("user_id", user.id)
         .in("status", ["pending", "opened"])
         .order("created_at");
-      return Response.json({ deliveries: data || [] });
+      // A delivery past its deadline is no longer answerable, even before the
+      // cron has flipped its status to `expired`.
+      const now = Date.now();
+      const open = (data || []).filter(
+        (d) => !d.expires_at || new Date(d.expires_at).getTime() > now
+      );
+      return Response.json({ deliveries: open });
     }
 
     // Admin/researcher: list all surveys with question counts + schedule info so

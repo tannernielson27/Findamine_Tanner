@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ClipboardList, CheckCircle2, AlertCircle, ArrowLeft } from "lucide-react";
+import { safeReturnPath, returnLabel } from "../return-path";
 
 type AnswerValue = number | string;
 
@@ -25,9 +26,49 @@ interface Survey {
 }
 
 interface TakeData {
-  delivery: { id: string; status: string };
+  delivery: { id: string; status: string; expires_at?: string | null };
   survey: Survey | null;
   questions: Question[];
+}
+
+/** Only a pending/opened delivery inside its deadline can still be answered. */
+function isClosed(delivery: TakeData["delivery"]): boolean {
+  if (delivery.status !== "pending" && delivery.status !== "opened") return true;
+  return Boolean(delivery.expires_at) && new Date(delivery.expires_at!).getTime() <= Date.now();
+}
+
+// In-progress answers survive a refresh: one sessionStorage draft per delivery,
+// dropped once the response is submitted (or the survey has closed).
+const DRAFT_KEY_PREFIX = "findamine:survey-draft:";
+
+function readDraft(deliveryId: string): Record<string, AnswerValue> {
+  try {
+    const parsed: unknown = JSON.parse(window.sessionStorage.getItem(DRAFT_KEY_PREFIX + deliveryId) || "null");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(
+        (entry): entry is [string, AnswerValue] => typeof entry[1] === "number" || typeof entry[1] === "string"
+      )
+    );
+  } catch {
+    return {};
+  }
+}
+
+function writeDraft(deliveryId: string, answers: Record<string, AnswerValue>): void {
+  try {
+    window.sessionStorage.setItem(DRAFT_KEY_PREFIX + deliveryId, JSON.stringify(answers));
+  } catch {
+    // storage unavailable: answers simply aren't kept across a refresh
+  }
+}
+
+function clearDraft(deliveryId: string): void {
+  try {
+    window.sessionStorage.removeItem(DRAFT_KEY_PREFIX + deliveryId);
+  } catch {
+    // nothing to clear
+  }
 }
 
 /** Normalize a multiple_choice `options` value into {value,label} pairs. */
@@ -61,7 +102,14 @@ export default function TakeSurveyPage() {
   const [missing, setMissing] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [closed, setClosed] = useState(false);
   const openedRef = useRef(false);
+  // Where the participant came from (e.g. the privacy page's survey gate).
+  const [returnTo] = useState<string | null>(() =>
+    typeof window === "undefined"
+      ? null
+      : safeReturnPath(new URLSearchParams(window.location.search).get("return"))
+  );
 
   useEffect(() => {
     if (!deliveryId) return;
@@ -74,7 +122,21 @@ export default function TakeSurveyPage() {
       })
       .then((d: TakeData) => {
         setData(d);
-        if (d.delivery.status === "submitted") setSubmitted(true);
+        if (d.delivery.status === "submitted") {
+          setSubmitted(true);
+          clearDraft(deliveryId);
+          return;
+        }
+        if (isClosed(d.delivery)) {
+          setClosed(true);
+          clearDraft(deliveryId);
+          return;
+        }
+        // Pick up where a refresh (or an accidental navigation) left off, for
+        // the questions this survey still has.
+        const codes = new Set(d.questions.map((q) => q.item_code));
+        const draft = Object.fromEntries(Object.entries(readDraft(deliveryId)).filter(([code]) => codes.has(code)));
+        if (Object.keys(draft).length > 0) setAnswers((prev) => ({ ...draft, ...prev }));
         // Mark opened once (pending → opened). Fire-and-forget; never blocks the UI.
         if (!openedRef.current && d.delivery.status === "pending") {
           openedRef.current = true;
@@ -85,7 +147,9 @@ export default function TakeSurveyPage() {
   }, [deliveryId]);
 
   function setAnswer(itemCode: string, value: AnswerValue) {
-    setAnswers((prev) => ({ ...prev, [itemCode]: value }));
+    const next = { ...answers, [itemCode]: value };
+    setAnswers(next);
+    writeDraft(deliveryId, next);
     setMissing((prev) => {
       if (!prev.has(itemCode)) return prev;
       const next = new Set(prev);
@@ -114,17 +178,27 @@ export default function TakeSurveyPage() {
     }
 
     setSubmitting(true);
-    const res = await fetch(`/api/v1/surveys/${deliveryId}/respond`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ answers }),
-    });
-    setSubmitting(false);
-
-    if (res.ok || res.status === 409) {
-      setSubmitted(true);
-    } else {
-      setLoadError("Something went wrong submitting your answers. Please try again.");
+    setLoadError(null);
+    try {
+      const res = await fetch(`/api/v1/surveys/${deliveryId}/respond`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers }),
+      });
+      if (res.ok || res.status === 409) {
+        clearDraft(deliveryId);
+        setSubmitted(true);
+      } else if (res.status === 410) {
+        clearDraft(deliveryId);
+        setClosed(true); // expired or closed while the page was open
+      } else {
+        setLoadError("Something went wrong submitting your answers. Please try again.");
+      }
+    } catch {
+      // Network failure: the answers are still on screen (and in the draft).
+      setLoadError("We couldn't reach the server. Your answers are still here. Please try again.");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -134,8 +208,11 @@ export default function TakeSurveyPage() {
       <main className="mx-auto max-w-2xl px-4 py-10 text-center">
         <AlertCircle aria-hidden="true" className="w-10 h-10 text-gray-300 mx-auto mb-3" />
         <p className="text-gray-700">{loadError}</p>
-        <Link href="/surveys" className="inline-flex min-h-11 items-center mt-4 text-sm font-medium text-brand hover:underline">
-          Back to surveys
+        <Link
+          href={returnTo ?? "/surveys"}
+          className="inline-flex min-h-11 items-center mt-4 text-sm font-medium text-brand hover:underline"
+        >
+          {returnTo ? returnLabel(returnTo) : "Back to surveys"}
         </Link>
       </main>
     );
@@ -162,11 +239,36 @@ export default function TakeSurveyPage() {
         </h1>
         <p className="text-sm text-gray-500 mt-1">Your response has been recorded.</p>
         <button
-          onClick={() => router.push("/surveys")}
+          onClick={() => router.push(returnTo ?? "/surveys")}
           className="inline-block min-h-11 mt-5 rounded-xl bg-brand px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark transition-colors"
         >
-          Back to surveys
+          {returnTo ? returnLabel(returnTo) : "Back to surveys"}
         </button>
+        {returnTo && (
+          <div>
+            <Link href="/surveys" className="inline-flex min-h-11 items-center mt-2 text-sm font-medium text-brand hover:underline">
+              Back to surveys
+            </Link>
+          </div>
+        )}
+      </main>
+    );
+  }
+
+  if (closed) {
+    return (
+      <main className="mx-auto max-w-2xl px-4 py-10 text-center">
+        <AlertCircle aria-hidden="true" className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+        <h1 className="font-[family-name:var(--font-display)] text-xl font-bold text-gray-900">
+          This survey has closed
+        </h1>
+        <p className="text-sm text-gray-500 mt-1">It can no longer be answered.</p>
+        <Link
+          href={returnTo ?? "/surveys"}
+          className="inline-flex min-h-11 items-center mt-4 text-sm font-medium text-brand hover:underline"
+        >
+          {returnTo ? returnLabel(returnTo) : "Back to surveys"}
+        </Link>
       </main>
     );
   }

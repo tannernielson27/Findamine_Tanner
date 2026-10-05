@@ -48,6 +48,8 @@ describe("PUT /api/v1/auth/profile privacy-change logging", () => {
         ],
         friend_connections: [{ requester_id: "friend", addressee_id: "u1", status: "accepted" }],
         minion_links: [],
+        // Study rows are written for enrolled participants only.
+        study_enrollments: [{ study_id: "study", user_id: "u1", withdrawn_at: null }],
       },
       { authTokens: { [TOKEN]: { id: "auth-1" } } }
     );

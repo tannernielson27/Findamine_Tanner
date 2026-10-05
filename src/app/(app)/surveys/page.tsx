@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ClipboardList, ChevronRight, CheckCircle2 } from "lucide-react";
+import { ClipboardList, ChevronRight, CheckCircle2, AlertCircle } from "lucide-react";
 
 interface Delivery {
   id: string;
@@ -20,13 +20,38 @@ function daysLeft(expiresAt: string | null): number | null {
 
 export default function SurveysPage() {
   const [deliveries, setDeliveries] = useState<Delivery[] | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
     fetch("/api/v1/surveys?pending=true")
-      .then((r) => (r.ok ? r.json() : { deliveries: [] }))
+      .then((r) => {
+        if (!r.ok) throw new Error("Could not load surveys");
+        return r.json();
+      })
       .then((data) => setDeliveries(data.deliveries || []))
-      .catch(() => setDeliveries([]));
-  }, []);
+      .catch(() => setLoadFailed(true)); // never claim "all caught up" on a failed load
+  }, [loadAttempt]);
+
+  function retryLoad() {
+    setLoadFailed(false);
+    setLoadAttempt((n) => n + 1);
+  }
+
+  if (deliveries === null && loadFailed) {
+    return (
+      <main className="mx-auto max-w-2xl px-4 py-10 text-center">
+        <AlertCircle aria-hidden="true" className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+        <p role="alert" className="text-gray-700">We couldn&apos;t load your surveys.</p>
+        <button
+          onClick={retryLoad}
+          className="mt-4 min-h-11 rounded-xl border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+        >
+          Try again
+        </button>
+      </main>
+    );
+  }
 
   if (deliveries === null) {
     return (

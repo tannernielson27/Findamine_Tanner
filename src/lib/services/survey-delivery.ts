@@ -9,7 +9,7 @@
  *            (POST /api/v1/surveys/trigger)
  * Dedupe is per survey per user across BOTH paths (see survey-triggers.ts), so a
  * survey with an event schedule plus a time fallback (T1) is delivered once.
- * Also expires stale pending deliveries and sends reminders.
+ * Also expires stale unanswered deliveries and sends reminders.
  */
 
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
@@ -136,13 +136,17 @@ export async function createEventDeliveriesForUser(
   }
 }
 
-/** Expire pending deliveries past their expires_at. Returns count expired. */
+/**
+ * Expire unanswered deliveries past their expires_at. Covers `opened` as well as
+ * `pending` — a survey that was started but never submitted closes on the same
+ * deadline (opened_at still records that it was seen). Returns count expired.
+ */
 export async function expireStaleDeliveries(): Promise<number> {
   const supabase = await createSupabaseServiceClient();
   const { data } = await supabase
     .from("survey_deliveries")
     .update({ status: "expired" })
-    .eq("status", "pending")
+    .in("status", ["pending", "opened"])
     .lt("expires_at", new Date().toISOString())
     .select("id");
   return (data || []).length;
@@ -173,6 +177,23 @@ export async function sendSurveyReminders(): Promise<number> {
   for (const d of deliveries) {
     if (d.expires_at && new Date(d.expires_at).getTime() <= now) continue; // effectively expired
     byUser.set(d.user_id, (byUser.get(d.user_id) || 0) + 1);
+  }
+  if (byUser.size === 0) return 0;
+
+  // Never nudge someone who has withdrawn from the study (consent promise).
+  // Withdrawal closes out deliveries too; this covers any that slipped through.
+  const { data: enrollments } = await supabase
+    .from("study_enrollments")
+    .select("user_id, withdrawn_at")
+    .in("user_id", [...byUser.keys()]);
+  const enrolled = new Set<string>();
+  const active = new Set<string>();
+  for (const e of enrollments || []) {
+    enrolled.add(e.user_id);
+    if (!e.withdrawn_at) active.add(e.user_id);
+  }
+  for (const userId of [...byUser.keys()]) {
+    if (enrolled.has(userId) && !active.has(userId)) byUser.delete(userId);
   }
   if (byUser.size === 0) return 0;
 

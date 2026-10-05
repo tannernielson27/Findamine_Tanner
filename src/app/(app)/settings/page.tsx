@@ -9,34 +9,59 @@ export default function SettingsPage() {
   const [displayName, setDisplayName] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
-    fetch("/api/v1/auth/me").then(async (res) => {
-      if (res.ok) {
+    fetch("/api/v1/auth/me")
+      .then(async (res) => {
+        if (!res.ok) throw new Error("Could not load settings");
         const data = await res.json();
+        if (!data.user) throw new Error("Could not load settings");
         setUser(data.user);
         setDisplayName(data.user.display_name || "");
-      }
-    });
-  }, []);
+      })
+      .catch(() => setLoadFailed(true));
+  }, [loadAttempt]);
+
+  function retryLoad() {
+    setLoadFailed(false);
+    setLoadAttempt((n) => n + 1);
+  }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setMessage("");
 
-    const res = await fetch("/api/v1/auth/profile", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ display_name: displayName }),
-    });
-
-    if (res.ok) {
-      setMessage("Saved!");
-    } else {
+    try {
+      const res = await fetch("/api/v1/auth/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ display_name: displayName }),
+      });
+      setMessage(res.ok ? "Saved!" : "Failed to save.");
+    } catch {
       setMessage("Failed to save.");
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
+  }
+
+  if (!user && loadFailed) {
+    return (
+      <main className="mx-auto max-w-2xl px-4 py-12 text-center">
+        <p role="alert" className="text-sm text-gray-700">
+          We couldn&apos;t load your settings.
+        </p>
+        <button
+          onClick={retryLoad}
+          className="mt-4 min-h-11 rounded-xl border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+        >
+          Try again
+        </button>
+      </main>
+    );
   }
 
   if (!user) {

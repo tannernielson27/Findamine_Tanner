@@ -3,6 +3,7 @@ import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { trackEvent } from "@/lib/utils/track-event";
 import { WITHDRAWN_META_KEY } from "@/lib/utils/conditions";
+import { getParticipationStatus } from "@/lib/services/participant-conditions";
 
 /**
  * Participant withdrawal from the research study (honors the consent promise
@@ -14,8 +15,12 @@ import { WITHDRAWN_META_KEY } from "@/lib/utils/conditions";
  *   enrollment service short-circuits on an existing enrollment row).
  * - Tears down referral links involving the user so ongoing minion payouts stop
  *   (awardReferralPoints finds no link → no further credit either direction).
+ * - Closes out unanswered survey deliveries so nothing keeps asking for them.
  *
- * The user keeps using Findamine normally; only study data collection stops.
+ * The user keeps using Findamine; study data collection stops and their crew
+ * links are gone. Someone who was never enrolled has nothing to withdraw from:
+ * the route changes nothing for them (in particular it leaves their crew alone)
+ * and says so. A repeat call by a withdrawn participant is likewise a no-op.
  */
 type Db = Awaited<ReturnType<typeof createSupabaseServiceClient>>;
 
@@ -47,6 +52,17 @@ export async function POST(request: NextRequest) {
     const supabase = await createSupabaseServiceClient();
     const now = new Date().toISOString();
 
+    const status = await getParticipationStatus(user.id, supabase);
+    if (status === "none") {
+      return Response.json({ ok: true, status: "not_enrolled", withdrawn: 0 });
+    }
+    if (status === "withdrawn") {
+      // Already done. Re-assert the stop key only (idempotent); never tear down
+      // crew links the user has formed since withdrawing.
+      await stampWithdrawal(supabase, user.id, now);
+      return Response.json({ ok: true, status: "already_withdrawn", withdrawn: 0 });
+    }
+
     // Order matters. Turning the manipulations off comes first: every storyline
     // switch reads this key (levelFromMetadata falls back once it is set), so if
     // anything below fails the participant is at worst still counted as
@@ -64,13 +80,26 @@ export async function POST(request: NextRequest) {
     await supabase.from("minion_links").delete().eq("recruiter_id", user.id);
     await supabase.from("minion_links").delete().eq("minion_id", user.id);
 
+    // Close out unanswered surveys so the surveys list, the navbar badge and
+    // the reminder cron stop asking a withdrawn participant for them.
+    const { data: closed } = await supabase
+      .from("survey_deliveries")
+      .update({ status: "abandoned" })
+      .eq("user_id", user.id)
+      .in("status", ["pending", "opened"])
+      .select("id");
+
     await trackEvent({
       userId: user.id,
       eventType: "study_withdrawn",
-      payload: { enrollments_withdrawn: (withdrawn || []).length, manipulations_stopped: stopped },
+      payload: {
+        enrollments_withdrawn: (withdrawn || []).length,
+        manipulations_stopped: stopped,
+        deliveries_closed: (closed || []).length,
+      },
     });
 
-    return Response.json({ ok: true, withdrawn: (withdrawn || []).length });
+    return Response.json({ ok: true, status: "withdrawn", withdrawn: (withdrawn || []).length });
   } catch (error) {
     return errorResponse(error);
   }

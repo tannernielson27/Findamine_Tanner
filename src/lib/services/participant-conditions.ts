@@ -84,6 +84,43 @@ export function buildConditionDimensions(
     });
 }
 
+/**
+ * Where a user stands with the research study:
+ *   participant — holds an enrollment that has not been withdrawn (enrollment
+ *                 itself requires granted research consent)
+ *   withdrawn   — was enrolled, every enrollment since withdrawn
+ *   none        — never enrolled (declined consent, staff, pre-enrollment)
+ */
+export type ParticipationStatus = "participant" | "withdrawn" | "none";
+
+/** Classify a user's study_enrollments rows. Pure. */
+export function participationFromEnrollments(
+  rows: readonly { withdrawn_at?: string | null }[]
+): ParticipationStatus {
+  if (rows.length === 0) return "none";
+  return rows.some((r) => !r.withdrawn_at) ? "participant" : "withdrawn";
+}
+
+type ServiceClient = Awaited<ReturnType<typeof createSupabaseServiceClient>>;
+
+/**
+ * Read a user's participation status. Throws when the read fails, so callers
+ * choose their own failure mode — study rows must never be written for someone
+ * who may not be a participant.
+ */
+export async function getParticipationStatus(
+  userId: string,
+  client?: ServiceClient
+): Promise<ParticipationStatus> {
+  const supabase = client ?? (await createSupabaseServiceClient());
+  const { data, error } = await supabase
+    .from("study_enrollments")
+    .select("withdrawn_at")
+    .eq("user_id", userId);
+  if (error) throw new Error(error.message);
+  return participationFromEnrollments(data || []);
+}
+
 /** Active auto-enroll study's dimensions + the user's own levels. Never throws. */
 export async function getParticipantConditions(userId: string): Promise<ParticipantConditions> {
   const empty: ParticipantConditions = { study: null, dimensions: [] };

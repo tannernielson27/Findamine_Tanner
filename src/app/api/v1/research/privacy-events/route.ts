@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
-import { conditionsFromMetadata } from "@/lib/utils/conditions";
+import { conditionsFromMetadata, isWithdrawn } from "@/lib/utils/conditions";
+import { getParticipationStatus } from "@/lib/services/participant-conditions";
 import { ownsNormExposure } from "@/lib/services/class-norms";
 
 // Log privacy-related events (Studies 1-3)
@@ -32,6 +33,14 @@ export async function POST(request: NextRequest) {
       .eq("id", user.id)
       .maybeSingle();
     const meta = (userRow?.metadata || {}) as Record<string, unknown>;
+
+    // Consent promise: study data is collected only from enrolled participants
+    // (enrollment requires research consent) who have not withdrawn. Everyone
+    // else — decliners, staff, pre-enrollment — gets a no-op, not an error.
+    if (isWithdrawn(meta) || (await getParticipationStatus(user.id, supabase)) !== "participant") {
+      return Response.json({ event: null, recorded: false });
+    }
+
     const conditions = conditionsFromMetadata(meta);
     // Only the caller's own norm exposure (S5, migration 062) may be stamped.
     const normExposureId = (await ownsNormExposure(user.id, body.norm_exposure_id))
