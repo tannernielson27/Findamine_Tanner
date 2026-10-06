@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useSyncExternalStore } from "react";
 import { MotionConfig } from "framer-motion";
 import { type AgeBand, THEME_TOKENS, tokensToCssVars } from "./tokens";
 
@@ -16,6 +16,15 @@ const AgeBandContext = createContext<AgeBandContextValue>({
   setBand: () => {},
 });
 
+/** The `?band=` preview override in the current URL, if it names a real band. */
+function readUrlBandOverride(): AgeBand | null {
+  const override = new URLSearchParams(window.location.search).get("band") as AgeBand | null;
+  return override && VALID_BANDS.includes(override) ? override : null;
+}
+
+const subscribeToNothing = () => () => {};
+const noOverrideOnServer = () => null;
+
 export function useAgeBand() {
   return useContext(AgeBandContext);
 }
@@ -27,16 +36,20 @@ export function AgeBandProvider({
   initialBand?: AgeBand;
   children: React.ReactNode;
 }) {
-  const [band, setBand] = useState<AgeBand>(initialBand);
+  const [baseBand] = useState<AgeBand>(initialBand);
+  // An explicit setBand() call wins over everything else.
+  const [selectedBand, setBand] = useState<AgeBand | null>(null);
 
-  // Support ?band= URL parameter for previewing age bands
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const override = params.get("band") as AgeBand | null;
-    if (override && VALID_BANDS.includes(override)) {
-      setBand(override);
-    }
-  }, []);
+  // Support ?band= URL parameter for previewing age bands. Read once per mount
+  // (as before), and only on the client after hydration: the server snapshot is
+  // "no override", so server and first client render agree.
+  const [readOverrideOnce] = useState(() => {
+    let cached: AgeBand | null | undefined;
+    return () => (cached === undefined ? (cached = readUrlBandOverride()) : cached);
+  });
+  const urlOverride = useSyncExternalStore(subscribeToNothing, readOverrideOnce, noOverrideOnServer);
+
+  const band = selectedBand ?? urlOverride ?? baseBand;
 
   useEffect(() => {
     // Set data attribute on html element

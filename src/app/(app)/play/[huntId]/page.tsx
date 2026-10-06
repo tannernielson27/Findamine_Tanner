@@ -103,17 +103,17 @@ export default function PlayPage() {
   const [breakdown, setBreakdown] = useState<Record<string, number> | null>(null);
   const [canRetry, setCanRetry] = useState(false);
   const [hotCold, setHotCold] = useState<HotCold | null>(null);
-  const [arrived, setArrived] = useState(false);
   const [hintText, setHintText] = useState("");
   const [hintLevel, setHintLevel] = useState(0);
   const [hintRated, setHintRated] = useState(false);
   const [readingCheckAnswers, setReadingCheckAnswers] = useState<Record<number, string>>({});
-  const [readingCheckPassed, setReadingCheckPassed] = useState(false);
   const [showTechniqueReview, setShowTechniqueReview] = useState(false);
   const [techniqueReviewDone, setTechniqueReviewDone] = useState(false);
   const [reviewStrategies, setReviewStrategies] = useState<string[]>([]);
   const [showReport, setShowReport] = useState(false);
   const [reportDone, setReportDone] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [reportSending, setReportSending] = useState(false);
   const [clueHintText, setClueHintText] = useState("");
   const [clueHintLevel, setClueHintLevel] = useState(0);
   const [clueHintTotal, setClueHintTotal] = useState(0);
@@ -310,7 +310,6 @@ export default function PlayPage() {
     setBreakdown(null);
     setCanRetry(false);
     setHotCold(null);
-    setArrived(false);
     setArrivedCelebrated(false);
     setHintText("");
     setHintLevel(0);
@@ -326,6 +325,7 @@ export default function PlayPage() {
     setReviewStrategies([]);
     setShowReport(false);
     setReportDone(false);
+    setReportError(null);
   }, [currentIndex, currentFind, completedFinds]);
 
   // ── GPS watcher for navigate step ──────────────────
@@ -365,7 +365,6 @@ export default function PlayPage() {
 
           if (data.hot_cold) setHotCold(data.hot_cold);
           if (data.arrived) {
-            setArrived(true);
             // The "you found it!" beat — the most satisfying moment in a hunt.
             if (!arrivedCelebrated) {
               const beat = arrivalCelebration();
@@ -419,7 +418,6 @@ export default function PlayPage() {
       // If reading check is enabled, go to reading_check step first
       if (currentFind.reading_check?.enabled && currentFind.reading_check.questions?.length > 0) {
         setReadingCheckAnswers({});
-        setReadingCheckPassed(false);
         setStep("reading_check");
       } else {
         setStep("clue");
@@ -475,7 +473,6 @@ export default function PlayPage() {
         setError("We couldn't record your arrival at this stop. Please try again.");
         return;
       }
-      setArrived(true);
       setStep("challenge");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to record arrival");
@@ -873,7 +870,6 @@ export default function PlayPage() {
                 const correct = questions.filter((q, i) => readingCheckAnswers[i] === q.correct_answer).length;
                 const pct = Math.round((correct / questions.length) * 100);
                 if (pct >= 75) {
-                  setReadingCheckPassed(true);
                   setStep("clue");
                 } else {
                   setError(`You got ${correct}/${questions.length} correct (${pct}%). Need 75% to continue. Try again!`);
@@ -1398,33 +1394,55 @@ export default function PlayPage() {
                 <button
                   key={c.key}
                   type="button"
+                  disabled={reportSending}
                   onClick={async () => {
-                    const ok = await postJson("/api/v1/reports", {
-                      category: c.key,
-                      target_type: "find",
-                      target_id: currentFind?.id || huntId,
-                    });
-                    if (!ok) {
-                      setError("We couldn't send your report. Please try again.");
-                      return;
+                    setReportSending(true);
+                    setReportError(null);
+                    try {
+                      await safeFetch("/api/v1/reports", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          category: c.key,
+                          target_type: "find",
+                          target_id: currentFind?.id || huntId,
+                        }),
+                      });
+                      setShowReport(false);
+                      setReportDone(true);
+                    } catch (err) {
+                      // Show the server's own reason (rate limit, invalid report, save failure).
+                      setReportError(
+                        err instanceof HttpError
+                          ? err.message
+                          : "We couldn't send your report. Check your connection and try again."
+                      );
+                    } finally {
+                      setReportSending(false);
                     }
-                    setShowReport(false);
-                    setReportDone(true);
                   }}
-                  className="inline-flex min-h-11 items-center rounded-full border border-themed-border bg-themed-bg px-3 text-sm text-themed-text transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+                  className="inline-flex min-h-11 items-center rounded-full border border-themed-border bg-themed-bg px-3 text-sm text-themed-text transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-50"
                 >
                   {c.label}
                 </button>
               ))}
               <button
                 type="button"
-                onClick={() => setShowReport(false)}
+                onClick={() => {
+                  setShowReport(false);
+                  setReportError(null);
+                }}
                 className="inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-sm text-themed-muted transition-colors hover:text-themed-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
               >
                 <X className="h-4 w-4" aria-hidden="true" />
                 Cancel
               </button>
             </div>
+            {reportError && (
+              <p role="alert" className="mt-2 max-w-xs text-sm font-medium text-error">
+                {reportError}
+              </p>
+            )}
           </div>
         )}
       </div>

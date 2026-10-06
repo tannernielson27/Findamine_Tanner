@@ -6,7 +6,40 @@ import {
   errorResponse,
   ApiError,
 } from "@/lib/utils/api-auth";
+import type { AuthUser } from "@/lib/types/database";
 import type { UserRole } from "@/lib/types/enums";
+
+/** Roles that may edit or delete rows they did not create, and curate the shared library. */
+const CURATOR_ROLES: UserRole[] = ["admin", "researcher"];
+/** Marks a row as part of the library every creator sees; only curators may set it. */
+const LIBRARY_FLAG = "is_library";
+
+function isCurator(user: AuthUser): boolean {
+  return CURATOR_ROLES.includes(user.role);
+}
+
+/** Copy only whitelisted fields from a request body. */
+function pickFields(body: unknown, allowed: string[], user: AuthUser): Record<string, unknown> {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new ApiError(400, "Request body must be a JSON object");
+  }
+  const source = body as Record<string, unknown>;
+  const picked: Record<string, unknown> = {};
+  for (const field of allowed) {
+    if (source[field] !== undefined) picked[field] = source[field];
+  }
+  if (LIBRARY_FLAG in picked) {
+    // Strictly boolean: Postgres would coerce "true" / 1 to true, so a truthy
+    // non-boolean must never reach the query.
+    if (typeof picked[LIBRARY_FLAG] !== "boolean") {
+      throw new ApiError(400, `${LIBRARY_FLAG} must be true or false`);
+    }
+    if (picked[LIBRARY_FLAG] && !isCurator(user)) {
+      throw new ApiError(403, "Only an admin can add items to the shared library");
+    }
+  }
+  return picked;
+}
 
 /**
  * Generic CRUD route factory for simple tables (tasks, primers, standards).
@@ -17,14 +50,12 @@ export function createCrudHandlers(
   options: {
     writeRoles?: UserRole[];
     allowedInsertFields: string[];
-    allowedUpdateFields: string[];
     ownerColumn?: string;
   }
 ) {
   const {
     writeRoles = ["teacher", "hunt_creator", "admin", "researcher"],
     allowedInsertFields,
-    allowedUpdateFields,
     ownerColumn = "created_by",
   } = options;
 
@@ -64,13 +95,13 @@ export function createCrudHandlers(
       const user = await getAuthUser(request);
       requireRole(user, ...writeRoles);
 
-      const body = await request.json();
+      const body = await request.json().catch(() => null);
       const supabase = await createSupabaseServiceClient();
 
-      const insert: Record<string, unknown> = { [ownerColumn]: user.id };
-      for (const field of allowedInsertFields) {
-        if (body[field] !== undefined) insert[field] = body[field];
-      }
+      const insert: Record<string, unknown> = {
+        ...pickFields(body, allowedInsertFields, user),
+        [ownerColumn]: user.id,
+      };
 
       const { data, error } = await supabase
         .from(table)
@@ -102,6 +133,32 @@ export function createItemHandlers(
     allowedUpdateFields,
     ownerColumn = "created_by",
   } = options;
+
+  /**
+   * The service client bypasses RLS, so ownership is enforced here: only the
+   * creator (or a curator) may change a row. Library rows seeded without a
+   * creator are therefore read-only for everyone but curators.
+   */
+  async function assertCanModify(
+    supabase: Awaited<ReturnType<typeof createSupabaseServiceClient>>,
+    id: string,
+    user: AuthUser,
+    action: "edit" | "delete"
+  ): Promise<void> {
+    const { data: existing, error } = await supabase
+      .from(table)
+      .select(ownerColumn)
+      .eq("id", id)
+      .is("deleted_at", null)
+      .maybeSingle();
+
+    if (error) throw new ApiError(500, error.message);
+    if (!existing) throw new ApiError(404, "Not found");
+    if (isCurator(user)) return;
+    if ((existing as unknown as Record<string, unknown>)[ownerColumn] !== user.id) {
+      throw new ApiError(403, `Not authorized to ${action} this item`);
+    }
+  }
 
   async function GET(
     request: NextRequest,
@@ -138,18 +195,21 @@ export function createItemHandlers(
       const user = await getAuthUser(request);
       requireRole(user, ...writeRoles);
 
-      const body = await request.json();
+      const body = await request.json().catch(() => null);
       const supabase = await createSupabaseServiceClient();
 
-      const updates: Record<string, unknown> = {};
-      for (const field of allowedUpdateFields) {
-        if (body[field] !== undefined) updates[field] = body[field];
+      const updates = pickFields(body, allowedUpdateFields, user);
+      if (Object.keys(updates).length === 0) {
+        throw new ApiError(400, "No updatable fields provided");
       }
+
+      await assertCanModify(supabase, id, user, "edit");
 
       const { data, error } = await supabase
         .from(table)
         .update(updates)
         .eq("id", id)
+        .is("deleted_at", null)
         .select()
         .single();
 
@@ -172,19 +232,7 @@ export function createItemHandlers(
 
       const supabase = await createSupabaseServiceClient();
 
-      // Verify ownership (admins/researchers can delete anything)
-      if (!["admin", "researcher"].includes(user.role)) {
-        const { data: existing } = await supabase
-          .from(table)
-          .select(ownerColumn)
-          .eq("id", id)
-          .single();
-
-        if (!existing) throw new ApiError(404, "Not found");
-        if ((existing as unknown as Record<string, unknown>)[ownerColumn] !== user.id) {
-          throw new ApiError(403, "Not authorized to delete this item");
-        }
-      }
+      await assertCanModify(supabase, id, user, "delete");
 
       const { error } = await supabase
         .from(table)

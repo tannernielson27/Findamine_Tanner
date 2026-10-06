@@ -7,5 +7,4 @@ const primerFields = [
 
 export const { GET, POST } = createCrudHandlers("primers", {
   allowedInsertFields: primerFields,
-  allowedUpdateFields: primerFields,
 });

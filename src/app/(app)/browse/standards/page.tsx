@@ -53,14 +53,25 @@ export default function StandardsExplorerPage() {
       .then((d) => setFrameworks(d.frameworks || []));
   }, []);
 
-  useEffect(() => {
-    if (!selectedFramework) { setStandards([]); return; }
+  // Load standards whenever the framework or grade band filter changes
+  function loadStandards(framework: string, band: string) {
+    if (!framework) { setStandards([]); return; }
     setLoading(true);
-    const gradeParams = gradeBand ? `&grade_min=${gradeBand.split("-")[0]}&grade_max=${gradeBand.split("-")[1]}` : "";
-    fetch(`/api/v1/curriculum?type=standards&framework=${selectedFramework}&limit=200${gradeParams}`)
+    const gradeParams = band ? `&grade_min=${band.split("-")[0]}&grade_max=${band.split("-")[1]}` : "";
+    fetch(`/api/v1/curriculum?type=standards&framework=${framework}&limit=200${gradeParams}`)
       .then((r) => r.json())
       .then((d) => { setStandards(d.standards || []); setLoading(false); setExpandedStandard(null); });
-  }, [selectedFramework, gradeBand]);
+  }
+
+  function handleFrameworkChange(framework: string) {
+    setSelectedFramework(framework);
+    loadStandards(framework, gradeBand);
+  }
+
+  function handleGradeBandChange(band: string) {
+    setGradeBand(band);
+    loadStandards(selectedFramework, band);
+  }
 
   function handleExpandStandard(std: Standard) {
     if (expandedStandard === std.id) {
@@ -101,7 +112,7 @@ export default function StandardsExplorerPage() {
         <div className="flex gap-2 mb-4">
           <select
             value={selectedFramework}
-            onChange={(e) => setSelectedFramework(e.target.value)}
+            onChange={(e) => handleFrameworkChange(e.target.value)}
             className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm"
           >
             <option value="">Select a standards framework...</option>
@@ -119,7 +130,7 @@ export default function StandardsExplorerPage() {
 
           <select
             value={gradeBand}
-            onChange={(e) => setGradeBand(e.target.value)}
+            onChange={(e) => handleGradeBandChange(e.target.value)}
             className="rounded-md border border-gray-300 px-3 py-1.5 text-sm"
           >
             {GRADE_BANDS.map((g) => (

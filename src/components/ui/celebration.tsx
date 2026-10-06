@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import ReactConfetti from "react-confetti";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAgeBand } from "@/lib/themes/age-band-provider";
@@ -31,6 +31,14 @@ const INTENSITY_SCALE: Record<CelebrationIntensity, number> = {
   low: 0.5,
 };
 
+function subscribeToResize(onChange: () => void): () => void {
+  window.addEventListener("resize", onChange);
+  return () => window.removeEventListener("resize", onChange);
+}
+const getViewportWidth = () => window.innerWidth;
+const getViewportHeight = () => window.innerHeight;
+const noViewportOnServer = () => 0;
+
 export function Celebration({
   show,
   message,
@@ -41,19 +49,26 @@ export function Celebration({
 }: CelebrationProps) {
   const { band } = useAgeBand();
   const reducedMotion = useReducedMotion();
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  // Viewport size for the confetti canvas (0 on the server and while hydrating).
+  const width = useSyncExternalStore(subscribeToResize, getViewportWidth, noViewportOnServer);
+  const height = useSyncExternalStore(subscribeToResize, getViewportHeight, noViewportOnServer);
   const [showConfetti, setShowConfetti] = useState(false);
 
+  // Start the burst when `show` turns on (state adjusted during render, not in
+  // an effect); the timer below ends it.
+  const [prevShow, setPrevShow] = useState(false);
+  if (show !== prevShow) {
+    setPrevShow(show);
+    if (show) setShowConfetti(true);
+  }
+
   useEffect(() => {
-    if (show) {
-      setDimensions({ width: window.innerWidth, height: window.innerHeight });
-      setShowConfetti(!reducedMotion);
-      const timer = setTimeout(() => {
-        setShowConfetti(false);
-        onComplete?.();
-      }, duration);
-      return () => clearTimeout(timer);
-    }
+    if (!show) return;
+    const timer = setTimeout(() => {
+      setShowConfetti(false);
+      onComplete?.();
+    }, duration);
+    return () => clearTimeout(timer);
   }, [show, duration, onComplete, reducedMotion]);
 
   // Adults (and reduced-motion users) get a quiet toast instead of a full burst.
@@ -81,10 +96,10 @@ export function Celebration({
 
   return (
     <>
-      {showConfetti && (
+      {showConfetti && width > 0 && (
         <ReactConfetti
-          width={dimensions.width}
-          height={dimensions.height}
+          width={width}
+          height={height}
           numberOfPieces={confettiCount}
           gravity={gravity}
           colors={confettiColors[band]}

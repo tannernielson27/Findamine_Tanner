@@ -1,12 +1,15 @@
 import { NextRequest } from "next/server";
 import { createHash } from "crypto";
 import { ApiError } from "./api-auth";
+import { logger } from "./logger";
 
 /**
  * Rate limiter with Upstash Redis for production and in-memory fallback for local dev.
  *
  * Production: uses @upstash/ratelimit with sliding window (works across Vercel instances).
  * Local dev: falls back to in-memory Map when UPSTASH_REDIS_REST_URL is not set.
+ * If Upstash is configured but unreachable, the affected request is counted
+ * in-memory (per instance) instead of failing.
  */
 
 // Support all naming conventions:
@@ -124,6 +127,21 @@ function msToUpstashDuration(ms: number): `${number} s` | `${number} m` | `${num
   return `${Math.ceil(ms / 1000)} s`;
 }
 
+/** An Upstash outage fails every request; log it at most once per interval. */
+const UPSTASH_FAILURE_LOG_INTERVAL_MS = 60_000;
+let lastUpstashFailureLogAt = 0;
+
+function logUpstashFailure(prefix: string, error: unknown): void {
+  const now = Date.now();
+  if (now - lastUpstashFailureLogAt < UPSTASH_FAILURE_LOG_INTERVAL_MS) return;
+  lastUpstashFailureLogAt = now;
+  logger.error("rate_limit.upstash_unavailable", {
+    limiter: prefix,
+    fallback: "in-memory",
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
 interface RateLimiter {
   /** Count one request against the caller's key (user+IP, or IP-only). */
   check(request: NextRequest): Promise<void>;
@@ -144,47 +162,41 @@ function createRateLimiter(opts: {
 }): RateLimiter {
   const requestKey = opts.keyBy === "ip" ? getIp : getCompositeKey;
 
-  if (!USE_UPSTASH) {
-    // In-memory fallback for local dev
-    const store = new Map<string, { count: number; resetAt: number }>();
-    const { max, windowMs } = opts;
+  // In-memory limiter: the only limiter in local dev, and the per-instance
+  // fallback when Upstash can't be reached in production.
+  const store = new Map<string, { count: number; resetAt: number }>();
+  const { max, windowMs } = opts;
 
-    let lastCleanup = Date.now();
-    function cleanup() {
-      const now = Date.now();
-      if (now - lastCleanup < 60_000) return;
-      lastCleanup = now;
-      for (const [key, entry] of store) {
-        if (entry.resetAt <= now) store.delete(key);
-      }
+  let lastCleanup = Date.now();
+  function cleanup() {
+    const now = Date.now();
+    if (now - lastCleanup < 60_000) return;
+    lastCleanup = now;
+    for (const [key, entry] of store) {
+      if (entry.resetAt <= now) store.delete(key);
+    }
+  }
+
+  function consumeInMemory(key: string): void {
+    cleanup();
+    const now = Date.now();
+    const entry = store.get(key);
+
+    if (!entry || entry.resetAt <= now) {
+      store.set(key, { count: 1, resetAt: now + windowMs });
+      return;
     }
 
-    async function consume(key: string): Promise<void> {
-      cleanup();
-      const now = Date.now();
-      const entry = store.get(key);
-
-      if (!entry || entry.resetAt <= now) {
-        store.set(key, { count: 1, resetAt: now + windowMs });
-        return;
-      }
-
-      entry.count++;
-      if (entry.count > max) {
-        throw tooManyRequests(Math.ceil((entry.resetAt - now) / 1000));
-      }
+    entry.count++;
+    if (entry.count > max) {
+      throw tooManyRequests(Math.ceil((entry.resetAt - now) / 1000));
     }
-
-    return {
-      check: (request: NextRequest) => consume(requestKey(request)),
-      checkKey: (key: string) => consume(key),
-    };
   }
 
   // Upstash Redis (production)
   let _limiter: import("@upstash/ratelimit").Ratelimit | null = null;
 
-  async function consume(key: string): Promise<void> {
+  async function limitWithUpstash(key: string): Promise<{ success: boolean; reset: number }> {
     if (!_limiter) {
       const { Ratelimit } = await import("@upstash/ratelimit");
       const { Redis } = await import("@upstash/redis");
@@ -194,8 +206,26 @@ function createRateLimiter(opts: {
         prefix: `rl:${opts.prefix}`,
       });
     }
+    return _limiter.limit(key);
+  }
 
-    const result = await _limiter.limit(key);
+  async function consume(key: string): Promise<void> {
+    if (!USE_UPSTASH) {
+      consumeInMemory(key);
+      return;
+    }
+
+    let result: { success: boolean; reset: number };
+    try {
+      result = await limitWithUpstash(key);
+    } catch (error) {
+      // A limiter outage must not turn into a 500 for the user: count this
+      // request against this instance's in-memory limiter instead.
+      logUpstashFailure(opts.prefix, error);
+      consumeInMemory(key);
+      return;
+    }
+
     if (!result.success) {
       throw tooManyRequests(Math.ceil((result.reset - Date.now()) / 1000));
     }

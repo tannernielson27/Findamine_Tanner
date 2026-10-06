@@ -8,5 +8,4 @@ const taskFields = [
 
 export const { GET, POST } = createCrudHandlers("tasks", {
   allowedInsertFields: taskFields,
-  allowedUpdateFields: taskFields,
 });

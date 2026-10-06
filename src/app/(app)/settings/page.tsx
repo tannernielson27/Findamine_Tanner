@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Settings, RefreshCw, Shield, BookOpen, Users } from "lucide-react";
+import { restartOnboardingTour } from "@/components/layout/onboarding";
 
 export default function SettingsPage() {
   const [user, setUser] = useState<{ display_name: string; email: string; role: string } | null>(null);
@@ -11,6 +12,7 @@ export default function SettingsPage() {
   const [message, setMessage] = useState("");
   const [loadFailed, setLoadFailed] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const [tourRestarted, setTourRestarted] = useState(false);
 
   useEffect(() => {
     fetch("/api/v1/auth/me")
@@ -125,16 +127,21 @@ export default function SettingsPage() {
       <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-6 space-y-4">
         <h2 className="font-[family-name:var(--font-display)] font-semibold text-gray-900">More</h2>
 
-        <button
-          onClick={() => {
-            localStorage.removeItem("onboarding_complete");
-            window.location.href = "/dashboard";
-          }}
-          className="flex items-center gap-2 text-sm text-brand hover:underline font-medium"
-        >
-          <RefreshCw className="w-4 h-4" />
-          Run welcome tutorial again
-        </button>
+        <div>
+          <button
+            onClick={() => {
+              restartOnboardingTour();
+              setTourRestarted(true);
+            }}
+            className="flex items-center gap-2 text-sm text-brand hover:underline font-medium"
+          >
+            <RefreshCw className="w-4 h-4" aria-hidden="true" />
+            Run welcome tutorial again
+          </button>
+          <p role="status" className="mt-1 text-xs text-gray-500">
+            {tourRestarted ? "The welcome tour has been restarted. Skip it any time to come back here." : ""}
+          </p>
+        </div>
 
         <Link
           href="/settings/privacy"

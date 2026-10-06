@@ -8,6 +8,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { AgeBand } from "@/lib/themes/tokens";
+import { logger } from "@/lib/utils/logger";
 
 const client = new Anthropic();
 
@@ -232,11 +233,18 @@ function getOpenAI(): OpenAI {
  * reaches the creator as a plain message through the routes' errorResponse().
  */
 function aiUnavailable(what: string): ApiError {
+  const configured = !!process.env.OPENAI_API_KEY;
+  // The cause is for whoever runs the server; a teacher only needs to know
+  // that nothing was generated and that they can carry on without it.
+  logger.warn("findbot.ai_unavailable", {
+    task: what,
+    reason: configured ? "AI request failed or returned unusable output" : "OPENAI_API_KEY is not configured",
+  });
   return new ApiError(
     503,
-    process.env.OPENAI_API_KEY
-      ? `AI couldn't ${what} just now. Nothing was generated — try again, or write it yourself.`
-      : `AI assistance isn't set up on this server (no AI key configured), so it can't ${what}. You can still write it yourself.`
+    configured
+      ? `AI suggestions couldn't ${what} just now. Nothing was generated — try again, or write it yourself.`
+      : "AI suggestions aren't available right now — you can still write this yourself."
   );
 }
 

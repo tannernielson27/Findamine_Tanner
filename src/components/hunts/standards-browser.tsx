@@ -50,23 +50,26 @@ export default function StandardsBrowser({ onSelectTask, onCancel }: StandardsBr
       .then((d) => setFrameworks(d.frameworks || []));
   }, []);
 
-  // Load standards when framework selected
-  useEffect(() => {
-    if (!selectedFramework) { setStandards([]); return; }
+  // Load tasks when a standard is selected (null clears them)
+  function selectStandard(standard: Standard | null) {
+    setSelectedStandard(standard);
+    if (!standard) { setTasks([]); return; }
     setLoading(true);
-    fetch(`/api/v1/curriculum?type=standards&framework=${selectedFramework}&limit=100`)
-      .then((r) => r.json())
-      .then((d) => { setStandards(d.standards || []); setLoading(false); });
-  }, [selectedFramework]);
-
-  // Load tasks when standard selected
-  useEffect(() => {
-    if (!selectedStandard) { setTasks([]); return; }
-    setLoading(true);
-    fetch(`/api/v1/curriculum?standard=${selectedStandard.code}`)
+    fetch(`/api/v1/curriculum?standard=${standard.code}`)
       .then((r) => r.json())
       .then((d) => { setTasks(d.tasks || []); setLoading(false); });
-  }, [selectedStandard]);
+  }
+
+  // Load standards when a framework is selected
+  function selectFramework(framework: string) {
+    setSelectedFramework(framework);
+    selectStandard(null);
+    if (!framework) { setStandards([]); return; }
+    setLoading(true);
+    fetch(`/api/v1/curriculum?type=standards&framework=${framework}&limit=100`)
+      .then((r) => r.json())
+      .then((d) => { setStandards(d.standards || []); setLoading(false); });
+  }
 
   // Group frameworks by scope
   const national = frameworks.filter((f) => f.scope === "national");
@@ -83,7 +86,7 @@ export default function StandardsBrowser({ onSelectTask, onCancel }: StandardsBr
       {/* Framework selector */}
       <select
         value={selectedFramework}
-        onChange={(e) => { setSelectedFramework(e.target.value); setSelectedStandard(null); }}
+        onChange={(e) => selectFramework(e.target.value)}
         className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm mb-3"
       >
         <option value="">Select a standards framework...</option>
@@ -116,7 +119,7 @@ export default function StandardsBrowser({ onSelectTask, onCancel }: StandardsBr
           {standards.map((s) => (
             <button
               key={s.id}
-              onClick={() => setSelectedStandard(s)}
+              onClick={() => selectStandard(s)}
               className="w-full text-left rounded-md px-3 py-2 text-xs hover:bg-emerald-100 transition"
             >
               <span className="font-mono font-medium text-emerald-700">{s.code}</span>
@@ -132,7 +135,7 @@ export default function StandardsBrowser({ onSelectTask, onCancel }: StandardsBr
       {selectedStandard && (
         <div>
           <button
-            onClick={() => setSelectedStandard(null)}
+            onClick={() => selectStandard(null)}
             className="text-xs text-emerald-600 hover:underline mb-2"
           >
             &larr; Back to standards list

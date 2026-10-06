@@ -1,27 +1,30 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 const QUERY = "(prefers-reduced-motion: reduce)";
+
+function subscribe(onChange: () => void): () => void {
+  if (typeof window === "undefined" || !window.matchMedia) return () => {};
+  const mql = window.matchMedia(QUERY);
+  mql.addEventListener("change", onChange);
+  return () => mql.removeEventListener("change", onChange);
+}
+
+function getSnapshot(): boolean {
+  return typeof window.matchMedia === "function" && window.matchMedia(QUERY).matches;
+}
+
+const getServerSnapshot = () => false;
 
 /**
  * Returns true when the user has asked the OS to reduce motion.
  *
  * Used to suppress confetti and heavy entrance animations in the play loop so
  * the reward beats stay legible (and accessible) for motion-sensitive players.
- * SSR-safe: starts `false` and syncs on mount.
+ * SSR-safe: `false` on the server and during hydration, then the real
+ * preference, kept in sync if the OS setting changes.
  */
 export function useReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-    const mql = window.matchMedia(QUERY);
-    setReduced(mql.matches);
-    const onChange = (e: MediaQueryListEvent) => setReduced(e.matches);
-    mql.addEventListener("change", onChange);
-    return () => mql.removeEventListener("change", onChange);
-  }, []);
-
-  return reduced;
+  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }

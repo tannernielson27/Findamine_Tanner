@@ -45,6 +45,44 @@ function writeFlag(key: string): void {
   }
 }
 
+/**
+ * "Run welcome tutorial again" (Settings). The server milestone is history and
+ * is never deleted; a replay is a per-tab request that overrides it until the
+ * tour is finished or skipped again.
+ */
+const REPLAY_STORAGE_KEY = "onboarding_replay";
+const REPLAY_EVENT = "findamine:onboarding-replay";
+
+function replayRequested(): boolean {
+  try {
+    return sessionStorage.getItem(REPLAY_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function clearReplayRequest(): void {
+  try {
+    sessionStorage.removeItem(REPLAY_STORAGE_KEY);
+  } catch {
+    // Non-fatal: at worst the tour is offered once more in this tab.
+  }
+}
+
+/**
+ * Re-open the welcome tour for the signed-in user. Opens it immediately when
+ * the tour component is mounted (it is, on every signed-in page), and survives
+ * a reload until the tour is finished or skipped.
+ */
+export function restartOnboardingTour(): void {
+  try {
+    sessionStorage.setItem(REPLAY_STORAGE_KEY, "true");
+  } catch {
+    // The event below still opens the tour in this page.
+  }
+  window.dispatchEvent(new Event(REPLAY_EVENT));
+}
+
 function subscribeToModals(onChange: () => void): () => void {
   const observer = new MutationObserver(onChange);
   observer.observe(document.body, { childList: true, subtree: true });
@@ -94,6 +132,12 @@ export default function Onboarding({ role, userId }: OnboardingProps) {
         const key = id ? storageKeyFor(id) : null;
         storageKeyRef.current = key;
 
+        // An explicit "run the tour again" beats both completion records.
+        if (replayRequested()) {
+          setShow(true);
+          return;
+        }
+
         // localStorage is the fast path; the API is authoritative.
         if (key && readFlag(key)) return;
 
@@ -122,7 +166,18 @@ export default function Onboarding({ role, userId }: OnboardingProps) {
     };
   }, [userId]);
 
+  // Settings asked for the tour again while this page is open.
+  useEffect(() => {
+    const reopen = () => {
+      setStep(0);
+      setShow(true);
+    };
+    window.addEventListener(REPLAY_EVENT, reopen);
+    return () => window.removeEventListener(REPLAY_EVENT, reopen);
+  }, []);
+
   const recordComplete = useCallback(async () => {
+    clearReplayRequest();
     if (storageKeyRef.current) writeFlag(storageKeyRef.current);
     try {
       await fetch("/api/v1/onboarding", {
