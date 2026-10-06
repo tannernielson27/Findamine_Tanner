@@ -12,12 +12,11 @@ import { ShieldCheck } from "lucide-react";
  * precondition for enrollment/randomization (see lib/services/enrollment.ts),
  * so nothing about the study happens until the participant decides here.
  *
- * ⚠️ The consent + debrief text below is PLACEHOLDER copy. Replace it with the
- * IRB-approved informed-consent language before running the study, and bump
- * CONSENT_FORM_VERSION whenever the approved wording changes.
+ * Bump CONSENT_FORM_VERSION whenever the wording below changes: it is stored
+ * with each decision and exported, so it shows which text a person agreed to.
  */
 
-const CONSENT_FORM_VERSION = "0.1-placeholder";
+const CONSENT_FORM_VERSION = "1.0";
 
 interface ConsentRecord {
   consent_type: string;
@@ -93,26 +92,43 @@ export default function ConsentGate() {
             </h2>
           </div>
 
-          {/* PLACEHOLDER consent copy — replace with IRB-approved language. */}
           <div className="space-y-3 text-sm text-gray-600">
-            <p className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
-              Draft notice for the study team: this is placeholder consent text. Replace it with the
-              IRB-approved informed-consent form before the study runs.
-            </p>
             <p>
-              Findamine is part of a research study on how people manage privacy settings over time.
-              If you take part, the app will record how you use its privacy controls and will ask you
-              to complete a few short surveys.
+              Findamine is being used in a student research project about how people manage their
+              privacy settings in an app. You&apos;re invited to take part.
             </p>
-            <p>
-              Participation is voluntary and open to adults (18+). You may withdraw at any time, and
-              your choice will not affect your standing in any class. Your data are stored securely
-              and reported only in aggregate, de-identified form.
-            </p>
+            <div>
+              <p className="font-medium text-gray-900">What taking part involves</p>
+              <ul className="mt-1 list-disc space-y-1 pl-5">
+                <li>You use Findamine as you normally would.</li>
+                <li>
+                  The app records how you use its privacy settings (what you change and when) and
+                  your general activity, such as hunts played and points earned.
+                </li>
+                <li>
+                  You&apos;ll be asked to answer three short questionnaires: one near the start, one
+                  partway through, and one at the end.
+                </li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-medium text-gray-900">Your data</p>
+              <p className="mt-1">
+                Your responses are stored securely and used only for this research. Results are
+                reported for the group as a whole, never in a way that identifies you.              </p>
+            </div>
+            <div>
+              <p className="font-medium text-gray-900">Your choice</p>
+              <p className="mt-1">
+                Taking part is voluntary and open to adults (18 or older). Saying no will not affect
+                your grade or standing in any class, and you can still use Findamine normally. If you
+                say yes, you can withdraw at any time and study data collection stops from that point.
+              </p>
+            </div>
             <p>
               By selecting <strong>I consent</strong>, you confirm that you are 18 or older and agree
-              to take part. If you select <strong>I do not consent</strong>, you can still use
-              Findamine normally and no study data will be collected about you.
+              to take part. If you select <strong>I do not consent</strong>, no study data will be
+              collected about you.
             </p>
           </div>
 

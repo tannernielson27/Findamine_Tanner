@@ -13,8 +13,7 @@ import {
 /**
  * Study debrief surface (condition-aware — Workstream B / Task B9).
  *
- * ⚠️ PLACEHOLDER copy. The framing paragraphs are draft text pending IRB
- * approval. The manipulation disclosure itself is NOT hard-coded: it is
+ * The manipulation disclosure is NOT hard-coded: it is
  * generated from the dimensions linked to the active study (name, description,
  * levels) plus this participant's own assigned level on each, so it stays
  * truthful if the factor structure changes (e.g. re-crossing complexity, or
@@ -100,10 +99,6 @@ export default async function DebriefPage() {
       </h1>
 
       <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-6 space-y-4 text-sm text-gray-600">
-        <p className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
-          Draft notice for the study team: this is placeholder debrief text. Replace it with the
-          IRB-approved debrief before the study concludes.
-        </p>
         <p>
           Thank you for taking part in this research study
           {conditions.study ? <> (<em>{conditions.study.name}</em>)</> : null}. The study looks at
