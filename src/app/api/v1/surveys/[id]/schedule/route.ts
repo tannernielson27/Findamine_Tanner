@@ -28,8 +28,8 @@ import {
  * are enforced here instead of by the schema:
  *   - one logical schedule per survey: PUT replaces every existing row;
  *   - timepoints are global: the privacy-page gate and the research export key
- *     on trigger_config.timepoint, so an ACTIVE schedule may not share its
- *     timepoint with another survey's active schedule (409 timepoint_conflict).
+ *     on trigger_config.timepoint, so an ACTIVE schedule that shares its
+ *     timepoint with another survey's active schedule needs confirmation.
  *
  * Writes that change what participants receive on a survey that already has
  * deliveries or responses, or that overlap an inactive schedule's timepoint,
@@ -197,23 +197,17 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     const timepoint = input.trigger_config.timepoint;
     const clashes = await findTimepointClashes(supabase, surveyId, timepoint);
-    const activeClashes = clashes.filter((c) => c.schedule_active);
-    if (input.active && activeClashes.length > 0) {
-      const names = activeClashes.map((c) => `"${c.title}" (${c.survey_status})`).join(", ");
-      return Response.json(
-        {
-          error: `Timepoint ${timepoint} already has an active schedule on ${names}. Timepoints are shared by every study: two active ${timepoint} surveys would both be sent to each participant and would overwrite each other in the ${timepoint} export columns. Turn off or remove that schedule first, or pick another timepoint.`,
-          code: "timepoint_conflict",
-          conflicts: activeClashes,
-        },
-        { status: 409 }
-      );
-    }
+    const activeClashes = input.active ? clashes.filter((c) => c.schedule_active) : [];
 
     const warnings: string[] = [];
     const data = dataWarning(deliveries, responses, "Changing");
     if (data) warnings.push(data);
-    if (clashes.length > 0) {
+    if (activeClashes.length > 0) {
+      const names = activeClashes.map((c) => `"${c.title}" (${c.survey_status})`).join(", ");
+      warnings.push(
+        `Timepoint ${timepoint} already has an active schedule on ${names}. Timepoints are shared by every study: if both stay switched on, both surveys are sent to each participant and they overwrite each other in the ${timepoint} export columns. Turn the other schedule off unless you mean to send both.`
+      );
+    } else if (clashes.length > 0) {
       const names = clashes.map((c) => `"${c.title}"`).join(", ");
       warnings.push(
         `Timepoint ${timepoint} is also used by ${names}. Only one of them is switched on, so only one is sent, but the research export reports both surveys under the same ${timepoint} columns.`

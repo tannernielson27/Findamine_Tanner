@@ -220,15 +220,18 @@ describe("/api/v1/surveys/[id]/schedule", () => {
     expect(db.table("survey_schedules")).toHaveLength(0);
   });
 
-  it("refuses a second ACTIVE schedule on a timepoint another survey holds, even when confirmed", async () => {
+  it("asks before adding a second ACTIVE schedule on a timepoint another survey holds, then saves on confirm", async () => {
     const db = install({ survey_schedules: [T2_ROW] });
-    const res = await PUT(req("PUT", "tok-admin", timeBody({ confirm: true }, { timepoint: "t2" })), at("new"));
-    expect(res.status).toBe(409);
-    const body = await res.json();
-    expect(body.code).toBe("timepoint_conflict");
-    expect(body.error).toMatch(/"Midpoint" \(draft\)/);
-    expect(body.conflicts).toEqual([{ survey_id: "t2", title: "Midpoint", survey_status: "draft", schedule_active: true }]);
+    const first = await PUT(req("PUT", "tok-admin", timeBody({}, { timepoint: "t2" })), at("new"));
+    expect(first.status).toBe(409);
+    const body = await first.json();
+    expect(body.code).toBe("confirmation_required");
+    expect(body.warnings.join(" ")).toMatch(/already has an active schedule on "Midpoint" \(draft\)/);
     expect(db.table("survey_schedules")).toHaveLength(1);
+
+    const second = await PUT(req("PUT", "tok-admin", timeBody({ confirm: true }, { timepoint: "t2" })), at("new"));
+    expect(second.status).toBe(200);
+    expect(db.table("survey_schedules")).toHaveLength(2);
   });
 
   it("asks before sharing a timepoint with a switched-off schedule, then saves on confirm", async () => {
