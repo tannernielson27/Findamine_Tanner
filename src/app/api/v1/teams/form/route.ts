@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, requireRole, errorResponse, ApiError } from "@/lib/utils/api-auth";
+import { formationMethodFor, latestPerUser, liveTeams } from "../team-rules";
 
 type FormationStrategy = "random" | "teacher_assigned" | "personality_similar" |
   "personality_diverse" | "performance_similar" | "performance_diverse" | "balanced";
@@ -40,39 +41,70 @@ export async function POST(request: NextRequest) {
       throw new ApiError(403, "You can only form teams for your own hunts");
     }
 
+    // A player may be on only one team per hunt, so forming again must not
+    // stack a second set of teams on top of the first. Pass replace: true to
+    // retire the existing teams (kept for history as disbanded/removed).
+    const existingTeams = await liveTeams(supabase, hunt_id);
+    if (existingTeams.length > 0 && body.replace !== true) {
+      throw new ApiError(409, "This hunt already has teams. Send replace: true to form them again.");
+    }
+    // Called once the request is known to be valid, just before creating teams.
+    const retireExistingTeams = async () => {
+      const oldIds = existingTeams.map((t) => t.id);
+      if (oldIds.length === 0) return;
+      await supabase.from("team_members").update({ status: "removed" }).in("team_id", oldIds).eq("status", "active");
+      await supabase.from("teams").update({ status: "disbanded" }).in("id", oldIds);
+    };
+
     // Get roster members
     let studentIds: string[] = [];
 
     if (strategy === "teacher_assigned" && assignments) {
       // Teacher provides explicit team assignments
       // assignments: [{ team_name: "Team A", student_ids: ["id1", "id2"] }, ...]
+      if (!Array.isArray(assignments)) throw new ApiError(400, "assignments must be a list");
+      const seen = new Set<string>();
+      const cleaned = assignments.map((a: { team_name?: unknown; student_ids?: unknown }, i: number) => {
+        const ids = Array.isArray(a?.student_ids)
+          ? [...new Set(a.student_ids.filter((s: unknown): s is string => typeof s === "string" && s.length > 0))]
+          : [];
+        for (const sid of ids) {
+          if (seen.has(sid)) throw new ApiError(400, "A student can only be on one team per hunt");
+          seen.add(sid);
+        }
+        const name = typeof a?.team_name === "string" && a.team_name.trim() ? a.team_name.trim().slice(0, 40) : `Team ${i + 1}`;
+        return { name, ids: ids as string[] };
+      });
+
+      await retireExistingTeams();
       const teams: { id: string; name: string; members: string[] }[] = [];
-      for (const assignment of assignments) {
+      for (const assignment of cleaned) {
         const { data: team } = await supabase
           .from("teams")
           .insert({
             hunt_id,
-            name: assignment.team_name || `Team ${teams.length + 1}`,
+            name: assignment.name,
             formation_method: "manual",
-            max_size: teamSizeClamped,
+            max_size: Math.max(teamSizeClamped, assignment.ids.length),
             status: "ready",
           })
           .select("id")
           .single();
 
-        if (!team) continue;
+        if (!team) throw new ApiError(500, "Could not create teams");
 
-        const memberInserts = (assignment.student_ids || []).map((sid: string) => ({
-          team_id: team.id,
-          user_id: sid,
-          role: "member",
-        }));
-
-        if (memberInserts.length > 0) {
-          await supabase.from("team_members").insert(memberInserts);
+        if (assignment.ids.length > 0) {
+          const { error: memberError } = await supabase.from("team_members").insert(
+            assignment.ids.map((sid, j) => ({
+              team_id: team.id,
+              user_id: sid,
+              role: j === 0 ? "captain" : "member",
+            }))
+          );
+          if (memberError) throw new ApiError(400, "Could not add those students. Check the student ids.");
         }
 
-        teams.push({ ...team, name: assignment.team_name, members: assignment.student_ids });
+        teams.push({ id: team.id, name: assignment.name, members: assignment.ids });
       }
 
       return Response.json({ teams, strategy: "teacher_assigned" }, { status: 201 });
@@ -100,12 +132,15 @@ export async function POST(request: NextRequest) {
 
       case "personality_similar":
       case "personality_diverse": {
-        // Get personality scores
-        const { data: assessments } = await supabase
+        // Get personality scores. A retake adds a row, so keep only each
+        // student's latest: a duplicate would put them on two teams.
+        const { data: allAssessments } = await supabase
           .from("player_assessments")
-          .select("user_id, scores")
+          .select("user_id, scores, assessed_at")
           .in("user_id", studentIds)
-          .eq("assessment_type", "personality");
+          .eq("assessment_type", "personality")
+          .order("assessed_at", { ascending: false });
+        const assessments = latestPerUser(allAssessments || []);
 
         if (!assessments || assessments.length < studentIds.length / 2) {
           // Not enough assessments — fall back to random
@@ -169,6 +204,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create teams in database
+    await retireExistingTeams();
     const teams: { id: string; name: string; members: string[] }[] = [];
     for (let i = 0; i < groupedStudents.length; i++) {
       const members = groupedStudents[i];
@@ -177,14 +213,17 @@ export async function POST(request: NextRequest) {
         .insert({
           hunt_id,
           name: `Team ${i + 1}`,
-          formation_method: strategy,
-          max_size: teamSizeClamped,
+          // teams.formation_method only allows a few values; inserting the
+          // strategy name failed the CHECK and silently created no teams.
+          formation_method: formationMethodFor(strategy),
+          // Chunking can fold a leftover student into the last team.
+          max_size: Math.max(teamSizeClamped, members.length),
           status: "ready",
         })
         .select("id")
         .single();
 
-      if (!team) continue;
+      if (!team) throw new ApiError(500, "Could not create teams");
 
       // First member is captain
       const memberInserts = members.map((sid, j) => ({

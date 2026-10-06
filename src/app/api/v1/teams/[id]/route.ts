@@ -3,9 +3,11 @@ import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { filterProfileForViewer, type ViewerRelationship } from "@/lib/utils/privacy";
 import { getViewerRelationships } from "@/lib/utils/viewer";
+import { canManageHunt, isActiveMember, loadHunt, loadTeam, parseTeamName } from "../team-rules";
 
 interface TeamMemberRow {
   user_id: string;
+  status?: string;
   users?: { id: string; display_name: string | null; avatar_url: string | null; role?: string; profile_visibility?: Record<string, string> } | null;
   [k: string]: unknown;
 }
@@ -33,8 +35,9 @@ export async function GET(
     // the creator of the hunt this team belongs to
     const isStaff = ["admin", "researcher"].includes(user.role);
     if (!isStaff) {
+      // Someone who left (or was removed) is no longer a member.
       const isMember = data.team_members?.some(
-        (m: { user_id: string }) => m.user_id === user.id
+        (m: { user_id: string; status?: string }) => m.user_id === user.id && m.status === "active"
       );
       if (!isMember) {
         // Check if user owns the hunt
@@ -50,7 +53,9 @@ export async function GET(
 
       // Enforce each member's display_name/avatar visibility for this viewer
       // (a teammate who set them to "nobody" must stay hidden). Staff see raw.
-      const members = (data.team_members || []) as TeamMemberRow[];
+      const members = ((data.team_members || []) as TeamMemberRow[]).filter(
+        (m) => m.status === "active"
+      );
       const rels = await getViewerRelationships(user.id, members.map((m) => m.user_id));
       data.team_members = members.map((m) => {
         const u = m.users;
@@ -78,31 +83,32 @@ export async function PATCH(
     const body = await request.json();
     const supabase = await createSupabaseServiceClient();
 
-    // Verify ownership: must be team member, hunt owner, or admin
-    const { data: team } = await supabase
-      .from("teams")
-      .select("hunt_id, team_members(user_id)")
-      .eq("id", id)
-      .single();
-
+    const team = await loadTeam(supabase, id);
     if (!team) throw new ApiError(404, "Team not found");
 
-    const isMember = (team.team_members as { user_id: string }[])?.some((m) => m.user_id === user.id);
-    if (!isMember && !["admin", "researcher"].includes(user.role)) {
-      const { data: hunt } = await supabase.from("hunts").select("created_by").eq("id", team.hunt_id).single();
-      if (!hunt || hunt.created_by !== user.id) {
+    // Whoever runs the hunt may change anything. The team's current captain
+    // may only rename it: status and size decide who can join, and any member
+    // (even one who had left) used to be able to change them.
+    const hunt = await loadHunt(supabase, team.hunt_id);
+    const canManage = hunt ? canManageHunt(user, hunt) : ["admin", "researcher"].includes(user.role);
+    if (!canManage) {
+      if (!(await isActiveMember(supabase, id, user.id, "captain"))) {
         throw new ApiError(403, "Not authorized to update this team");
+      }
+      if (body.status !== undefined || body.max_size !== undefined) {
+        throw new ApiError(403, "Only whoever runs the hunt can change a team's status or size");
       }
     }
 
     const updates: Record<string, unknown> = {};
-    if (body.name !== undefined) updates.name = String(body.name).slice(0, 100);
+    if (body.name !== undefined) updates.name = parseTeamName(body.name);
     if (body.status !== undefined) {
       const validStatuses = ["forming", "ready", "active", "completed", "disbanded"];
       if (!validStatuses.includes(body.status)) throw new ApiError(400, "Invalid status");
       updates.status = body.status;
     }
     if (body.max_size !== undefined) updates.max_size = Math.max(2, Math.min(20, parseInt(body.max_size) || 6));
+    if (Object.keys(updates).length === 0) throw new ApiError(400, "Nothing to update");
 
     const { data, error } = await supabase
       .from("teams")

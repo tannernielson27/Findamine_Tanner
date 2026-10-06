@@ -3,6 +3,7 @@ import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { socialLimiter } from "@/lib/utils/rate-limit";
 import { filterProfileForViewer } from "@/lib/utils/privacy";
+import { isActiveMember } from "../../team-rules";
 
 interface ChatSender {
   id: string;
@@ -33,15 +34,13 @@ export async function GET(
 
     const supabase = await createSupabaseServiceClient();
 
-    // Verify user is a member of this team
+    // Verify user is a CURRENT member of this team. (Without the status filter
+    // a player who left could keep reading, and one who left and rejoined had
+    // two rows, which made maybeSingle() fail and locked them out.)
     if (!["admin", "researcher"].includes(user.role)) {
-      const { data: membership } = await supabase
-        .from("team_members")
-        .select("id")
-        .eq("team_id", id)
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (!membership) throw new ApiError(403, "Not a member of this team");
+      if (!(await isActiveMember(supabase, id, user.id))) {
+        throw new ApiError(403, "Not a member of this team");
+      }
     }
 
     const { searchParams } = new URL(request.url);
@@ -84,15 +83,11 @@ export async function POST(
 
     const supabase = await createSupabaseServiceClient();
 
-    // Verify user is a member of this team
+    // Verify user is a current member of this team
     if (!["admin", "researcher"].includes(user.role)) {
-      const { data: membership } = await supabase
-        .from("team_members")
-        .select("id")
-        .eq("team_id", id)
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (!membership) throw new ApiError(403, "Not a member of this team");
+      if (!(await isActiveMember(supabase, id, user.id))) {
+        throw new ApiError(403, "Not a member of this team");
+      }
     }
 
     const { data: msg, error } = await supabase

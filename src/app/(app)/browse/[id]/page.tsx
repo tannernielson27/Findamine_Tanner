@@ -7,6 +7,7 @@ import HuntAnalytics from "@/components/hunts/hunt-analytics";
 import HuntRating from "@/components/hunts/hunt-rating";
 import HuntMap from "@/components/hunts/hunt-map";
 import { StopList } from "@/components/hunts/stop-detail-modal";
+import HuntTeamPanel from "@/components/teams/hunt-team-panel";
 import { AudienceIcon, formatPlayMode } from "../hunt-meta";
 
 const PILL_CLASS =
@@ -33,6 +34,8 @@ export default async function HuntDetailPage({
 
   // Same statuses the play API accepts (play/[huntId]/start).
   const isPlayable = PLAYABLE_STATUSES.includes(hunt.status);
+  // Every play_mode except "solo" is a team mode (team_self_select, team_assigned, ...).
+  const isTeamHunt = typeof hunt.play_mode === "string" && hunt.play_mode.startsWith("team_");
 
   // Draft hunts are only visible to their owner or admins/researchers, the
   // same rule the hunts API applies.
@@ -99,7 +102,11 @@ export default async function HuntDetailPage({
         </ul>
 
         {/* The screen's one primary action */}
-        {isPlayable ? (
+        {isPlayable && isTeamHunt ? (
+          // Team hunts: the panel offers Start only once the player is on a
+          // team (the start API itself would let a teamless player play solo).
+          <HuntTeamPanel huntId={hunt.id} playHref={`/play/${hunt.id}`} />
+        ) : isPlayable ? (
           <Link
             href={`/play/${hunt.id}`}
             className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand px-6 text-base font-semibold text-white transition-colors hover:bg-brand-dark sm:w-auto"

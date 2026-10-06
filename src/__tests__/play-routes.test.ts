@@ -387,6 +387,39 @@ describe("POST /play/[huntId]/start with identity mode codename_chosen", () => {
   });
 });
 
+describe("POST /play/[huntId]/start on team hunts", () => {
+  const teamHunt = (extra: Record<string, Row[]> = {}) => ({
+    hunts: [{ id: HUNT, status: "published", identity_mode: "real_name", play_mode: "team_self_select", created_by: "owner", metadata: {} }],
+    play_sessions: [] as Row[],
+    teams: [{ id: "team-1", hunt_id: HUNT, name: "Otters", status: "forming", max_size: 4 }],
+    team_members: [] as Row[],
+    ...extra,
+  });
+
+  it("refuses a player who is not on a team", async () => {
+    const db = seed(teamHunt());
+    const res = await startHunt(post("/start", {}), playParams);
+    expect(res.status).toBe(409);
+    expect(db.table("play_sessions")).toHaveLength(0);
+  });
+
+  it("attaches the session to the player's own team, ignoring a client-sent team", async () => {
+    const db = seed(
+      teamHunt({ team_members: [{ id: "m1", team_id: "team-1", user_id: "u1", status: "active", role: "member" }] })
+    );
+    const res = await startHunt(post("/start", { team_id: "someone-elses-team" }), playParams);
+    expect(res.status).toBe(201);
+    expect(db.table("play_sessions")[0].team_id).toBe("team-1");
+  });
+
+  it("never stores a client-sent team on a solo hunt", async () => {
+    const db = seed({ play_sessions: [] });
+    const res = await startHunt(post("/start", { team_id: "team-1" }), playParams);
+    expect(res.status).toBe(201);
+    expect(db.table("play_sessions")[0].team_id).toBeNull();
+  });
+});
+
 describe("POST /hunts/[id]/rate", () => {
   const rateParams = { params: Promise.resolve({ id: HUNT }) };
 

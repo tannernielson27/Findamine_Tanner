@@ -4,6 +4,9 @@ import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { logger } from "@/lib/utils/logger";
 import { botGuard } from "@/lib/utils/bot-guard";
 import { trackEvent } from "@/lib/utils/track-event";
+import { activeTeamIdsInHunt, teamModeOf } from "../../../teams/team-rules";
+
+const PLAYABLE_STATUSES = ["published", "enrollment_open", "in_progress"];
 
 export async function POST(
   request: NextRequest,
@@ -27,12 +30,26 @@ export async function POST(
     // Check hunt exists and is playable
     const { data: hunt } = await supabase
       .from("hunts")
-      .select("id, status, identity_mode")
+      .select("id, status, identity_mode, created_by, play_mode")
       .eq("id", huntId)
-      .in("status", ["published", "enrollment_open", "in_progress"])
-      .single();
+      .maybeSingle();
 
-    if (!hunt) throw new ApiError(404, "Hunt not found or not available");
+    if (!hunt || !PLAYABLE_STATUSES.includes(hunt.status)) {
+      // Preview play of an unpublished hunt is deliberately NOT allowed here:
+      // the answer/complete routes pick up any active session and write real
+      // points, referral shares, streaks, badges and study events for it, and
+      // nothing downstream can yet tell a preview session from a real one.
+      // The owner gets told why instead of a bare "not found".
+      const canManage =
+        !!hunt && (hunt.created_by === user.id || ["admin", "researcher"].includes(user.role));
+      if (canManage) {
+        throw new ApiError(
+          409,
+          "This hunt isn't published yet, so it can't be played. Publish it first to try it out."
+        );
+      }
+      throw new ApiError(404, "Hunt not found or not available");
+    }
 
     // Check for existing active session
     const { data: existing } = await supabase
@@ -99,12 +116,30 @@ export async function POST(
       }
     }
 
+    // On team hunts the session belongs to the team the player is on. The
+    // team comes from their membership, never from the request body.
+    let teamId: string | null = null;
+    if (teamModeOf(hunt.play_mode) !== "solo") {
+      const teamIds = await activeTeamIdsInHunt(supabase, user.id, huntId);
+      teamId = teamIds[0] ?? null;
+      const canManage =
+        hunt.created_by === user.id || ["admin", "researcher"].includes(user.role);
+      if (!teamId && !canManage) {
+        throw new ApiError(
+          409,
+          teamModeOf(hunt.play_mode) === "self_select"
+            ? "This is a team hunt. Join or create a team on the hunt page before you start."
+            : "This is a team hunt and you haven't been assigned to a team yet. Ask your teacher."
+        );
+      }
+    }
+
     const { data: session, error } = await supabase
       .from("play_sessions")
       .insert({
         hunt_id: huntId,
         user_id: user.id,
-        team_id: body.team_id || null,
+        team_id: teamId,
         codename,
       })
       .select()
