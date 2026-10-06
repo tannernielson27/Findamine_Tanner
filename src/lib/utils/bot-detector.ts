@@ -172,31 +172,6 @@ export async function isIpBlocked(ipHash: string): Promise<boolean> {
 }
 
 /**
- * Auto-block an IP that is 100% confirmed bot traffic.
- * Blocks for 30 days.
- */
-export async function autoBlockBot(ipHash: string, reasons: string[]): Promise<void> {
-  const supabase = await createSupabaseServiceClient();
-
-  // Check if already blocked
-  const { data: existing } = await supabase
-    .from("blocked_ips")
-    .select("id")
-    .eq("ip_hash", ipHash)
-    .eq("is_active", true)
-    .maybeSingle();
-
-  if (existing) return; // Already blocked
-
-  await supabase.from("blocked_ips").insert({
-    ip_hash: ipHash,
-    reason: `Auto-blocked: ${reasons.join(", ")}`,
-    expires_at: new Date(Date.now() + 30 * 86_400_000).toISOString(),
-    is_active: true,
-  });
-}
-
-/**
  * Get IP hash from request (uses x-forwarded-for or falls back).
  */
 export function getIpHash(request: NextRequest): string {

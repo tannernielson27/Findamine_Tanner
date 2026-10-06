@@ -1,5 +1,5 @@
 /**
- * Bot guard — call at the top of API routes to detect and auto-block bots.
+ * Bot guard — call at the top of API routes to detect and reject bots.
  *
  * Usage in a route handler:
  *   const blocked = await botGuard(request);
@@ -7,12 +7,12 @@
  */
 
 import { NextRequest } from "next/server";
-import { detectBot, getIpHash, isIpBlocked, autoBlockBot } from "./bot-detector";
+import { detectBot, getIpHash, isIpBlocked } from "./bot-detector";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 
 /**
  * Returns a 403 Response if the request is from a blocked IP or
- * a definite bot (auto-blocks it). Returns null if the request is OK.
+ * a definite bot. Returns null if the request is OK.
  */
 export async function botGuard(request: NextRequest): Promise<Response | null> {
   const ipHash = getIpHash(request);
@@ -25,16 +25,17 @@ export async function botGuard(request: NextRequest): Promise<Response | null> {
   // Score the request
   const result = detectBot(request);
 
-  // Auto-block definite bots (100% confidence)
+  // Reject definite bots (100% confidence), but only this request. The IP is
+  // deliberately not blocked: a whole class can share one campus address, so
+  // one scripted request would lock everyone out. Persistent blocks are left
+  // to admins.
   if (result.definite) {
-    await autoBlockBot(ipHash, result.reasons);
-
     // Log the event
     try {
       const supabase = await createSupabaseServiceClient();
       await supabase.from("behavioral_events").insert({
         event_type: "bot_blocked",
-        event_name: "Auto-blocked bot traffic",
+        event_name: "Rejected bot traffic",
         payload: {
           ip_hash: ipHash,
           score: result.score,
