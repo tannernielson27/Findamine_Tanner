@@ -332,6 +332,11 @@ export async function assignParticipant(
  * Check balance across treatment cells for a study. Only the study's ACTIVE
  * levels (resolveLevels) are reported; assignments to inactive levels are
  * ignored so a narrowed design is not flagged as imbalanced by legacy cells.
+ *
+ * Counts only participants currently enrolled in THIS study (not withdrawn):
+ * dimension_assignments has no study column and outlives withdrawal, so an
+ * unscoped count mixes in other studies sharing a dimension and people who
+ * left. Read-only reporting — assignParticipant does not call this.
  */
 export async function checkBalance(studyId: string) {
   const supabase = await createSupabaseServiceClient();
@@ -344,14 +349,37 @@ export async function checkBalance(studyId: string) {
 
   if (!studyDims) return { balanced: true, cells: [] };
 
+  // Paginated: PostgREST silently caps an unpaginated read at 1000 rows.
+  const enrolled = await fetchAllRows<{ user_id: string }>((from, to) =>
+    supabase
+      .from("study_enrollments")
+      .select("user_id")
+      .eq("study_id", studyId)
+      .is("withdrawn_at", null)
+      .order("id", { ascending: true })
+      .range(from, to)
+  );
+  const dimensionIds = studyDims.map((sd) => sd.dimension_id as string);
+  const assignmentRows =
+    dimensionIds.length === 0
+      ? []
+      : await fetchAllByIds<{ dimension_id: string; level: string }>(
+          enrolled.map((e) => e.user_id),
+          (ids, from, to) =>
+            supabase
+              .from("dimension_assignments")
+              .select("dimension_id, level")
+              .in("user_id", ids)
+              .in("dimension_id", dimensionIds)
+              .order("id", { ascending: true })
+              .range(from, to)
+        );
+
   const cells: { dimension: string; level: string; count: number }[] = [];
 
   for (const sd of studyDims) {
     const dim = sd.treatment_dimensions as unknown as { name: string; levels: string[] };
-    const { data: assignments } = await supabase
-      .from("dimension_assignments")
-      .select("level")
-      .eq("dimension_id", sd.dimension_id);
+    const assignments = assignmentRows.filter((a) => a.dimension_id === sd.dimension_id);
 
     const levels = resolveLevels(
       { id: sd.dimension_id, name: dim.name, levels: dim.levels },
@@ -359,7 +387,7 @@ export async function checkBalance(studyId: string) {
     );
     const counts: Record<string, number> = {};
     for (const l of levels) counts[l] = 0;
-    for (const a of assignments || []) {
+    for (const a of assignments) {
       if (a.level in counts) counts[a.level]++;
     }
 

@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import {
+  describeScheduleRows,
+  summarizeSchedule,
+} from "@/app/api/v1/surveys/[id]/schedule/schedule-config";
 
 interface Survey {
   id: string;
@@ -25,31 +29,41 @@ function questionCount(s: Survey): number {
   return s.survey_questions?.[0]?.count ?? 0;
 }
 
-function timepointLabel(s: Survey): string | null {
-  const sched = s.survey_schedules?.[0];
-  if (!sched) return null;
-  const cfg = sched.trigger_config || {};
-  const tp = typeof cfg.timepoint === "string" ? cfg.timepoint : null;
-  const offset = typeof cfg.offset_days === "number" ? cfg.offset_days : null;
-  if (tp && offset !== null) return `${tp} · day ${offset}`;
-  if (tp) return tp;
-  if (offset !== null) return `day ${offset}`;
-  return sched.trigger_type;
+interface DeliveryState {
+  tone: "ok" | "muted" | "warn" | "alert";
+  text: string;
 }
+
+const DELIVERY_TONES: Record<DeliveryState["tone"], string> = {
+  ok: "text-green-700",
+  muted: "text-gray-500",
+  warn: "text-amber-600",
+  alert: "font-medium text-red-600",
+};
 
 /**
  * Delivery (src/lib/services/survey-delivery.ts) only creates survey_deliveries
- * from an ACTIVE survey_schedules row: trigger_type "time" (due offset_days
- * after enrollment) or "event" (config names the event). A survey with no such
- * row is never delivered, whatever its status says.
+ * from an ACTIVE survey_schedules row of type "time" or "event" on an ACTIVE
+ * survey. This reports which of those two switches is missing, if any.
  */
-function hasDeliveringSchedule(s: Survey): boolean {
-  return (s.survey_schedules || []).some(
-    (sched) =>
-      sched.active &&
-      (sched.trigger_type === "time" ||
-        (sched.trigger_type === "event" && typeof sched.trigger_config?.event === "string"))
-  );
+function deliveryState(s: Survey): DeliveryState {
+  const { schedule } = describeScheduleRows(s.survey_schedules || []);
+  const active = s.status === "active";
+  if (!schedule) {
+    return active
+      ? { tone: "alert", text: "Active but not scheduled — will not be delivered to participants." }
+      : { tone: "warn", text: "No delivery schedule — add one before activating, or it will not be delivered." };
+  }
+  const tp = schedule.trigger_config.timepoint;
+  const summary = `${tp ? `${tp} · ` : ""}${summarizeSchedule(schedule)}`;
+  if (!schedule.active) {
+    return active
+      ? { tone: "alert", text: `Active, but its schedule is switched off — not being delivered. (${summary})` }
+      : { tone: "warn", text: `Schedule is switched off. (${summary})` };
+  }
+  return active
+    ? { tone: "ok", text: `Delivering: ${summary}.` }
+    : { tone: "muted", text: `Scheduled, not delivering while ${s.status}: ${summary}.` };
 }
 
 async function errorFrom(res: Response, fallback: string): Promise<string> {
@@ -137,8 +151,8 @@ export default function AdminSurveysPage() {
         participants; questions are stored per-item so responses score correctly.
       </p>
       <p className="text-xs text-gray-500 mb-4">
-        Delivery also needs a schedule (when to send it). Schedules can&apos;t be created on this page yet —
-        a survey created here has none until one is added in the database, and is flagged below.
+        Delivery also needs a schedule (when to send it). Open a survey to set its delivery schedule;
+        each survey below shows whether it is actually being delivered.
       </p>
 
       {error && (
@@ -175,8 +189,7 @@ export default function AdminSurveysPage() {
         <ul className="space-y-2">
           {surveys.map((s) => {
             const qc = questionCount(s);
-            const tp = timepointLabel(s);
-            const scheduled = hasDeliveringSchedule(s);
+            const delivery = deliveryState(s);
             return (
               <li
                 key={s.id}
@@ -195,26 +208,21 @@ export default function AdminSurveysPage() {
                   </div>
                   <p className="text-xs text-gray-500 mt-0.5">
                     {qc} question{qc === 1 ? "" : "s"}
-                    {tp && <> · {tp}</>}
                     {qc === 0 && <span className="text-amber-600"> · needs questions</span>}
                   </p>
-                  {!scheduled && (
-                    <p
-                      role={s.status === "active" ? "alert" : undefined}
-                      className={`mt-1 text-xs ${s.status === "active" ? "font-medium text-red-600" : "text-amber-600"}`}
-                    >
-                      {s.status === "active"
-                        ? "Active but not scheduled — will not be delivered to participants."
-                        : "No delivery schedule — activating this survey will not deliver it."}
-                    </p>
-                  )}
+                  <p
+                    role={delivery.tone === "alert" ? "alert" : undefined}
+                    className={`mt-1 text-xs ${DELIVERY_TONES[delivery.tone]}`}
+                  >
+                    {delivery.text}
+                  </p>
                 </div>
 
                 <Link
                   href={`/admin/surveys/${s.id}`}
                   className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
                 >
-                  Edit questions
+                  Edit &amp; schedule
                 </Link>
 
                 {s.status === "active" ? (

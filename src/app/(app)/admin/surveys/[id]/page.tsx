@@ -11,6 +11,7 @@ import {
   textToOptions,
   type ScaleConfig,
 } from "@/lib/utils/survey-authoring";
+import SurveyScheduleSection from "@/components/admin/survey-schedule-section";
 
 const QUESTION_TYPES = [
   { value: "likert_5", label: "Likert (1–5)" },
@@ -321,6 +322,9 @@ This survey already has ${responseCount} response${responseCount === 1 ? "" : "s
           />
         </label>
       </div>
+
+      {/* Saved on its own (not by "Save survey"): it is a separate record. */}
+      <SurveyScheduleSection surveyId={surveyId} />
 
       <p className="text-sm text-gray-500 mb-2">
         Each item&apos;s <code className="text-xs">item_code</code> keys the stored answer, and{" "}

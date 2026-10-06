@@ -73,6 +73,10 @@ export default async function ResearchPage() {
                 {health.balance.balanced ? "✓ balanced" : "⚠ check"}
               </span>
             </h2>
+            <p className="text-xs text-gray-500 mb-2">
+              Counts the {health.enrollment.active} participant{health.enrollment.active === 1 ? "" : "s"} enrolled
+              in this study now; withdrawn participants and other studies are left out.
+            </p>
             <div className="rounded-lg border border-gray-200 overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 text-gray-500 text-left">

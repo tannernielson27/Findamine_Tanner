@@ -21,8 +21,9 @@ export interface StudyHealth {
     target_sample_size: number | null;
   } | null;
   /**
-   * Counted from study_enrollments. Use this, not study.current_sample_size:
-   * that column is incremented on enrollment and never decremented on withdrawal.
+   * Counted live from study_enrollments. Prefer this to study.current_sample_size:
+   * that column is a cached copy of `active`, refreshed on enrollment, manual
+   * randomization and withdrawal, so it can lag a row edited any other way.
    */
   enrollment: { active: number; withdrawn: number };
   /**
@@ -78,8 +79,8 @@ export async function getStudyHealth(studyId: string): Promise<StudyHealth> {
   );
   const userIds = enrollments.map((e) => e.user_id);
 
-  // treatment_studies.current_sample_size is only ever incremented (it is not
-  // decremented on withdrawal), so enrollment is counted from the rows instead.
+  // Enrollment is counted from the rows; treatment_studies.current_sample_size
+  // is only a cached copy of the active count.
   const { count: withdrawnCount } = await supabase
     .from("study_enrollments")
     .select("*", { count: "exact", head: true })

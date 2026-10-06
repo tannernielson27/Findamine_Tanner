@@ -74,7 +74,22 @@ export async function POST(request: NextRequest) {
       .update({ withdrawn_at: now })
       .eq("user_id", user.id)
       .is("withdrawn_at", null)
-      .select("id");
+      .select("id, study_id");
+
+    // Keep treatment_studies.current_sample_size meaning "currently enrolled":
+    // enrollment and manual randomization set it to this same count, so without
+    // a refresh here it would stay one too high until the next person enrolls.
+    for (const studyId of new Set((withdrawn || []).map((w) => w.study_id as string))) {
+      const { count } = await supabase
+        .from("study_enrollments")
+        .select("*", { count: "exact", head: true })
+        .eq("study_id", studyId)
+        .is("withdrawn_at", null);
+      await supabase
+        .from("treatment_studies")
+        .update({ current_sample_size: count || 0 })
+        .eq("id", studyId);
+    }
 
     // Stop referral payouts in both directions (recruiter or minion).
     await supabase.from("minion_links").delete().eq("recruiter_id", user.id);
