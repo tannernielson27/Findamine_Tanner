@@ -82,10 +82,11 @@ export async function POST(
       }
 
       const ext = file.name.split(".").pop() || "jpg";
-      const path = `geo-selfies/${user.id}/${findId}_${Date.now()}.${ext}`;
+      const path = `${user.id}/${findId}_${Date.now()}.${ext}`;
 
+      // Private bucket (migration 070); only the path is stored.
       const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("hunt-media")
+        .from("geo-selfies")
         .upload(path, file, { contentType: file.type });
 
       if (uploadError) throw new ApiError(500, uploadError.message);
