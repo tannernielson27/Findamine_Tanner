@@ -142,7 +142,7 @@ export default function HuntAnalyticsPage() {
                     <div className="flex-1 bg-gray-100 rounded-full h-4 relative">
                       {stop.avg_score !== null && (
                         <div
-                          className="h-4 rounded-full transition-all flex items-center justify-end pr-1"
+                          className="h-4 rounded-full transition-[width] flex items-center justify-end pr-1"
                           style={{
                             width: `${Math.min(Math.max(stop.avg_score, 5), 100)}%`,
                             backgroundColor: stop.avg_score >= 70 ? "#22c55e" : stop.avg_score >= 40 ? "#f59e0b" : "#ef4444",

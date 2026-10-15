@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { formatGradeRange } from "@/lib/utils/grade-bands";
+import { Collapse } from "@/components/ui/collapse";
 
 interface CoverageData {
   subjects: Record<string, number>;
@@ -79,7 +80,7 @@ export default function HuntCoverageReport({ finds }: HuntCoverageReportProps) {
         <span className="text-gray-400">{expanded ? "▲" : "▼"}</span>
       </button>
 
-      {expanded && (
+      <Collapse open={expanded}>
         <div className="mt-3 space-y-3">
           {/* Subjects */}
           <div>
@@ -124,7 +125,7 @@ export default function HuntCoverageReport({ finds }: HuntCoverageReportProps) {
             </p>
           )}
         </div>
-      )}
+      </Collapse>
     </div>
   );
 }

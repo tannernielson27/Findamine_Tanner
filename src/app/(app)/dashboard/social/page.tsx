@@ -241,7 +241,7 @@ export default function SocialPage() {
       </header>
 
       {loading ? (
-        <div className="animate-pulse space-y-4">
+        <div className="fm-shimmer space-y-4">
           <div className="h-40 bg-themed-bg border border-themed-border rounded-xl" />
           <div className="h-48 bg-themed-bg border border-themed-border rounded-xl" />
         </div>

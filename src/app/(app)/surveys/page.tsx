@@ -56,7 +56,7 @@ export default function SurveysPage() {
   if (deliveries === null) {
     return (
       <main className="mx-auto max-w-2xl px-4 py-6">
-        <div className="animate-pulse space-y-4">
+        <div className="fm-shimmer space-y-4">
           <div className="h-8 w-40 bg-gray-100 rounded-xl" />
           <div className="h-24 bg-gray-100 rounded-2xl" />
           <div className="h-24 bg-gray-100 rounded-2xl" />

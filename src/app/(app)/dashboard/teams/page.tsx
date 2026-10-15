@@ -73,7 +73,7 @@ export default function TeamsPage() {
       <p className="mb-6 text-base text-themed-muted">The teams you&apos;re on, one per team hunt.</p>
 
       {loading ? (
-        <div className="animate-pulse space-y-3" aria-busy="true">
+        <div className="fm-shimmer space-y-3" aria-busy="true">
           <p className="sr-only" role="status">Loading your teams</p>
           {[...Array(3)].map((_, i) => <div key={i} className="h-24 rounded-lg bg-themed-border" />)}
         </div>

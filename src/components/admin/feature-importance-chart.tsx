@@ -49,7 +49,7 @@ export default function FeatureImportanceChart({
   }, [mode, sessionId]);
 
   if (loading) {
-    return <div className="h-48 animate-pulse bg-gray-100 rounded" />;
+    return <div className="h-48 fm-shimmer bg-gray-100 rounded" />;
   }
 
   return (

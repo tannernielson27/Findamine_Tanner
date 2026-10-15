@@ -27,7 +27,7 @@ export default function FalsePositiveMetrics() {
   }, []);
 
   if (error) return <p role="alert" className="text-xs text-red-600">Could not load model metrics: {error}</p>;
-  if (!data) return <div className="h-32 animate-pulse bg-gray-100 rounded" />;
+  if (!data) return <div className="h-32 fm-shimmer bg-gray-100 rounded" />;
 
   const cm = data.confusion_matrix;
 

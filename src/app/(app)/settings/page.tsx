@@ -69,7 +69,7 @@ export default function SettingsPage() {
   if (!user) {
     return (
       <main className="mx-auto max-w-2xl px-4 py-12 text-center">
-        <div className="animate-pulse space-y-4">
+        <div className="fm-shimmer space-y-4">
           <div className="h-8 w-32 bg-gray-100 rounded-xl mx-auto" />
           <div className="h-40 bg-gray-100 rounded-2xl" />
         </div>
@@ -104,7 +104,7 @@ export default function SettingsPage() {
               id="displayName"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              className="block w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition-all"
+              className="block w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition"
             />
           </div>
 
@@ -117,7 +117,7 @@ export default function SettingsPage() {
           <button
             type="submit"
             disabled={saving}
-            className="rounded-xl bg-brand px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark disabled:opacity-50 transition-all"
+            className="rounded-xl bg-brand px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark disabled:opacity-50 transition"
           >
             {saving ? "Saving..." : "Save Changes"}
           </button>

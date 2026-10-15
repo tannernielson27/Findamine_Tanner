@@ -88,6 +88,60 @@ body {
   animation: findamine-burning-pulse 0.7s var(--ease-out, ease-in-out) infinite;
 }
 
+/* ─── Loading + entrance motion ────────────────────────────────
+   Both live under no-preference so reduced-motion users get static
+   skeletons and content that is simply there (no hidden delay).
+
+   .fm-shimmer: a light band sweeps across a skeleton. Put it on the
+   skeleton wrapper (or a single block); the sweep is a translated
+   pseudo-element, so it never repaints the blocks underneath.
+
+   .fm-stagger: put on a list/grid container; its children rise in on
+   first paint, 30ms apart, capped at 8 steps so long lists never wait.
+   CSS-only, so server-rendered lists animate without waiting on
+   hydration, and items already on screen don't replay when the list
+   re-renders (only newly mounted children animate). */
+
+.fm-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+@keyframes findamine-shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
+@keyframes findamine-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .fm-shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.6), transparent);
+    animation: findamine-shimmer 1.4s ease-in-out infinite;
+  }
+
+  .fm-stagger > * {
+    animation: findamine-enter 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(var(--fm-i, 7) * 30ms);
+  }
+}
+
+.fm-stagger > :nth-child(1) { --fm-i: 0; }
+.fm-stagger > :nth-child(2) { --fm-i: 1; }
+.fm-stagger > :nth-child(3) { --fm-i: 2; }
+.fm-stagger > :nth-child(4) { --fm-i: 3; }
+.fm-stagger > :nth-child(5) { --fm-i: 4; }
+.fm-stagger > :nth-child(6) { --fm-i: 5; }
+.fm-stagger > :nth-child(7) { --fm-i: 6; }
+
 /* ─── Reduced motion ────────────────────────────────────────────
    Honor the OS setting globally. Confetti is already gated in JS via
    useReducedMotion; this neutralizes CSS-driven motion as a backstop. */

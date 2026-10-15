@@ -5,6 +5,8 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { popover, SPRING_SNAPPY } from "@/lib/motion";
 import NotificationBell from "./notification-bell";
 import SurveyNudge from "./survey-nudge";
 import { Compass, Map, PlusCircle, Users, ShieldCheck, Settings, LogOut, Menu, X, Lock, Trophy, type LucideIcon } from "lucide-react";
@@ -73,14 +75,23 @@ export default function Navbar({ user }: NavbarProps) {
                 key={link.href}
                 href={link.href}
                 aria-current={active ? "page" : undefined}
-                className={`flex h-10 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-sm transition-colors ${
+                className={`relative flex h-10 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-sm transition-colors ${
                   active
-                    ? "bg-brand-light text-brand-dark font-semibold"
+                    ? "text-brand-dark font-semibold"
                     : "text-themed-muted hover:bg-themed-bg hover:text-themed-text"
                 }`}
               >
-                <Icon className="w-4 h-4" aria-hidden="true" />
-                {link.label}
+                {/* One shared pill that slides to the active link on navigation */}
+                {active && (
+                  <motion.span
+                    layoutId="nav-active-pill"
+                    aria-hidden="true"
+                    className="absolute inset-0 rounded-lg bg-brand-light"
+                    transition={SPRING_SNAPPY}
+                  />
+                )}
+                <Icon className="relative w-4 h-4" aria-hidden="true" />
+                <span className="relative">{link.label}</span>
               </Link>
             );
           })}
@@ -146,8 +157,17 @@ export default function Navbar({ user }: NavbarProps) {
       </div>
 
       {/* Mobile dropdown */}
+      <AnimatePresence>
       {menuOpen && user && (
-        <nav aria-label="Main" className="lg:hidden border-t border-themed-border bg-white px-3 py-2 space-y-0.5">
+        <motion.nav
+          key="mobile-nav"
+          aria-label="Main"
+          variants={popover}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          className="lg:hidden origin-top border-t border-themed-border bg-white px-3 py-2 space-y-0.5"
+        >
           {navLinks.map((link) => {
             const Icon = NAV_ICONS[link.icon];
             const active = pathname === link.href || (link.href !== "/dashboard" && pathname.startsWith(link.href));
@@ -184,8 +204,9 @@ export default function Navbar({ user }: NavbarProps) {
             <LogOut className="w-5 h-5" aria-hidden="true" />
             Sign out
           </button>
-        </nav>
+        </motion.nav>
       )}
+      </AnimatePresence>
     </header>
   );
 }

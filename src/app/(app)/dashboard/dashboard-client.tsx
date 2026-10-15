@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import InsightsPanel from "@/components/hunts/insights-panel";
 import StreakDisplay from "@/components/gamification/streak-display";
 import FeaturedHunts from "@/components/gamification/featured-hunts";
+import { CountUp } from "@/components/ui/count-up";
 import { Map, Users, Award, Heart, Compass, ChevronRight, MapPin, Trophy, UserRound } from "lucide-react";
 
 interface DashboardUser {
@@ -118,7 +119,7 @@ export default function DashboardClient({ user }: { user: DashboardUser }) {
         <FeaturedHunts />
 
         {/* Shortcuts */}
-        <nav aria-label="Your stuff" className="grid gap-3 sm:grid-cols-2">
+        <nav aria-label="Your stuff" className="fm-stagger grid gap-3 sm:grid-cols-2">
           <DashboardCard title="My Profile" description="Your stats and total points" count={counts.points} countLabel="pts" href="/dashboard/profile" icon={UserRound} />
           <DashboardCard title="Leaderboard" description="See where you stand" href="/leaderboard" icon={Trophy} />
           {canCreateHunts && (
@@ -169,7 +170,7 @@ function DashboardCard({
       </span>
       {count > 0 && (
         <span className="shrink-0 font-[family-name:var(--font-display)] text-xl font-bold tabular-nums text-themed-text">
-          {count}
+          <CountUp value={count} />
           {countLabel && (
             <span className="ml-1 font-[family-name:var(--font-body)] text-xs font-normal text-themed-muted">{countLabel}</span>
           )}

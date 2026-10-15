@@ -136,7 +136,7 @@ export default function HuntTeamPanel({ huntId, playHref }: { huntId: string; pl
     return (
       <div className={PANEL} aria-busy="true">
         <p className="sr-only" role="status">Loading teams</p>
-        <div className="animate-pulse space-y-3">
+        <div className="fm-shimmer space-y-3">
           <div className="h-5 w-1/3 rounded bg-themed-border" />
           <div className="h-14 rounded-lg bg-themed-border" />
           <div className="h-11 rounded-lg bg-themed-border" />

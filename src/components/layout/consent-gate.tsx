@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
+import { motion } from "framer-motion";
+import { backdrop, dialog } from "@/lib/motion";
 
 /**
  * Informed-consent gate for the research study (IRB requirement).
@@ -77,13 +79,16 @@ export default function ConsentGate() {
   if (needsDecision !== true) return null;
 
   return (
-    <div
+    <motion.div
+      variants={backdrop}
+      initial="hidden"
+      animate="visible"
       className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="consent-title"
     >
-      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
+      <motion.div variants={dialog} className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
         <div className="p-6">
           <div className="flex items-center gap-2 mb-3">
             <ShieldCheck aria-hidden="true" className="w-6 h-6 text-brand" />
@@ -161,7 +166,7 @@ export default function ConsentGate() {
             </button>
           </div>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

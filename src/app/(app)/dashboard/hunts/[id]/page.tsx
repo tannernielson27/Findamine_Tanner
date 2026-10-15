@@ -213,7 +213,7 @@ export default function HuntDetailPage() {
   if (loading) {
     return (
       <main className="mx-auto max-w-4xl px-4 py-4">
-        <div className="animate-pulse space-y-4">
+        <div className="fm-shimmer space-y-4">
           <div className="h-5 bg-gray-200 rounded w-1/4" />
           <div className="h-8 bg-gray-200 rounded w-1/2" />
           <div className="h-64 bg-gray-100 rounded-xl" />

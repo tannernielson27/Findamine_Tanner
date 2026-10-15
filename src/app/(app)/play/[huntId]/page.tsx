@@ -3,11 +3,15 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Camera, RotateCcw, Star, ThumbsDown, ThumbsUp, Trophy, X } from "lucide-react";
+import { motion } from "framer-motion";
+import { flowStep } from "@/lib/motion";
+import { useFlowDirection } from "@/lib/hooks/use-flow-direction";
 import StopFlowStepper from "@/components/play/stop-flow-stepper";
 import HotColdMeter from "@/components/play/hot-cold-meter";
 import ChallengeInput from "@/components/play/challenge-input";
 import NavigateMap from "@/components/maps/navigate-map";
 import { Celebration } from "@/components/ui/celebration";
+import { CountUp } from "@/components/ui/count-up";
 import { PrivacyNoticeToast } from "@/components/play/privacy-notice-toast";
 import type { PrivacyNotice } from "@/lib/services/privacy-notice";
 import {
@@ -17,6 +21,11 @@ import {
 } from "@/lib/play/celebration";
 
 type StopStep = "prime" | "reading_check" | "clue" | "navigate" | "challenge" | "capture" | "feedback";
+
+/** Step order within a stop, for deciding which way step content slides in. */
+const STEP_ORDER: Record<StopStep, number> = {
+  prime: 0, reading_check: 1, clue: 2, navigate: 3, challenge: 4, capture: 5, feedback: 6,
+};
 
 interface Find {
   id: string;
@@ -156,6 +165,7 @@ export default function PlayPage() {
   const arriveInFlightRef = useRef(false);
   const resetForFindRef = useRef<string | null>(null);
   const currentFind = finds[currentIndex];
+  const flowDirection = useFlowDirection(step, currentIndex * 10 + STEP_ORDER[step]);
 
   // ── Finish the hunt (used by the button and by a reload after the last stop) ──
 
@@ -592,7 +602,7 @@ export default function PlayPage() {
   if (loading) {
     return (
       <main className="mx-auto max-w-2xl px-4 py-12">
-        <div className="animate-pulse space-y-4">
+        <div className="fm-shimmer space-y-4">
           <div className="h-4 bg-themed-border rounded w-1/3" />
           <div className="h-2 bg-themed-border rounded" />
           <div className="h-64 bg-themed-border/60 rounded-xl" />
@@ -801,7 +811,7 @@ export default function PlayPage() {
               aria-label={`${sessionScore} points so far`}
             >
               <Star className="h-4 w-4" aria-hidden="true" />
-              {sessionScore}
+              <CountUp value={sessionScore} />
             </span>
           )}
           <span className="font-[family-name:var(--font-handwritten)] text-xl tabular-nums text-secondary">
@@ -811,14 +821,18 @@ export default function PlayPage() {
       </div>
       <div className="h-2.5 rounded-full bg-themed-border mb-5 overflow-hidden" role="progressbar" aria-valuenow={totalCompleted} aria-valuemin={0} aria-valuemax={finds.length} aria-label={`Hunt progress: ${totalCompleted} of ${finds.length} stops completed`}>
         <div
-          className="h-2.5 rounded-full bg-secondary transition-[width] duration-500 ease-out"
-          style={{ width: `${(totalCompleted / finds.length) * 100}%` }}
+          className="h-2.5 rounded-full bg-secondary transition-transform duration-500 ease-out"
+          style={{ transform: `translateX(-${100 - (totalCompleted / finds.length) * 100}%)` }}
         />
       </div>
 
       <StopFlowStepper currentStep={step} />
 
-      <div className="bg-surface rounded-xl border border-themed-border shadow-[var(--shadow-card)] mb-4 min-h-[300px] p-4 sm:p-5" aria-live="polite">
+      <div className="bg-surface rounded-xl border border-themed-border shadow-[var(--shadow-card)] mb-4 min-h-[300px] p-4 sm:p-5 overflow-hidden" aria-live="polite">
+        {/* Keyed on step only: a stop change alone (same step) must not remount
+            the map or challenge mid-transition. Entrance only, so content is
+            interactive immediately. */}
+        <motion.div key={step} custom={flowDirection} variants={flowStep} initial="hidden" animate="visible">
         {/* ── PRIME ── */}
         {step === "prime" && currentFind?.primers && (
           <div>
@@ -1336,6 +1350,7 @@ export default function PlayPage() {
             )}
           </div>
         )}
+        </motion.div>
       </div>
 
       {/* Navigation buttons */}

@@ -104,7 +104,7 @@ export default function AdminStandardsPage() {
             <div key={fw.code} className="flex items-center gap-3 text-xs">
               <span className="w-20 text-gray-700 font-medium truncate">{fw.abbreviation}</span>
               <div className="flex-1 bg-gray-100 rounded-full h-3">
-                <div className={`h-3 rounded-full ${color} transition-all`} style={{ width: `${Math.max(pct, 3)}%` }} />
+                <div className={`h-3 rounded-full ${color} transition-[width]`} style={{ width: `${Math.max(pct, 3)}%` }} />
               </div>
               <span className={`w-8 text-right font-medium ${count === 0 ? "text-red-600" : "text-gray-700"}`}>
                 {count}

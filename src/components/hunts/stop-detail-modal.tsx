@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { ChevronRight, X } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { backdrop, dialog } from "@/lib/motion";
+import { Collapse } from "@/components/ui/collapse";
 import { GoogleMap, Marker } from "@react-google-maps/api";
 import { useGoogleMaps } from "@/components/maps/use-google-maps";
 
@@ -33,11 +36,16 @@ export default function StopDetailModal({ stop, onClose }: StopDetailModalProps)
   const hasCoords = stop.lat !== 0 && stop.lng !== 0;
 
   return (
-    <div
+    <motion.div
+      variants={backdrop}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div
+      <motion.div
+        variants={dialog}
         role="dialog"
         aria-modal="true"
         aria-labelledby="stop-detail-title"
@@ -136,7 +144,7 @@ export default function StopDetailModal({ stop, onClose }: StopDetailModalProps)
               >
                 {showHints ? "Hide" : "Show"} location hints ({stop.clue_hints.length})
               </button>
-              {showHints && (
+              <Collapse open={showHints}>
                 <div className="mt-1 space-y-1.5">
                   {stop.clue_hints.map((hint, i) => (
                     <div key={i} className="rounded-lg border border-themed-border bg-themed-bg px-3 py-2">
@@ -145,7 +153,7 @@ export default function StopDetailModal({ stop, onClose }: StopDetailModalProps)
                     </div>
                   ))}
                 </div>
-              )}
+              </Collapse>
             </div>
           )}
 
@@ -163,8 +171,8 @@ export default function StopDetailModal({ stop, onClose }: StopDetailModalProps)
             </p>
           )}
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -237,9 +245,11 @@ export function StopList({ finds }: { finds: any[] }) {
         })}
       </ol>
 
-      {selectedStop && (
-        <StopDetailModal stop={selectedStop} onClose={() => setSelectedStop(null)} />
-      )}
+      <AnimatePresence>
+        {selectedStop && (
+          <StopDetailModal key={selectedStop.id} stop={selectedStop} onClose={() => setSelectedStop(null)} />
+        )}
+      </AnimatePresence>
     </>
   );
 }

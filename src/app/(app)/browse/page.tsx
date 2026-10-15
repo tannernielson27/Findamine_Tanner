@@ -108,7 +108,7 @@ export default async function BrowseHuntsPage({
             </p>
           </div>
         ) : (
-          <div className="grid gap-3 pb-8 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="fm-stagger grid gap-3 pb-8 sm:grid-cols-2 lg:grid-cols-3">
             {hunts.map((hunt) => {
               return (
                 <Link

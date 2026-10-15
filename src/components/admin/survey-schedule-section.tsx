@@ -226,7 +226,7 @@ export default function SurveyScheduleSection({ surveyId }: Props) {
     );
   }
   if (!state) {
-    return <section className="mb-6 h-32 animate-pulse rounded-lg bg-gray-100" aria-label="Loading delivery schedule" />;
+    return <section className="mb-6 h-32 fm-shimmer rounded-lg bg-gray-100" aria-label="Loading delivery schedule" />;
   }
 
   const { schedule: draft, problem } = validate(form);

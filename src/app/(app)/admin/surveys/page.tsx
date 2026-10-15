@@ -180,7 +180,7 @@ export default function AdminSurveysPage() {
       </div>
 
       {surveys === null ? (
-        <div className="animate-pulse space-y-2">
+        <div className="fm-shimmer space-y-2">
           {[...Array(3)].map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-lg" />)}
         </div>
       ) : surveys.length === 0 ? (

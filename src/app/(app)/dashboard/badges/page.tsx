@@ -78,7 +78,7 @@ export default function BadgesPage() {
       {loading ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {[...Array(9)].map((_, i) => (
-            <div key={i} className="h-24 bg-themed-bg border border-themed-border rounded-xl animate-pulse" />
+            <div key={i} className="h-24 bg-themed-bg border border-themed-border rounded-xl fm-shimmer" />
           ))}
         </div>
       ) : filtered.length === 0 ? (

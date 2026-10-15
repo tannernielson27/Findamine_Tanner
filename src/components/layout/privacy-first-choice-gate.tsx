@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { SlidersHorizontal } from "lucide-react";
+import { motion } from "framer-motion";
+import { backdrop, dialog } from "@/lib/motion";
 
 /**
  * First-use choice gate for the NEUTRAL default condition (Workstream A / A10).
@@ -38,13 +40,16 @@ export default function PrivacyFirstChoiceGate() {
   if (!needsChoice || exempt) return null;
 
   return (
-    <div
+    <motion.div
+      variants={backdrop}
+      initial="hidden"
+      animate="visible"
       className="fixed inset-0 z-[90] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="privacy-choice-title"
     >
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl p-6">
+      <motion.div variants={dialog} className="w-full max-w-md rounded-2xl bg-white shadow-xl p-6">
         <div className="flex items-center gap-2 mb-3">
           <SlidersHorizontal aria-hidden="true" className="w-6 h-6 text-brand" />
           <h2 id="privacy-choice-title" className="text-lg font-bold text-gray-900">
@@ -65,7 +70,7 @@ export default function PrivacyFirstChoiceGate() {
         >
           Choose my settings
         </button>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

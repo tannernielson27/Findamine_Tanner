@@ -60,7 +60,7 @@ export default function TrafficPage() {
   if (loading) {
     return (
       <main className="mx-auto max-w-5xl px-4 py-4">
-        <div className="animate-pulse space-y-4">
+        <div className="fm-shimmer space-y-4">
           <div className="h-6 w-48 bg-gray-200 rounded" />
           <div className="grid grid-cols-4 gap-4">
             {[...Array(8)].map((_, i) => <div key={i} className="h-20 bg-gray-100 rounded-lg" />)}

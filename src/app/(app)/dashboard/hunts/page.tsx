@@ -33,7 +33,7 @@ export default async function MyHuntsPage() {
         </h1>
         <Link
           href="/dashboard/hunts/new"
-          className="inline-flex items-center gap-1.5 rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark hover:-translate-y-0.5 transition-all"
+          className="inline-flex items-center gap-1.5 rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark hover:-translate-y-0.5 transition"
         >
           <PlusCircle className="w-4 h-4" />
           Create Hunt
@@ -61,7 +61,7 @@ export default async function MyHuntsPage() {
             <Link
               key={hunt.id}
               href={`/dashboard/hunts/${hunt.id}`}
-              className="group flex items-center justify-between rounded-2xl border border-gray-100/80 bg-white p-5 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300"
+              className="group flex items-center justify-between rounded-2xl border border-gray-100/80 bg-white p-5 hover:shadow-lg hover:-translate-y-0.5 transition duration-300"
             >
               <div>
                 <h3 className="font-[family-name:var(--font-display)] font-semibold text-gray-900 group-hover:text-brand transition-colors">

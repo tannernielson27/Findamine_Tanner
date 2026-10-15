@@ -261,7 +261,7 @@ This survey already has ${responseCount} response${responseCount === 1 ? "" : "s
   if (questions === null) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-4">
-        <div className="animate-pulse space-y-3">
+        <div className="fm-shimmer space-y-3">
           <div className="h-6 w-48 bg-gray-100 rounded" />
           <div className="h-40 bg-gray-100 rounded-lg" />
         </div>

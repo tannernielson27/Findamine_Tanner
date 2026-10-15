@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Medal, Star, Trophy } from "lucide-react";
+import { motion } from "framer-motion";
+import { SPRING_SNAPPY } from "@/lib/motion";
 import {
   competitionRanks,
   summarizeViewerStanding,
@@ -138,7 +140,7 @@ export default function Leaderboard({ huntId }: LeaderboardProps) {
       {loading ? (
         <div className="p-4 space-y-3">
           {[...Array(5)].map((_, i) => (
-            <div key={i} className="flex items-center gap-3 animate-pulse">
+            <div key={i} className="flex items-center gap-3 fm-shimmer">
               <div className="w-9 h-9 rounded-full bg-themed-bg" />
               <div className="h-4 bg-themed-bg rounded-lg flex-1" />
               <div className="h-4 bg-themed-bg rounded-lg w-14" />
@@ -158,8 +160,12 @@ export default function Leaderboard({ huntId }: LeaderboardProps) {
             const rank = ranks[i];
             const name = entry.display_name || "Anonymous";
             return (
-              <li
+              // layout="position": when a live update reorders the board, rows
+              // slide to their new rank instead of jumping.
+              <motion.li
                 key={entry.user_id}
+                layout="position"
+                transition={SPRING_SNAPPY}
                 className={`flex min-h-14 items-center gap-3 px-4 py-2.5 transition-colors ${
                   isViewer
                     ? "bg-brand-light/40 ring-1 ring-inset ring-brand/40"
@@ -220,7 +226,7 @@ export default function Leaderboard({ huntId }: LeaderboardProps) {
                   <span className="font-[family-name:var(--font-display)] text-lg font-bold tabular-nums text-themed-text">{entry.score}</span>
                   <span className="text-xs text-themed-muted ml-1">pts</span>
                 </div>
-              </li>
+              </motion.li>
             );
           })}
 

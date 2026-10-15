@@ -19,7 +19,7 @@ interface LoginFormProps {
 }
 
 const INPUT_CLASS =
-  "block w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-base sm:text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition-all";
+  "block w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-base sm:text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition";
 
 export default function LoginForm({ next, notice }: LoginFormProps) {
   const [email, setEmail] = useState("");
@@ -190,7 +190,7 @@ export default function LoginForm({ next, notice }: LoginFormProps) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark hover:shadow-md disabled:opacity-50 transition-all"
+              className="w-full rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark hover:shadow-md disabled:opacity-50 transition"
             >
               {loading ? "Signing in..." : "Sign In"}
             </button>

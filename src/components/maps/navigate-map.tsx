@@ -81,7 +81,7 @@ export default function NavigateMap({
 
   if (!isLoaded) {
     return (
-      <div style={containerStyle} className="bg-gray-100 animate-pulse flex items-center justify-center">
+      <div style={containerStyle} className="bg-gray-100 fm-shimmer flex items-center justify-center">
         <span className="text-sm text-gray-500">Loading map...</span>
       </div>
     );

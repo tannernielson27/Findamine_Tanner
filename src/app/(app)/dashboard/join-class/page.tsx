@@ -46,7 +46,7 @@ export default function JoinClassPage() {
         </p>
         <button
           onClick={() => router.push("/dashboard")}
-          className="mt-5 rounded-xl bg-brand px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark transition-all"
+          className="mt-5 rounded-xl bg-brand px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark transition"
         >
           Go to dashboard
         </button>
@@ -75,13 +75,13 @@ export default function JoinClassPage() {
           onKeyDown={(e) => e.key === "Enter" && join()}
           placeholder="e.g. K7P2QX"
           maxLength={12}
-          className="block w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-lg font-mono tracking-widest uppercase focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition-all"
+          className="block w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-lg font-mono tracking-widest uppercase focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition"
         />
         {error && <p role="alert" className="mt-2 text-sm text-red-600">{error}</p>}
         <button
           onClick={join}
           disabled={state === "working" || !code.trim()}
-          className="mt-4 w-full rounded-xl bg-brand px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark disabled:opacity-50 transition-all"
+          className="mt-4 w-full rounded-xl bg-brand px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark disabled:opacity-50 transition"
         >
           {state === "working" ? "Joining..." : "Join class"}
         </button>

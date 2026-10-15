@@ -45,7 +45,7 @@ export default async function Home() {
             </Link>
             <Link
               href="/register"
-              className="flex min-h-11 items-center rounded-full bg-brand px-4 text-sm font-semibold text-white shadow-md shadow-brand/20 hover:shadow-lg hover:-translate-y-0.5 transition-all"
+              className="flex min-h-11 items-center rounded-full bg-brand px-4 text-sm font-semibold text-white shadow-md shadow-brand/20 hover:shadow-lg hover:-translate-y-0.5 transition"
             >
               Get Started
             </Link>
@@ -75,14 +75,14 @@ export default async function Home() {
           <div className="mt-8 flex flex-wrap justify-center gap-3">
             <Link
               href="/register"
-              className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-amber-500 via-sky-500 to-emerald-500 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-sky-500/25 hover:shadow-xl hover:shadow-sky-500/30 hover:-translate-y-0.5 transition-all"
+              className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-amber-500 via-sky-500 to-emerald-500 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-sky-500/25 hover:shadow-xl hover:shadow-sky-500/30 hover:-translate-y-0.5 transition"
             >
               Start Your Adventure
               <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
             </Link>
             <Link
               href="/browse"
-              className="inline-flex items-center gap-2 rounded-full border-2 border-gray-200 bg-white/80 backdrop-blur-sm px-6 py-3 text-sm font-semibold text-gray-700 hover:border-brand hover:text-brand transition-all"
+              className="inline-flex items-center gap-2 rounded-full border-2 border-gray-200 bg-white/80 backdrop-blur-sm px-6 py-3 text-sm font-semibold text-gray-700 hover:border-brand hover:text-brand transition"
             >
               <MapPin className="w-4 h-4" />
               Browse Hunts
@@ -140,7 +140,7 @@ export default async function Home() {
                 return (
                   <div
                     key={s.step}
-                    className="group relative rounded-2xl bg-white p-5 shadow-sm border border-gray-100/80 hover:shadow-lg hover:-translate-y-1 transition-all duration-300"
+                    className="group relative rounded-2xl bg-white p-5 shadow-sm border border-gray-100/80 hover:shadow-lg hover:-translate-y-1 transition duration-300"
                   >
                     <div className={`inline-flex rounded-xl bg-gradient-to-br ${s.color} p-2.5 text-white shadow-md mb-3`}>
                       <Icon className="w-5 h-5" />
@@ -256,13 +256,13 @@ export default async function Home() {
           <div className="flex flex-wrap justify-center gap-3">
             <Link
               href="/register"
-              className="rounded-full bg-gradient-to-r from-amber-500 via-sky-500 to-emerald-500 px-7 py-3 text-sm font-bold text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all"
+              className="rounded-full bg-gradient-to-r from-amber-500 via-sky-500 to-emerald-500 px-7 py-3 text-sm font-bold text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition"
             >
               Create Free Account
             </Link>
             <Link
               href="/login"
-              className="rounded-full border-2 border-gray-200 bg-white px-7 py-3 text-sm font-semibold text-gray-700 hover:border-brand transition-all"
+              className="rounded-full border-2 border-gray-200 bg-white px-7 py-3 text-sm font-semibold text-gray-700 hover:border-brand transition"
             >
               Sign In
             </Link>
@@ -306,7 +306,7 @@ function FeatureCard({
   accent: string;
 }) {
   return (
-    <div className="group rounded-2xl bg-[#FEFCF6] p-5 border border-gray-100/80 hover:shadow-lg hover:-translate-y-1 transition-all duration-300">
+    <div className="group rounded-2xl bg-[#FEFCF6] p-5 border border-gray-100/80 hover:shadow-lg hover:-translate-y-1 transition duration-300">
       <div className={`inline-flex rounded-xl ${accent} p-2.5 text-white shadow-sm mb-3 group-hover:scale-110 transition-transform`}>
         {icon}
       </div>

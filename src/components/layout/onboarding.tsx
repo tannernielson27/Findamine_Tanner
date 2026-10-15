@@ -284,7 +284,7 @@ export default function Onboarding({ role, userId }: OnboardingProps) {
               {steps.map((_, i) => (
                 <div
                   key={i}
-                  className={`h-1.5 rounded-full transition-all duration-300 ${
+                  className={`h-1.5 rounded-full transition-[width,background-color] duration-300 ${
                     i === step
                       ? "w-7 bg-brand"
                       : i < step
@@ -306,7 +306,7 @@ export default function Onboarding({ role, userId }: OnboardingProps) {
               )}
               <button
                 onClick={handleNext}
-                className="flex-1 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-brand-dark active:scale-[0.98]"
+                className="flex-1 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark active:scale-[0.98]"
               >
                 {isLast ? finalCta : "Next"}
               </button>

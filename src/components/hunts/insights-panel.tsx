@@ -86,7 +86,7 @@ export default function InsightsPanel() {
                 <span className="flex-1 text-gray-700">{ct.challenge_type.replace(/_/g, " ")}</span>
                 <div className="w-24 bg-gray-100 rounded-full h-2">
                   <div
-                    className="h-2 rounded-full bg-sky-500 transition-all"
+                    className="h-2 rounded-full bg-sky-500 transition-[width]"
                     style={{ width: `${ct.avg_score}%` }}
                   />
                 </div>

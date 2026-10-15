@@ -50,14 +50,17 @@ export default function HotColdMeter({ zone, color, label, emoji, distance }: Ho
 
       {/* Meter bar */}
       <div className="relative w-8 h-48 rounded-full overflow-hidden bg-gradient-to-t from-blue-500 via-green-400 via-orange-400 to-red-500" aria-hidden="true">
-        {/* Indicator */}
+        {/* Indicator: a full-height layer slid up by `position`% of the track,
+            so the move is a compositor transform rather than a layout change. */}
         <div
-          className="absolute left-0 right-0 h-3 rounded-full bg-white shadow-md border-2 transition-[bottom] duration-700 ease-out"
-          style={{
-            bottom: `${position}%`,
-            borderColor: color,
-          }}
-        />
+          className="absolute inset-0 transition-transform duration-700 ease-out"
+          style={{ transform: `translateY(-${position}%)` }}
+        >
+          <div
+            className="absolute bottom-0 left-0 right-0 h-3 rounded-full bg-white shadow-md border-2"
+            style={{ borderColor: color }}
+          />
+        </div>
       </div>
 
       <div className="text-center">

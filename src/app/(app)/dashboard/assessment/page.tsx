@@ -110,7 +110,7 @@ export default function AssessmentPage() {
     return (
       <main className="mx-auto max-w-2xl px-4 py-4" aria-busy="true">
         <p className="sr-only" role="status">Loading your assessment</p>
-        <div className="animate-pulse space-y-3">
+        <div className="fm-shimmer space-y-3">
           <div className="h-6 w-1/2 rounded bg-themed-border" />
           {[...Array(4)].map((_, i) => <div key={i} className="h-16 rounded-lg bg-themed-border" />)}
         </div>

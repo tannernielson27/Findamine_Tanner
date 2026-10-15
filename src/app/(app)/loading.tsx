@@ -6,7 +6,7 @@ export default function AppLoading() {
       <p className="sr-only" role="status">
         Loading…
       </p>
-      <div className="animate-pulse space-y-4" aria-hidden="true">
+      <div className="fm-shimmer space-y-4" aria-hidden="true">
         <div className="h-8 w-40 rounded-xl bg-gray-100" />
         <div className="h-24 rounded-2xl bg-gray-100" />
         <div className="h-24 rounded-2xl bg-gray-100" />

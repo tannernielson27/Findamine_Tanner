@@ -111,7 +111,7 @@ export default function TeamChat({ teamId, currentUserId }: TeamChatProps) {
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {loading ? (
-          <div className="animate-pulse space-y-2">
+          <div className="fm-shimmer space-y-2">
             {[...Array(3)].map((_, i) => <div key={i} className="h-8 bg-gray-100 rounded w-3/4" />)}
           </div>
         ) : messages.length === 0 ? (

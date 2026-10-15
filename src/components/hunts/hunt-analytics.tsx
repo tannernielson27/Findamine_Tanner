@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { ChevronDown } from "lucide-react";
+import { Collapse } from "@/components/ui/collapse";
 
 interface Analytics {
   analytics_available: boolean;
@@ -77,7 +78,7 @@ export default function HuntAnalytics({ huntId, compact = false }: HuntAnalytics
         />
       </button>
 
-      {expanded && (
+      <Collapse open={expanded}>
         <div className="mt-2 mb-3 space-y-4">
           {/* Summary stats */}
           <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
@@ -131,7 +132,7 @@ export default function HuntAnalytics({ huntId, compact = false }: HuntAnalytics
             </div>
           )}
         </div>
-      )}
+      </Collapse>
     </section>
   );
 }

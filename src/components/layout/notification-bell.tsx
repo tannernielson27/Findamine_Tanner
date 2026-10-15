@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "framer-motion";
+import { popover, SPRING_SNAPPY } from "@/lib/motion";
 import {
   PRIVACY_CHECKIN_TYPE,
   CHECKIN_TARGET_PATH,
@@ -51,6 +53,14 @@ export default function NotificationBell() {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
+  // Bumped only when unread rises after the first load, so the initial fetch
+  // and marking things read don't wiggle the badge. count is null until loaded.
+  const [loaded, setLoaded] = useState(false);
+  const [badge, setBadge] = useState<{ count: number | null; bumps: number }>({ count: null, bumps: 0 });
+  if (loaded && unreadCount !== badge.count) {
+    const rose = badge.count !== null && unreadCount > badge.count;
+    setBadge({ count: unreadCount, bumps: rose ? badge.bumps + 1 : badge.bumps });
+  }
 
   // State is only set after the request resolves, so calling this from an
   // effect never triggers a synchronous re-render; the skeleton is switched on
@@ -61,6 +71,7 @@ export default function NotificationBell() {
       if (res.ok) {
         const data = await res.json();
         setNotifications(data.notifications || []);
+        setLoaded(true);
       }
     } catch {
       // keep the current list on a transient failure
@@ -183,15 +194,29 @@ export default function NotificationBell() {
           <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
         </svg>
         {unreadCount > 0 && (
-          <span className="absolute top-1 right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-error px-1 text-[10px] font-bold leading-none text-white">
+          <motion.span
+            key={badge.bumps}
+            initial={badge.bumps > 0 ? { scale: 0.6 } : false}
+            animate={{ scale: 1 }}
+            transition={SPRING_SNAPPY}
+            className="absolute top-1 right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-error px-1 text-[10px] font-bold leading-none text-white"
+          >
             {unreadCount > 9 ? "9+" : unreadCount}
-          </span>
+          </motion.span>
         )}
       </button>
 
       {/* Dropdown */}
+      <AnimatePresence>
       {open && (
-        <div className="absolute right-0 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-xl border border-themed-border bg-white shadow-lg z-50">
+        <motion.div
+          key="notifications"
+          variants={popover}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          className="absolute right-0 mt-2 w-[min(20rem,calc(100vw-2rem))] origin-top-right rounded-xl border border-themed-border bg-white shadow-lg z-50"
+        >
           <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5">
             <h4 className="text-sm font-semibold text-gray-900">Notifications</h4>
             {unreadCount > 0 && (
@@ -207,7 +232,7 @@ export default function NotificationBell() {
           <div className="max-h-80 overflow-y-auto">
             {loading ? (
               <div className="p-4 space-y-2">
-                {[...Array(3)].map((_, i) => <div key={i} className="h-10 bg-gray-50 rounded animate-pulse" />)}
+                {[...Array(3)].map((_, i) => <div key={i} className="h-10 bg-gray-100 rounded fm-shimmer" />)}
               </div>
             ) : notifications.length === 0 ? (
               <p className="p-6 text-center text-sm text-gray-500">No notifications</p>
@@ -254,8 +279,9 @@ export default function NotificationBell() {
               })
             )}
           </div>
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }

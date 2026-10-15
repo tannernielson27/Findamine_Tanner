@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { countOverrides, overridesEqual, type VisibilityOverrides } from "@/lib/utils/privacy";
 import Link from "next/link";
+import { motion } from "framer-motion";
+import { backdrop, dialog } from "@/lib/motion";
 import {
   PROFILE_FIELDS, VISIBILITY_LABELS, CATEGORIES,
   type VisibilityLevel, type PrivacyTreatment,
@@ -610,7 +612,7 @@ export default function PrivacySettingsPage() {
       </div>
 
       {loadState === "loading" && (
-        <div role="status" aria-busy="true" className="animate-pulse space-y-3 mb-6">
+        <div role="status" aria-busy="true" className="fm-shimmer space-y-3 mb-6">
           <span className="sr-only">Loading your privacy settings</span>
           <div className="h-20 rounded-lg bg-gray-100" />
           <div className="h-20 rounded-lg bg-gray-100" />
@@ -915,13 +917,16 @@ export default function PrivacySettingsPage() {
       {/* HIGH-friction confirmation on protective changes (extra step + framing
           that mildly discourages restriction — disclosed at debrief). */}
       {confirmOpen && (
-        <div
+        <motion.div
+          variants={backdrop}
+          initial="hidden"
+          animate="visible"
           className="fixed inset-0 z-[95] flex items-center justify-center bg-gray-900/50 p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="friction-confirm-title"
         >
-          <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl p-5">
+          <motion.div variants={dialog} className="w-full max-w-sm rounded-2xl bg-white shadow-xl p-5">
             <h2 id="friction-confirm-title" className="text-base font-bold text-gray-900 mb-2">
               Hide this information?
             </h2>
@@ -947,8 +952,8 @@ export default function PrivacySettingsPage() {
                 Hide it anyway
               </button>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
     </main>
   );

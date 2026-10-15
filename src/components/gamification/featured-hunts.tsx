@@ -38,7 +38,7 @@ export default function FeaturedHunts() {
   return (
     <section aria-labelledby="featured-heading">
       <h2 id="featured-heading" className="mb-2 text-sm font-semibold text-themed-muted">Featured hunts</h2>
-      <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 [overscroll-behavior-x:contain]">
+      <div className="fm-stagger -mx-4 flex gap-3 overflow-x-auto px-4 pb-1 [overscroll-behavior-x:contain]">
         {featured.map((f) => (
           <Link
             key={f.hunt_id}
