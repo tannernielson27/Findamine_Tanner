@@ -597,6 +597,7 @@ export default function HuntDetailPage() {
               // Remount per stop so the form always starts from that stop's saved values.
               key={editor.mode === "edit" ? editor.find.id : "new"}
               huntId={hunt.id}
+              audience={hunt.target_audience}
               find={editor.mode === "edit" ? editor.find : undefined}
               onSaved={() => {
                 succeed(editor.mode === "edit" ? "Stop saved." : "Stop added.");

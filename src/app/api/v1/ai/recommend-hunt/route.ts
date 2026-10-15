@@ -7,6 +7,7 @@ import {
   VALID_SUBJECTS, VALID_GRADE_BANDS, VALID_LOCATION_TYPES,
   VALID_DIFFICULTY_PROGRESSIONS, validateEnum, clampInt, sanitizeForPrompt,
 } from "@/lib/utils/ai-validation";
+import { DEFAULT_GRADE_BAND, gradeBandFor } from "@/lib/utils/grade-bands";
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,8 +22,9 @@ export async function POST(request: NextRequest) {
     const subject_domains = rawSubjects.filter((s: string) => VALID_SUBJECTS.includes(s as typeof VALID_SUBJECTS[number]));
     if (subject_domains.length === 0) subject_domains.push("science_nature");
 
-    const grade_band = validateEnum(body.grade_band, VALID_GRADE_BANDS, "grade_band", "3-5");
-    const target_audience = validateEnum(body.target_audience, ["kids", "teens", "adults", "family", "all"] as const, "target_audience", "kids");
+    const grade_band = validateEnum(body.grade_band, VALID_GRADE_BANDS, "grade_band", DEFAULT_GRADE_BAND);
+    const band = gradeBandFor(grade_band);
+    const target_audience = validateEnum(body.target_audience, ["kids", "teens", "adults", "family", "all"] as const, "target_audience", band.audience);
     const location_type = validateEnum(body.location_type, VALID_LOCATION_TYPES, "location_type", "any");
     const difficulty_progression = validateEnum(body.difficulty_progression, VALID_DIFFICULTY_PROGRESSIONS, "difficulty_progression", "ascending");
     const target_duration_min = clampInt(body.target_duration_min, 10, 180, 40);
@@ -31,14 +33,8 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createSupabaseServiceClient();
 
-    // Parse grade band into range
-    const gradeMap: Record<string, { min: number; max: number }> = {
-      "K-2": { min: 0, max: 2 },
-      "3-5": { min: 3, max: 5 },
-      "6-8": { min: 6, max: 8 },
-      "9-12": { min: 9, max: 12 },
-    };
-    const gradeRange = gradeMap[grade_band] || { min: 3, max: 8 };
+    // College content is drawn from high-school level up; the library stops at grade 12.
+    const gradeRange = band.libraryRange;
 
     // Fetch matching tasks from library
     let taskQuery = supabase
@@ -117,7 +113,7 @@ export async function POST(request: NextRequest) {
       })) || [],
       huntSpec: {
         subject_domains,
-        grade_band,
+        grade_band: band.promptAudience,
         target_audience,
         location_type,
         target_duration_min,

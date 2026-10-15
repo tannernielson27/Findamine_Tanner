@@ -37,8 +37,8 @@ const TEMPLATES: PromptTemplate[] = [
   {
     mode: 6,
     label: "Suggest alternatives",
-    template: "I'm teaching {topic} to grade [X] students outdoors. Give me 3 challenge types I haven't considered. What creative approaches would make this memorable?",
-    placeholder: "What topic and grade level?",
+    template: "I'm teaching {topic} outdoors to [who's playing, e.g. 5th graders or college freshmen]. Give me 3 challenge types I haven't considered. What creative approaches would make this memorable?",
+    placeholder: "What topic, and who's playing?",
   },
   {
     mode: 7,

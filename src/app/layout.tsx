@@ -9,7 +9,7 @@ export const metadata: Metadata = {
     template: "%s | findamine",
   },
   description:
-    "Location-based educational scavenger hunts for classrooms and families.",
+    "Location-based educational scavenger hunts for classrooms, campuses, and curious explorers.",
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "48x48" },

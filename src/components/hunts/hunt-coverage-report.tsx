@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { formatGradeRange } from "@/lib/utils/grade-bands";
 
 interface CoverageData {
   subjects: Record<string, number>;
@@ -15,10 +16,6 @@ interface HuntCoverageReportProps {
   finds: {
     tasks?: { subject_domain?: string | null; challenge_type?: string; grade_range_min?: number | null; grade_range_max?: number | null; estimated_minutes?: number | null } | null;
   }[];
-}
-
-function gradeLabel(grade: number): string {
-  return grade === 0 ? "K" : String(grade);
 }
 
 export default function HuntCoverageReport({ finds }: HuntCoverageReportProps) {
@@ -111,8 +108,7 @@ export default function HuntCoverageReport({ finds }: HuntCoverageReportProps) {
           {/* Grade range */}
           {coverage.gradeRange && (
             <p className="text-[11px] text-gray-500">
-              Grade range: {gradeLabel(coverage.gradeRange.min)}
-              {coverage.gradeRange.max !== coverage.gradeRange.min && `–${gradeLabel(coverage.gradeRange.max)}`}
+              Level: {formatGradeRange(coverage.gradeRange.min, coverage.gradeRange.max)}
             </p>
           )}
 

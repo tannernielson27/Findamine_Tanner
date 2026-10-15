@@ -65,7 +65,7 @@ export default async function LoginPage({
           </h1>
           <p className="text-sm text-gray-600">
             {account === "no_profile"
-              ? "You're signed in, but there is no findamine profile for this login. It may have been removed, or sign-up didn't finish. Sign out and create a new account, or contact your teacher or organizer if you think this is a mistake."
+              ? "You're signed in, but there is no findamine profile for this login. It may have been removed, or sign-up didn't finish. Sign out and create a new account, or contact your instructor or organizer if you think this is a mistake."
               : "You're signed in, but we had trouble loading your profile just now. Please try again in a moment."}
           </p>
           {account === "unavailable" && (

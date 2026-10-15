@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "findamine",
     short_name: "findamine",
-    description: "Location-based educational scavenger hunts for classrooms and families.",
+    description: "Location-based educational scavenger hunts for classrooms, campuses, and curious explorers.",
     start_url: "/",
     display: "standalone",
     background_color: "#FEFCF6",

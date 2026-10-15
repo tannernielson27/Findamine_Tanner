@@ -227,7 +227,7 @@ export default function HuntTeamPanel({ huntId, playHref }: { huntId: string; pl
           <p className="mt-3 text-sm text-themed-muted">
             {selfSelect
               ? "To switch teams, leave this one first. "
-              : "Your teacher put you on this team. "}
+              : "Your instructor put you on this team. "}
             <Link href="/dashboard/teams" className="font-medium text-link underline hover:text-link-dark">
               Open team chat
             </Link>
@@ -256,7 +256,7 @@ export default function HuntTeamPanel({ huntId, playHref }: { huntId: string; pl
       ) : (
         <>
           <p className="text-base text-themed-text">
-            Your teacher hasn&apos;t assigned teams yet. You&apos;ll be able to start once you&apos;re on a team.
+            Your instructor hasn&apos;t assigned teams yet. You&apos;ll be able to start once you&apos;re on a team.
           </p>
           <button type="button" onClick={retry} className={`${SECONDARY_BUTTON} mt-3`}>
             Check again

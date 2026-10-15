@@ -61,7 +61,7 @@ export default function JoinClassPage() {
         Join a class
       </h1>
       <p className="text-sm text-gray-500 mb-6">
-        Enter the class code your teacher shared to join their roster.
+        Enter the class code your instructor shared to join their roster.
       </p>
 
       <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-6">

@@ -185,9 +185,9 @@ export function getGrowthMindsetMessage(
         nextSteps: "On to the next challenge.",
       },
       adult: {
-        main: "Correct.",
-        explanation: "Your analytical approach was effective here.",
-        nextSteps: "Proceeding to the next location.",
+        main: "Nailed it.",
+        explanation: "Good read on the clue. Your reasoning held up.",
+        nextSteps: "On to the next stop.",
       },
     },
     incorrect: {
@@ -207,9 +207,9 @@ export function getGrowthMindsetMessage(
         nextSteps: attemptNumber < 5 ? "Give it another shot with a different angle." : "Moving on. This kind of challenge builds resilience.",
       },
       adult: {
-        main: "Incorrect.",
-        explanation: "Consider revisiting the context provided in the primer and clue.",
-        nextSteps: attemptNumber < 5 ? "Try again." : "Continuing to next stop.",
+        main: "Not quite.",
+        explanation: "Take another look at the primer and what's around you. The detail you need is usually there.",
+        nextSteps: attemptNumber < 5 ? "Give it another go." : "Let's move on. You can come back to this one.",
       },
     },
     partial: {
@@ -229,9 +229,9 @@ export function getGrowthMindsetMessage(
         nextSteps: "Refine your response with the additional context.",
       },
       adult: {
-        main: "Partial credit awarded.",
-        explanation: "Your response addresses part of the question. Consider the full scope.",
-        nextSteps: "Revise with additional detail.",
+        main: "Partly there. Partial credit.",
+        explanation: "You've got part of it. Something's still missing.",
+        nextSteps: "Add the missing piece and resubmit.",
       },
     },
   };

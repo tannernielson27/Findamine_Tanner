@@ -181,20 +181,21 @@ export async function generateContent(params: {
   const safeLoc = sanitizeForPrompt(locationName, 200);
   const safeDomain = sanitizeForPrompt(subjectDomain, 50);
   const safeExisting = sanitizeForPrompt(existingContent, 500);
+  const players = describePlayers(gradeRange, ageBand === "adult" ? gradeBandFor("college").promptAudience : "students in grades 3-5");
 
   const prompts: Record<string, string> = {
-    clue: `Create a fun, age-appropriate clue that leads learners to "${safeLoc || "a location"}".
-Subject: ${safeDomain || "general"}. Grade range: ${gradeRange?.min || 3}-${gradeRange?.max || 5}.
+    clue: `Create an intriguing clue, pitched at the players, that leads learners to "${safeLoc || "a location"}".
+Subject: ${safeDomain || "general"}. Players: ${players}.
 ${safeExisting ? `Improve this existing clue: "${safeExisting}"` : "Write a new clue."}
 The clue should be intriguing and encourage exploration. 2-3 sentences max.`,
 
     task: `Create a challenge question for learners at "${safeLoc || "a location"}".
-Subject: ${safeDomain || "general"}. Grade range: ${gradeRange?.min || 3}-${gradeRange?.max || 5}.
+Subject: ${safeDomain || "general"}. Players: ${players}.
 ${safeExisting ? `Improve this existing challenge: "${safeExisting}"` : "Write a new challenge."}
 Include the question and the correct answer. Format as JSON: {"question": "...", "correct_answer": "...", "hint": "..."}`,
 
     primer: `Create a brief educational primer (concept review) for the topic "${safeDomain || "general exploration"}".
-Grade range: ${gradeRange?.min || 3}-${gradeRange?.max || 5}.
+Players: ${players}.
 ${safeExisting ? `Improve this existing primer: "${safeExisting}"` : "Write a new primer."}
 Keep it to 2-3 sentences. Make it engaging and informative.`,
   };
@@ -219,6 +220,7 @@ Keep it to 2-3 sentences. Make it engaging and informative.`,
 import OpenAI from "openai";
 import { sanitizeForPrompt } from "@/lib/utils/ai-validation";
 import { ApiError } from "@/lib/utils/api-auth";
+import { describePlayers, gradeBandFor } from "@/lib/utils/grade-bands";
 
 let _openai: OpenAI | null = null;
 function getOpenAI(): OpenAI {
@@ -262,10 +264,10 @@ export async function generateReadingCheck(params: {
 }): Promise<{ question: string; options: string[]; correct_answer: string }[]> {
   const { primerContent, numQuestions = 3, gradeRange } = params;
 
-  const prompt = `Generate ${numQuestions} multiple-choice comprehension questions to check if a student understood this educational primer content. Each question should have 4 options with exactly 1 correct answer.
+  const prompt = `Generate ${numQuestions} multiple-choice comprehension questions to check if a player understood this educational primer content. Each question should have 4 options with exactly 1 correct answer.
 
 Primer content: ${JSON.stringify(primerContent).slice(0, 1500)}
-Grade level: ${gradeRange ? `${gradeRange.min}-${gradeRange.max}` : "3-8"}
+Players: ${describePlayers(gradeRange, "students in grades 3-8")}
 
 Format as JSON array:
 [{"question": "...", "options": ["A", "B", "C", "D"], "correct_answer": "A"}]`;
@@ -307,7 +309,7 @@ export async function generateClueWithHints(params: {
   const { primerContent, taskContent, locationName, locationType, difficultyTier, gradeRange } = params;
 
   const difficultyInstructions = {
-    easy: "The clue should nearly give away the location. A young child should be able to find it with minimal effort.",
+    easy: "The clue should nearly give away the location. A first-time player should be able to find it with minimal effort.",
     medium: "The clue should require inference from the primer knowledge. The player must think about what they learned to decode it.",
     hard: "The clue should be a riddle that requires combining primer knowledge with environmental observation. It should take real thinking.",
   };
@@ -318,7 +320,7 @@ Context:
 - Location: "${sanitizeForPrompt(locationName, 200)}" (type: ${sanitizeForPrompt(locationType, 30)})
 - Primer teaches: ${JSON.stringify(primerContent).slice(0, 500)}
 - Challenge asks: ${(taskContent as { question?: string }).question || JSON.stringify(taskContent).slice(0, 300)}
-- Grade range: ${gradeRange?.min || 3}-${gradeRange?.max || 8}
+- Players: ${describePlayers(gradeRange, "students in grades 3-8")}
 - Difficulty: ${difficultyTier} — ${difficultyInstructions[difficultyTier]}
 
 Generate:
@@ -336,7 +338,7 @@ Format as JSON: {"clue_text": "...", "clue_hints": ["hint1", "hint2", "hint3"]}`
       max_tokens: 400,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: "You create engaging clues for educational GPS scavenger hunts. Output valid JSON only." },
+        { role: "system", content: "You create engaging clues for educational GPS scavenger hunts, written in a voice that fits the players described. Output valid JSON only." },
         { role: "user", content: prompt },
       ],
     });
@@ -431,7 +433,7 @@ export async function generateModule(params: {
 
 Specifications:
 - Subject: ${subject}
-- Grade band: ${gradeBand}
+- Players: ${gradeBand}
 - Challenge type: ${challengeType}
 - Difficulty: ${difficultyTier}
 - Location type: ${locationType}
@@ -444,7 +446,7 @@ Generate:
 1. PRIMER: A short educational review that teaches the concept before the challenge.
    - Title (concise)
    - Content as JSON: {"text": "2-4 sentences explaining the concept", "items": ["key fact 1", "key fact 2", "key fact 3"]}
-   - Learning objectives (1-2 specific things students will understand)
+   - Learning objectives (1-2 specific things players will understand)
 
 2. TASK: A challenge question that tests the concept from the primer.
    - Title (concise)
@@ -474,7 +476,7 @@ Format as JSON:
       max_tokens: 1200,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: "You are an expert educational content designer for outdoor learning experiences. Create engaging, age-appropriate content. Output valid JSON only." },
+        { role: "system", content: "You are an expert educational content designer for outdoor learning experiences. Create engaging content pitched at the players described — for adults, write like a sharp peer, not a teacher talking to kids. Output valid JSON only." },
         { role: "user", content: prompt },
       ],
     });
@@ -528,7 +530,7 @@ export async function recommendHunt(params: {
 
 Hunt specifications:
 - Subjects: ${huntSpec.subject_domains.join(", ")}
-- Grade band: ${huntSpec.grade_band}
+- Players: ${huntSpec.grade_band}
 - Audience: ${huntSpec.target_audience}
 - Location type: ${huntSpec.location_type}
 - Target duration: ${huntSpec.target_duration_min} minutes
@@ -552,6 +554,7 @@ Rules:
 5. Generate a clue + 3 hints per stop
 6. Total estimated time should be close to ${huntSpec.target_duration_min} minutes
 7. Create a cohesive hunt title, description, and narrative
+8. Write every title, clue and hint in a voice that fits the players. Library content may be written for younger students; for adults, keep the facts but make the clues and narrative feel grown-up
 
 Format as JSON:
 {

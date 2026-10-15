@@ -9,6 +9,7 @@ import { playLimiter } from "@/lib/utils/rate-limit";
 import { evaluateBadges, updateStreak } from "@/lib/services/gamification";
 import { getCompletion } from "../../_lib/completions";
 import { gradeAnswer } from "../../_lib/grading";
+import { bandForUser } from "@/lib/utils/age-band";
 
 export async function POST(
   request: NextRequest,
@@ -101,7 +102,7 @@ export async function POST(
       .eq("user_id", user.id)
       .maybeSingle();
 
-    const ageBand = profile?.effective_band || "intermediate";
+    const ageBand = bandForUser(profile?.effective_band, user.role);
     const gmMessage = getGrowthMindsetMessage(
       scoringResult.feedback.type,
       ageBand,

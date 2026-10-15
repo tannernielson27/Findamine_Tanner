@@ -6,6 +6,7 @@ import CurriculumBrowser from "./curriculum-browser";
 import StandardsBrowser from "./standards-browser";
 import AiPromptTemplates from "./ai-prompt-templates";
 import AiModeIndicator, { detectMode, type AiMode } from "./ai-mode-indicator";
+import { gradeRangeForAudience } from "@/lib/utils/grade-bands";
 
 /** An existing stop, as returned by GET /api/v1/hunts/{id} (finds with their relations). */
 export interface EditableFind {
@@ -34,6 +35,8 @@ export interface EditableFind {
 
 interface FindEditorProps {
   huntId: string;
+  /** The hunt's target audience; AI clues are pitched at it. */
+  audience?: string;
   onSaved: () => void;
   onCancel: () => void;
   /** When set, the form edits this stop instead of adding a new one. */
@@ -73,7 +76,7 @@ const CHALLENGE_TYPES = [
  * those rows with the hunt they were copied from, so a changed part is saved as
  * a new row and the stop is re-pointed at it.
  */
-export default function FindEditor({ huntId, onSaved, onCancel, find, experimentCondition }: FindEditorProps) {
+export default function FindEditor({ huntId, audience, onSaved, onCancel, find, experimentCondition }: FindEditorProps) {
   const isEdit = !!find;
   const existingContent = (find?.tasks?.content || {}) as Record<string, unknown>;
   const existingPrimerText = typeof find?.primers?.content?.text === "string" ? find.primers.content.text : "";
@@ -168,6 +171,8 @@ export default function FindEditor({ huntId, onSaved, onCancel, find, experiment
           task_content: question ? { question } : null,
           location_name: locationName || undefined,
           difficulty_tier: "medium",
+          grade_min: gradeRangeForAudience(audience)?.min,
+          grade_max: gradeRangeForAudience(audience)?.max,
         }),
       });
       if (!res.ok) {

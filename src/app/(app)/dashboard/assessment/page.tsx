@@ -159,7 +159,7 @@ export default function AssessmentPage() {
 
         <div role="status" className="mb-4 rounded-lg border border-themed-border bg-themed-bg p-3">
           <p className="text-sm text-themed-text">
-            <strong>Saved{savedOn ? ` on ${savedOn}` : ""}.</strong> A teacher running one of your
+            <strong>Saved{savedOn ? ` on ${savedOn}` : ""}.</strong> An instructor running one of your
             hunts can use these results to form balanced teams. Who else can see them is up to you:
             it&apos;s the Personality Profile setting in{" "}
             <Link href="/settings/privacy" className="font-medium text-link underline hover:text-link-dark">

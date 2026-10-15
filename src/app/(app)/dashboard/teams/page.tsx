@@ -86,7 +86,7 @@ export default function TeamsPage() {
         <div className="rounded-lg border-2 border-dashed border-themed-border p-8 text-center">
           <p className="text-base font-semibold text-themed-text">You&apos;re not on a team yet.</p>
           <p className="mx-auto mt-1 max-w-md text-sm text-themed-muted">
-            Open a team hunt to join or create a team. If your teacher assigns the teams, yours
+            Open a team hunt to join or create a team. If your instructor assigns the teams, yours
             shows up here once they&apos;ve placed you.
           </p>
           <Link href="/browse" className={`${PRIMARY_LINK} mt-4`}>Browse hunts</Link>

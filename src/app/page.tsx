@@ -69,7 +69,7 @@ export default async function Home() {
 
           <p className="mt-5 text-lg sm:text-xl text-gray-600 max-w-xl mx-auto leading-relaxed">
             Create GPS scavenger hunts that make learning an outdoor adventure.
-            For classrooms, families, and curious explorers of every age.
+            For classrooms, campuses, families, and curious explorers of every age.
           </p>
 
           <div className="mt-8 flex flex-wrap justify-center gap-3">
@@ -193,7 +193,7 @@ export default async function Home() {
             <FeatureCard
               icon={<Compass className="w-5 h-5" />}
               title="Age-Adaptive"
-              description="The entire UI transforms per age group. Playful for kids, sleek for teens, refined for adults."
+              description="The entire UI transforms per age group. Playful for kids, sleek for teens, sharp and uncluttered for college students and adults."
               accent="bg-emerald-500"
             />
             <FeatureCard
@@ -204,8 +204,8 @@ export default async function Home() {
             />
             <FeatureCard
               icon={<Shield className="w-5 h-5" />}
-              title="COPPA Safe"
-              description="Privacy-first for kids. No data selling, ever. Parental controls and research-grade security."
+              title="Privacy-First"
+              description="No data selling, ever. You choose who sees what. Parental controls for kids, research-grade security for everyone."
               accent="bg-slate-600"
             />
           </div>
@@ -227,7 +227,7 @@ export default async function Home() {
               { band: "Ages 7-9", color: "border-amber-300 bg-amber-50/50", dot: "bg-amber-400", desc: "Big buttons, playful animations, guided hints, warm colors" },
               { band: "Ages 10-12", color: "border-sky-300 bg-sky-50/50", dot: "bg-sky-400", desc: "Balanced challenge, team features, badge progression" },
               { band: "Ages 13-17", color: "border-indigo-300 bg-indigo-50/50", dot: "bg-indigo-400", desc: "Sleek interface, advanced challenges, minimal scaffolding" },
-              { band: "Adults 18+", color: "border-gray-300 bg-gray-50/50", dot: "bg-gray-600", desc: "Professional design, research tools, educator features" },
+              { band: "Adults 18+", color: "border-gray-300 bg-gray-50/50", dot: "bg-gray-600", desc: "For college students and grown-up explorers: clean design, tougher challenges, light-touch hints" },
             ].map((b) => (
               <div key={b.band} className={`rounded-2xl border-2 ${b.color} p-5`}>
                 <div className="flex items-center gap-2 mb-2">
@@ -251,7 +251,7 @@ export default async function Home() {
             Your Adventure Starts Here
           </h2>
           <p className="text-gray-500 mb-8">
-            Teachers, parents, and learners of all ages. Free to start, always.
+            Students, teachers, parents, and explorers of all ages. Free to start, always.
           </p>
           <div className="flex flex-wrap justify-center gap-3">
             <Link

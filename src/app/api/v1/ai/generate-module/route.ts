@@ -8,6 +8,7 @@ import {
   VALID_DIFFICULTY_TIERS, VALID_LOCATION_TYPES,
   validateEnum, sanitizeForPrompt, clampInt,
 } from "@/lib/utils/ai-validation";
+import { DEFAULT_GRADE_BAND, gradeBandFor } from "@/lib/utils/grade-bands";
 
 const MAX_LESSON_PLAN = 10000;
 const MAX_TOPIC = 200;
@@ -22,7 +23,8 @@ export async function POST(request: NextRequest) {
 
     // Validate inputs
     const subject = validateEnum(body.subject, VALID_SUBJECTS, "subject", "science_nature");
-    const grade_band = validateEnum(body.grade_band, VALID_GRADE_BANDS, "grade_band", "3-5");
+    const grade_band = validateEnum(body.grade_band, VALID_GRADE_BANDS, "grade_band", DEFAULT_GRADE_BAND);
+    const band = gradeBandFor(grade_band);
     const challenge_type = validateEnum(body.challenge_type, VALID_CHALLENGE_TYPES, "challenge_type", "multiple_choice");
     const difficulty_tier = validateEnum(body.difficulty_tier, VALID_DIFFICULTY_TIERS, "difficulty_tier", "medium");
     const location_type = validateEnum(body.location_type, VALID_LOCATION_TYPES, "location_type", "any");
@@ -39,7 +41,7 @@ export async function POST(request: NextRequest) {
 
     const result = await generateModule({
       subject,
-      gradeBand: grade_band,
+      gradeBand: band.promptAudience,
       challengeType: challenge_type,
       difficultyTier: difficulty_tier,
       locationType: location_type,
@@ -57,13 +59,7 @@ export async function POST(request: NextRequest) {
 
       const supabase = await createSupabaseServiceClient();
 
-      const gradeMap: Record<string, { min: number; max: number }> = {
-        "K-2": { min: 0, max: 2 },
-        "3-5": { min: 3, max: 5 },
-        "6-8": { min: 6, max: 8 },
-        "9-12": { min: 9, max: 12 },
-      };
-      const gradeRange = gradeMap[grade_band] || { min: 3, max: 5 };
+      const gradeRange = band.range;
       const difficultyMap: Record<string, number> = { easy: 3, medium: 5, hard: 8 };
       const difficultyRating = difficultyMap[difficulty_tier] || 5;
 

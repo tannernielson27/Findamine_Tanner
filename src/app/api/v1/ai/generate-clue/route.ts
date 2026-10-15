@@ -7,6 +7,11 @@ import {
   validateEnum, sanitizeForPrompt, validatePayloadSize, clampInt,
 } from "@/lib/utils/ai-validation";
 
+/** The max never falls below the min (a college min with no max stays college). */
+function gradeRangeFrom(min: number, rawMax: unknown) {
+  return { min, max: clampInt(rawMax, min, 16, Math.max(min, 8)) };
+}
+
 export async function POST(request: NextRequest) {
   try {
     await aiLimiter.check(request);
@@ -30,7 +35,7 @@ export async function POST(request: NextRequest) {
       locationName: sanitizeForPrompt(location_name, 200),
       locationType: validateEnum(body.location_type, VALID_LOCATION_TYPES, "location_type", "any"),
       difficultyTier: validateEnum(body.difficulty_tier, VALID_DIFFICULTY_TIERS, "difficulty_tier", "medium"),
-      gradeRange: grade_min ? { min: clampInt(grade_min, 0, 12, 3), max: clampInt(grade_max, 0, 12, 8) } : undefined,
+      gradeRange: grade_min != null ? gradeRangeFrom(clampInt(grade_min, 0, 16, 3), grade_max) : undefined,
     });
 
     return Response.json({ ...result, generated_by: "gpt-4o-mini" });

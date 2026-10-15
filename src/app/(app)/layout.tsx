@@ -9,6 +9,7 @@ import PrivacyFirstChoiceGate from "@/components/layout/privacy-first-choice-gat
 import { AgeBandProvider } from "@/lib/themes/age-band-provider";
 import { enrollParticipant } from "@/lib/services/enrollment";
 import type { AgeBand } from "@/lib/themes/tokens";
+import { bandForUser } from "@/lib/utils/age-band";
 
 /** Set by src/proxy.ts: the path + query being requested. */
 const REQUEST_PATH_HEADER = "x-findamine-path";
@@ -71,9 +72,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         .select("effective_band")
         .eq("user_id", profile.id)
         .maybeSingle();
-      if (userProfile?.effective_band) {
-        ageBand = userProfile.effective_band as AgeBand;
-      }
+      ageBand = bandForUser(userProfile?.effective_band, profile.role);
     }
   }
 

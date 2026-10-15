@@ -4,6 +4,7 @@ import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { aiLimiter } from "@/lib/utils/rate-limit";
 import { generateFeedback } from "@/lib/services/findbot";
 import type { AgeBand } from "@/lib/themes/tokens";
+import { bandForUser } from "@/lib/utils/age-band";
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,7 +21,7 @@ export async function POST(request: NextRequest) {
       .eq("user_id", user.id)
       .maybeSingle();
 
-    const ageBand = (profile?.effective_band || "intermediate") as AgeBand;
+    const ageBand: AgeBand = bandForUser(profile?.effective_band, user.role);
 
     const feedback = await generateFeedback({
       isCorrect: body.is_correct,

@@ -21,7 +21,7 @@ function RegisterForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [role, setRole] = useState("parent");
+  const [role, setRole] = useState("adult");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [error, setError] = useState("");
   const [outcome, setOutcome] = useState<Outcome | null>(null);
@@ -201,10 +201,10 @@ function RegisterForm() {
                 onChange={(e) => setRole(e.target.value)}
                 className="block w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-base sm:text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition-all"
               >
+                <option value="adult">College student / adult player (18+)</option>
+                <option value="teen">Teen player (13-17)</option>
+                <option value="teacher">Teacher / instructor</option>
                 <option value="parent">Parent</option>
-                <option value="teacher">Teacher</option>
-                <option value="teen">Teen (13+)</option>
-                <option value="adult">Adult player (18+)</option>
               </select>
             </div>
 
@@ -230,10 +230,12 @@ function RegisterForm() {
               </div>
             )}
 
-            <div className="rounded-xl bg-amber-50 border border-amber-100 p-3 text-xs text-amber-800">
-              <strong>Under 13?</strong> You can&apos;t create an account here yourself.
-              Please ask a parent or teacher for help.
-            </div>
+            {role === "teen" && (
+              <div className="rounded-xl bg-amber-50 border border-amber-100 p-3 text-xs text-amber-800">
+                <strong>Under 13?</strong> You can&apos;t create an account here yourself.
+                Please ask a parent or teacher for help.
+              </div>
+            )}
 
             <button
               type="submit"

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import LocationPicker from "@/components/maps/location-picker";
 import { HUNT_PRESETS, type HuntPreset } from "@/lib/utils/hunt-presets";
+import { GRADE_BANDS, DEFAULT_GRADE_BAND, gradeBandFor } from "@/lib/utils/grade-bands";
 
 const SUBJECTS = [
   { value: "science_nature", label: "Science & Nature" },
@@ -13,13 +14,6 @@ const SUBJECTS = [
   { value: "critical_thinking", label: "Critical Thinking" },
   { value: "reading_writing", label: "Reading & Writing" },
   { value: "history_community", label: "History & Community" },
-];
-
-const GRADE_BANDS = [
-  { value: "K-2", label: "K-2 (Ages 5-7)" },
-  { value: "3-5", label: "3-5 (Ages 8-10)" },
-  { value: "6-8", label: "6-8 (Ages 11-13)" },
-  { value: "9-12", label: "9-12 (Ages 14-18)" },
 ];
 
 const LOCATION_TYPES = [
@@ -70,7 +64,7 @@ export default function NewHuntPage() {
 
   // AI builder state
   const [aiSubjects, setAiSubjects] = useState<string[]>(["science_nature"]);
-  const [aiGradeBand, setAiGradeBand] = useState("3-5");
+  const [aiGradeBand, setAiGradeBand] = useState<string>(DEFAULT_GRADE_BAND);
   const [aiLocationType, setAiLocationType] = useState("any");
   const [aiStops, setAiStops] = useState("5");
   const [aiDuration, setAiDuration] = useState("40");
@@ -151,7 +145,7 @@ export default function NewHuntPage() {
         body: JSON.stringify({
           subject_domains: aiSubjects,
           grade_band: aiGradeBand,
-          target_audience: aiGradeBand === "K-2" ? "kids" : aiGradeBand === "3-5" ? "kids" : aiGradeBand === "6-8" ? "teens" : "teens",
+          target_audience: gradeBandFor(aiGradeBand).audience,
           location_type: aiLocationType,
           target_duration_min: parseInt(aiDuration),
           difficulty_progression: aiDifficulty,
@@ -194,7 +188,9 @@ export default function NewHuntPage() {
       const huntData = await postJson("/api/v1/hunts", {
         title: aiResult.title,
         description: aiResult.description,
-        target_audience: aiGradeBand === "K-2" || aiGradeBand === "3-5" ? "kids" : "teens",
+        target_audience: gradeBandFor(aiGradeBand).audience,
+        grade_range_min: gradeBandFor(aiGradeBand).range.min,
+        grade_range_max: gradeBandFor(aiGradeBand).range.max,
         play_mode: "solo",
         identity_mode: "codename_assigned",
         estimated_duration_min: parseInt(aiDuration),
@@ -341,9 +337,9 @@ export default function NewHuntPage() {
               <label htmlFor="target_audience" className="block text-sm font-medium text-gray-700">Audience</label>
               <select id="target_audience" name="target_audience" value={audience} onChange={(e) => setAudience(e.target.value)} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
                 <option value="all">All</option>
-                <option value="kids">Kids (7-12)</option>
+                <option value="kids">Kids (under 13)</option>
                 <option value="teens">Teens (13-17)</option>
-                <option value="adults">Adults</option>
+                <option value="adults">Adults / College (18+)</option>
                 <option value="family">Family</option>
               </select>
             </div>
@@ -364,7 +360,7 @@ export default function NewHuntPage() {
               <option value="codename_chosen">Player-Chosen Names</option>
               <option value="real_name">Real Names</option>
             </select>
-            <p className="text-xs text-gray-500 mt-1">Controls how players appear on leaderboards. Children&apos;s names are always protected.</p>
+            <p className="text-xs text-gray-500 mt-1">Controls how players appear on leaderboards. With Real Names, players under 18 appear by their initials only.</p>
           </div>
           <div>
             <label htmlFor="duration" className="block text-sm font-medium text-gray-700">Estimated Duration (minutes)</label>
@@ -431,10 +427,10 @@ export default function NewHuntPage() {
             </div>
           </div>
 
-          {/* Grade band */}
+          {/* Who's playing */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Grade Band</label>
-            <select value={aiGradeBand} onChange={(e) => setAiGradeBand(e.target.value)} className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
+            <label htmlFor="ai_grade_band" className="block text-sm font-medium text-gray-700 mb-1">Who&apos;s playing?</label>
+            <select id="ai_grade_band" value={aiGradeBand} onChange={(e) => setAiGradeBand(e.target.value)} className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
               {GRADE_BANDS.map((g) => (
                 <option key={g.value} value={g.value}>{g.label}</option>
               ))}
@@ -476,7 +472,7 @@ export default function NewHuntPage() {
           {/* Theme (optional) */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Theme <span className="text-gray-400 font-normal">(optional)</span></label>
-            <input value={aiTheme} onChange={(e) => setAiTheme(e.target.value)} placeholder="e.g. nature detective, urban explorer, young scientist..." className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500" />
+            <input value={aiTheme} onChange={(e) => setAiTheme(e.target.value)} placeholder="e.g. campus history mystery, heist, nature detective..." className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500" />
           </div>
 
           <div className="flex gap-3 pt-2">

@@ -5,6 +5,7 @@ import { aiLimiter } from "@/lib/utils/rate-limit";
 import { generateHint } from "@/lib/services/findbot";
 import { withLogging } from "@/lib/utils/with-logging";
 import type { AgeBand } from "@/lib/themes/tokens";
+import { bandForUser } from "@/lib/utils/age-band";
 
 export const POST = withLogging("POST /api/v1/ai/hints", async (request: NextRequest) => {
   await aiLimiter.check(request);
@@ -35,7 +36,7 @@ export const POST = withLogging("POST /api/v1/ai/hints", async (request: NextReq
     .eq("user_id", user.id)
     .maybeSingle();
 
-  const ageBand = (profile?.effective_band || "intermediate") as AgeBand;
+  const ageBand: AgeBand = bandForUser(profile?.effective_band, user.role);
 
   // Check cache first
   if (task) {

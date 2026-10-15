@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { formatGradeRange } from "@/lib/utils/grade-bands";
 
 interface LibraryTask {
   id: string;
@@ -146,7 +147,7 @@ export default function CurriculumBrowser({ onSelect, onCancel }: CurriculumBrow
                     )}
                     {task.grade_range_min != null && (
                       <span className="text-[10px] text-gray-500">
-                        Gr {task.grade_range_min}-{task.grade_range_max}
+                        {formatGradeRange(task.grade_range_min, task.grade_range_max)}
                       </span>
                     )}
                   </div>

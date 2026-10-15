@@ -3,12 +3,14 @@
  * Prevents prompt injection, DoS via large payloads, and invalid enum values.
  */
 
+import { GRADE_BANDS } from "./grade-bands";
+
 export const VALID_SUBJECTS = [
   "science_nature", "math_real_world", "geography_maps",
   "critical_thinking", "reading_writing", "history_community",
 ] as const;
 
-export const VALID_GRADE_BANDS = ["K-2", "3-5", "6-8", "9-12"] as const;
+export const VALID_GRADE_BANDS = GRADE_BANDS.map((b) => b.value);
 
 export const VALID_DIFFICULTY_TIERS = ["easy", "medium", "hard"] as const;
 
