@@ -3,6 +3,8 @@ import Link from "next/link";
 import { MapPin, Clock, Users, Search, Compass, ChevronRight } from "lucide-react";
 import { AudienceIcon, formatPlayMode } from "./hunt-meta";
 
+const BROWSE_AUDIENCES = ["kids", "teens", "adults", "family"];
+
 export default async function BrowseHuntsPage({
   searchParams,
 }: {
@@ -23,7 +25,8 @@ export default async function BrowseHuntsPage({
   if (params.q) {
     query = query.textSearch("search_vector", params.q, { type: "websearch" });
   }
-  if (params.audience) {
+  // Only known values reach the filter string; anything else would be parsed as PostgREST filter syntax.
+  if (params.audience && BROWSE_AUDIENCES.includes(params.audience)) {
     query = query.or(`target_audience.eq.${params.audience},target_audience.eq.all`);
   }
 
