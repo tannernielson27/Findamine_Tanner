@@ -15,10 +15,10 @@ export async function POST(
   { params }: { params: Promise<{ huntId: string }> }
 ) {
   try {
-    await playLimiter.check(request);
     const { huntId } = await params;
     const user = await getAuthUser(request);
     if (!user) throw new ApiError(401, "Not authenticated");
+    await playLimiter.check(request, user.id);
 
     const body = await request.json();
     const { find_id, level } = body;

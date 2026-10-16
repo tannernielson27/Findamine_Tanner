@@ -5,6 +5,8 @@ import { logger } from "@/lib/utils/logger";
 import { botGuard } from "@/lib/utils/bot-guard";
 import { trackEvent } from "@/lib/utils/track-event";
 import { activeTeamIdsInHunt, teamModeOf } from "../../../teams/team-rules";
+import { canAccessHunt } from "@/lib/hunts/review";
+import { internalError } from "@/lib/utils/internal-error";
 
 const PLAYABLE_STATUSES = ["published", "enrollment_open", "in_progress"];
 
@@ -30,7 +32,7 @@ export async function POST(
     // Check hunt exists and is playable
     const { data: hunt } = await supabase
       .from("hunts")
-      .select("id, status, identity_mode, created_by, play_mode")
+      .select("id, status, identity_mode, created_by, play_mode, review_status")
       .eq("id", huntId)
       .maybeSingle();
 
@@ -48,6 +50,12 @@ export async function POST(
           "This hunt isn't published yet, so it can't be played. Publish it first to try it out."
         );
       }
+      throw new ApiError(404, "Hunt not found or not available");
+    }
+
+    // Published but not yet approved for the public catalogue: only the
+    // creator, reviewers, and the creator's roster students may play it.
+    if (!(await canAccessHunt(supabase, hunt, user))) {
       throw new ApiError(404, "Hunt not found or not available");
     }
 
@@ -164,7 +172,7 @@ export async function POST(
           });
         }
       }
-      throw new ApiError(500, error.message);
+      throw internalError("/api/v1/play/[huntId]/start", error);
     }
 
     logger.info("play.started", { userId: user.id, huntId, durationMs: Math.round(performance.now() - start) });

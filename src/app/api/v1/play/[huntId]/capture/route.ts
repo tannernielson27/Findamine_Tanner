@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { getCompletion } from "../../_lib/completions";
+import { coordinatesForStorage, parseCoordinate } from "@/lib/utils/location-storage";
+import { internalError } from "@/lib/utils/internal-error";
 
 export async function POST(
   request: NextRequest,
@@ -38,8 +40,12 @@ export async function POST(
     const file = formData.get("file") as File | null;
     const findId = formData.get("find_id") as string;
     const caption = formData.get("caption") as string | null;
-    const latitude = formData.get("latitude") as string | null;
-    const longitude = formData.get("longitude") as string | null;
+    // Children's precise location is never stored (COPPA): null for them.
+    const coords = coordinatesForStorage(
+      profile?.role,
+      parseCoordinate(formData.get("latitude")),
+      parseCoordinate(formData.get("longitude"))
+    );
 
     if (!findId) throw new ApiError(400, "find_id required");
 
@@ -57,14 +63,15 @@ export async function POST(
           completion_id: completion.id,
           local_only: true,
           caption: caption || null,
-          latitude: latitude ? parseFloat(latitude) : null,
-          longitude: longitude ? parseFloat(longitude) : null,
+          // No coordinates for a child: the photo and its location stay on the device.
+          latitude: null,
+          longitude: null,
           uploaded_by: user.id,
         })
         .select()
         .single();
 
-      if (error) throw new ApiError(500, error.message);
+      if (error) throw internalError("/api/v1/play/[huntId]/capture", error);
 
       return Response.json({
         photo,
@@ -89,7 +96,7 @@ export async function POST(
         .from("geo-selfies")
         .upload(path, file, { contentType: file.type });
 
-      if (uploadError) throw new ApiError(500, uploadError.message);
+      if (uploadError) throw internalError("/api/v1/play/[huntId]/capture", uploadError);
       storageRef = uploadData.path;
     }
 
@@ -100,14 +107,14 @@ export async function POST(
         storage_ref: storageRef,
         local_only: false,
         caption: caption || null,
-        latitude: latitude ? parseFloat(latitude) : null,
-        longitude: longitude ? parseFloat(longitude) : null,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
         uploaded_by: user.id,
       })
       .select()
       .single();
 
-    if (error) throw new ApiError(500, error.message);
+    if (error) throw internalError("/api/v1/play/[huntId]/capture", error);
 
     return Response.json({ photo, local_only: false }, { status: 201 });
   } catch (error) {

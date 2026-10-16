@@ -7,6 +7,7 @@ import StandardsBrowser from "./standards-browser";
 import AiPromptTemplates from "./ai-prompt-templates";
 import AiModeIndicator, { detectMode, type AiMode } from "./ai-mode-indicator";
 import { gradeRangeForAudience } from "@/lib/utils/grade-bands";
+import { MAX_SAFETY_NOTES_LENGTH } from "@/lib/play/safety";
 
 /** An existing stop, as returned by GET /api/v1/hunts/{id} (finds with their relations). */
 export interface EditableFind {
@@ -17,7 +18,7 @@ export interface EditableFind {
   location_id: string | null;
   task_id: string | null;
   primer_id: string | null;
-  locations: { name: string; latitude: number; longitude: number; radius_meters?: number | null } | null;
+  locations: { name: string; latitude: number; longitude: number; radius_meters?: number | null; safety_notes?: string | null } | null;
   tasks: {
     title: string;
     challenge_type: string;
@@ -95,6 +96,7 @@ export default function FindEditor({ huntId, audience, onSaved, onCancel, find, 
   const [latitude, setLatitude] = useState(find?.locations ? String(find.locations.latitude) : "");
   const [longitude, setLongitude] = useState(find?.locations ? String(find.locations.longitude) : "");
   const [radiusMeters, setRadiusMeters] = useState(String(find?.locations?.radius_meters ?? 50));
+  const [safetyNotes, setSafetyNotes] = useState(find?.locations?.safety_notes || "");
 
   // Stop settings
   const [scaffoldingLevel, setScaffoldingLevel] = useState(find?.scaffolding_level || "medium");
@@ -125,7 +127,7 @@ export default function FindEditor({ huntId, audience, onSaved, onCancel, find, 
   const [primerText, setPrimerText] = useState(existingPrimerText);
 
   // Snapshots of what was loaded, so an edit only replaces the parts that changed.
-  const locationKey = JSON.stringify([locationName, latitude, longitude, radiusMeters]);
+  const locationKey = JSON.stringify([locationName, latitude, longitude, radiusMeters, safetyNotes.trim()]);
   const taskKey = JSON.stringify([libraryTaskId, taskTitle, challengeType, question, correctAnswer, options, sortingItems]);
   const primerKey = JSON.stringify([primerTitle, primerText]);
   const [initialKeys] = useState({ location: locationKey, task: taskKey, primer: primerKey });
@@ -150,7 +152,12 @@ export default function FindEditor({ huntId, audience, onSaved, onCancel, find, 
         setLatitude(pos.coords.latitude.toFixed(6));
         setLongitude(pos.coords.longitude.toFixed(6));
       },
-      () => setError("Could not get your location. Check GPS permissions."),
+      (err) =>
+        setError(
+          err.code === err.PERMISSION_DENIED
+            ? "Location is off for Findamine. Turn it on in Settings (or your browser's site settings) to place this stop where you're standing, or enter the coordinates yourself."
+            : "Couldn't get your location right now. Try again outdoors, or enter the coordinates yourself."
+        ),
       { enableHighAccuracy: true }
     );
   };
@@ -304,6 +311,7 @@ export default function FindEditor({ huntId, audience, onSaved, onCancel, find, 
             latitude: lat,
             longitude: lng,
             radius_meters: radius,
+            safety_notes: safetyNotes.trim() || null,
           }),
         });
         if (!locRes.ok) throw new Error(await errorFrom(locRes, "Failed to save location"));
@@ -479,6 +487,24 @@ export default function FindEditor({ huntId, audience, onSaved, onCancel, find, 
           >
             Use my current location
           </button>
+          <div>
+            <label htmlFor="stop-safety-notes" className="block text-xs text-gray-500 mb-1">
+              Safety notes (optional)
+            </label>
+            <textarea
+              id="stop-safety-notes"
+              value={safetyNotes}
+              onChange={(e) => setSafetyNotes(e.target.value)}
+              maxLength={MAX_SAFETY_NOTES_LENGTH}
+              rows={2}
+              placeholder="e.g. Use the crosswalk at 3rd St. Stay on the path near the pond."
+              aria-describedby="stop-safety-notes-help"
+              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            />
+            <p id="stop-safety-notes-help" className="mt-1 text-xs text-gray-500">
+              Players see this while walking to the stop. Put pins only on public, safe, accessible ground.
+            </p>
+          </div>
         </div>
       </fieldset>
 

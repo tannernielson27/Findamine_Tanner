@@ -3,16 +3,17 @@ import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { playLimiter } from "@/lib/utils/rate-limit";
 import { getCompletion, insertCompletion } from "../../_lib/completions";
+import { internalError } from "@/lib/utils/internal-error";
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ huntId: string }> }
 ) {
   try {
-    await playLimiter.check(request);
     const { huntId } = await params;
     const user = await getAuthUser(request);
     if (!user) throw new ApiError(401, "Not authenticated");
+    await playLimiter.check(request, user.id);
 
     const body = await request.json();
     const { find_id, level } = body;
@@ -65,7 +66,7 @@ export async function POST(
           .from("find_completions")
           .update({ clue_hints_used: usedLevel })
           .eq("id", completion.id);
-        if (updateError) throw new ApiError(500, updateError.message);
+        if (updateError) throw internalError("/api/v1/play/[huntId]/clue-hint", updateError);
       }
     }
 

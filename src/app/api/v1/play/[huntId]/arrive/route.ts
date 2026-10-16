@@ -3,6 +3,8 @@ import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { getHotColdZone, haversineDistance } from "@/lib/services/hot-cold";
 import { getCompletion, insertCompletion } from "../../_lib/completions";
+import { coordinatesForStorage } from "@/lib/utils/location-storage";
+import { internalError } from "@/lib/utils/internal-error";
 
 export async function POST(
   request: NextRequest,
@@ -83,10 +85,12 @@ export async function POST(
       });
     }
 
-    // Record the arrival
+    // Record the arrival. For a child only the fact of arrival and the distance
+    // are kept: their coordinates are used for the radius check above, never stored.
+    const stored = coordinatesForStorage(user.role, latitude, longitude);
     const arrival = {
-      arrival_lat: latitude,
-      arrival_lng: longitude,
+      arrival_lat: stored.latitude,
+      arrival_lng: stored.longitude,
       arrival_distance: distance,
       arrival_manual: manual && !withinRadius,
     };
@@ -131,7 +135,7 @@ export async function POST(
       })
       .eq("id", completion.id);
 
-    if (updateError) throw new ApiError(500, updateError.message);
+    if (updateError) throw internalError("/api/v1/play/[huntId]/arrive", updateError);
 
     return Response.json({
       arrived: true,

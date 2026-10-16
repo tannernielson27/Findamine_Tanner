@@ -13,6 +13,9 @@ import NavigateMap from "@/components/maps/navigate-map";
 import { Celebration } from "@/components/ui/celebration";
 import { CountUp } from "@/components/ui/count-up";
 import { PrivacyNoticeToast } from "@/components/play/privacy-notice-toast";
+import { SafetyNotice, useSafetyAcknowledgement } from "@/components/play/safety-notice";
+import { SafetyReminder, StopSafetyNote } from "@/components/play/safety-tips";
+import { PermissionDeniedNotice, PermissionPrimer } from "@/components/permissions/permission-primer";
 import type { PrivacyNotice } from "@/lib/services/privacy-notice";
 import {
   celebrationForResult,
@@ -34,7 +37,7 @@ interface Find {
   hot_cold_enabled: boolean;
   scaffolding_level: string | null;
   reading_check: { enabled: boolean; questions: { question: string; options: string[]; correct_answer: string }[] } | null;
-  locations: { name: string; latitude: number; longitude: number; radius_meters: number } | null;
+  locations: { name: string; latitude: number; longitude: number; radius_meters: number; safety_notes?: string | null } | null;
   tasks: { title: string; challenge_type: string; content: Record<string, unknown> } | null;
   primers: { title: string; content: Record<string, unknown> } | null;
 }
@@ -60,6 +63,7 @@ interface HotCold {
 // ── Helpers ──────────────────────────────────────────
 
 type GpsStatus = "waiting" | "active" | "denied" | "unavailable" | "timeout";
+type LocationConsent = "pending" | "granted" | "declined";
 
 class HttpError extends Error {
   constructor(public status: number, message: string) {
@@ -96,6 +100,18 @@ interface StartOptions {
   assign_codename?: boolean;
 }
 
+/** Manual check-in: the fallback whenever GPS can't be used for a stop. */
+function SkipNavButton({ onClick, label = "Skip to Challenge" }: { onClick: () => void; label?: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand px-5 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50"
+    >
+      {label}
+    </button>
+  );
+}
+
 // ── Component ────────────────────────────────────────
 
 export default function PlayPage() {
@@ -130,6 +146,11 @@ export default function PlayPage() {
   const [error, setError] = useState<string | null>(null);
   const [completedFinds, setCompletedFinds] = useState<Set<string>>(new Set());
   const [gpsStatus, setGpsStatus] = useState<GpsStatus>("waiting");
+  // Whether the player has agreed (via the location primer) to share their
+  // location for this hunt. GPS only starts once this is "granted", so the
+  // system prompt never appears without an explanation first. Kept for the
+  // whole hunt so "Not now" isn't asked again at every stop.
+  const [locationConsent, setLocationConsent] = useState<LocationConsent>("pending");
   const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationMessage, setCelebrationMessage] = useState("");
@@ -139,6 +160,8 @@ export default function PlayPage() {
   // Just-in-time privacy notice after a completed find (storyline S6).
   const [privacyNotice, setPrivacyNotice] = useState<PrivacyNotice | null>(null);
   const closePrivacyNotice = useCallback(() => setPrivacyNotice(null), []);
+  // Play-safely notice before the player's first hunt (App Store 1.4.5).
+  const safetyAck = useSafetyAcknowledgement();
   const [arrivedCelebrated, setArrivedCelebrated] = useState(false);
   const [huntComplete, setHuntComplete] = useState(false);
   const [huntSummary, setHuntSummary] = useState<{
@@ -342,6 +365,8 @@ export default function PlayPage() {
 
   useEffect(() => {
     if (step !== "navigate" || !currentFind) return;
+    // Wait for the location primer: the OS prompt must follow an explanation.
+    if (locationConsent !== "granted") return;
 
     if (!navigator.geolocation) {
       setGpsStatus("unavailable");
@@ -413,7 +438,7 @@ export default function PlayPage() {
       active = false;
       navigator.geolocation.clearWatch(watchId);
     };
-  }, [step, currentFind, huntId]);
+  }, [step, currentFind, huntId, locationConsent]);
 
   // ── Handlers ───────────────────────────────────────
 
@@ -789,6 +814,8 @@ export default function PlayPage() {
         />
       )}
 
+      {safetyAck.status === "needed" && <SafetyNotice onAcknowledge={safetyAck.acknowledge} />}
+
       {/* Error banner */}
       {error && (
         <div role="alert" className="rounded-lg bg-error/10 border border-error/30 py-2 pl-4 pr-2 mb-4 flex justify-between items-center gap-2">
@@ -944,24 +971,46 @@ export default function PlayPage() {
             <p className="text-base text-themed-muted mb-4">
               Walk toward <strong className="text-themed-text">{currentFind?.locations ? (currentFind.locations as { name: string }).name : "the target"}</strong>
             </p>
+            <SafetyReminder />
+            <StopSafetyNote notes={currentFind?.locations?.safety_notes} />
 
-            {/* GPS error states */}
-            {gpsStatus === "denied" && (
-              <div role="alert" className="rounded-xl bg-error/10 border border-error/30 p-4 mb-4">
-                <p className="text-base font-semibold text-error mb-1">Location Access Denied</p>
-                <p className="text-base text-themed-text mb-3">
-                  Please enable location access in your browser settings to use GPS navigation.
+            {/* Explain location before the OS prompt (App Store 5.1.1) */}
+            {locationConsent === "pending" && (
+              <PermissionPrimer
+                kind="location"
+                onContinue={() => setLocationConsent("granted")}
+                onDismiss={() => setLocationConsent("declined")}
+                deniedActions={<SkipNavButton onClick={handleSkipNav} />}
+              />
+            )}
+
+            {locationConsent === "declined" && (
+              <div role="status" className="rounded-xl border border-themed-border bg-surface p-4 mb-4">
+                <p className="text-base font-semibold text-themed-text mb-1">Playing without location</p>
+                <p className="text-base text-themed-muted mb-3">
+                  Findamine can&apos;t tell when you reach this stop, so check in yourself when you get there.
                 </p>
-                <button
-                  onClick={handleSkipNav}
-                  className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand px-5 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50"
-                >
-                  Skip to Challenge
-                </button>
+                <div className="flex flex-col gap-2">
+                  <SkipNavButton onClick={handleSkipNav} label="I'm here, go to the challenge" />
+                  <button
+                    onClick={() => setLocationConsent("granted")}
+                    className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg border border-themed-border bg-surface px-4 text-base font-semibold text-themed-text transition-colors hover:bg-themed-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+                  >
+                    Use my location instead
+                  </button>
+                </div>
               </div>
             )}
 
-            {gpsStatus === "unavailable" && (
+            {/* GPS error states */}
+            {locationConsent === "granted" && gpsStatus === "denied" && (
+              <PermissionDeniedNotice kind="location">
+                <p className="text-base text-themed-muted">You can still play: check in yourself when you reach the stop.</p>
+                <SkipNavButton onClick={handleSkipNav} />
+              </PermissionDeniedNotice>
+            )}
+
+            {locationConsent === "granted" && gpsStatus === "unavailable" && (
               <div role="alert" className="rounded-xl bg-warning/10 border border-warning/30 p-4 mb-4">
                 <p className="text-base font-semibold text-warning mb-1">GPS Not Available</p>
                 <p className="text-base text-themed-text mb-3">
@@ -976,7 +1025,7 @@ export default function PlayPage() {
               </div>
             )}
 
-            {gpsStatus === "timeout" && (
+            {locationConsent === "granted" && gpsStatus === "timeout" && (
               <div role="alert" className="rounded-xl bg-warning/10 border border-warning/30 p-4 mb-4">
                 <p className="text-base font-semibold text-warning mb-1">GPS Signal Weak</p>
                 <p className="text-base text-themed-text mb-3">
@@ -999,7 +1048,7 @@ export default function PlayPage() {
             )}
 
             {/* Active GPS / waiting states */}
-            {(gpsStatus === "waiting" || gpsStatus === "active") && (
+            {locationConsent === "granted" && (gpsStatus === "waiting" || gpsStatus === "active") && (
               <>
                 {/* Map + Hot/Cold side by side */}
                 {currentFind?.locations && (
@@ -1140,6 +1189,8 @@ export default function PlayPage() {
                 onAnswerChange={setAnswer}
                 onSubmit={handleSubmitAnswer}
                 disabled={submitting}
+                huntId={typeof huntId === "string" ? huntId : undefined}
+                findId={currentFind?.id}
               />
               {submitting && (
                 <p role="status" className="mt-2 text-center text-sm text-themed-muted">Checking your answer...</p>

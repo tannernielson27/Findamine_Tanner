@@ -1,67 +1,84 @@
 import { NextRequest } from "next/server";
+import { randomUUID } from "node:crypto";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { uploadLimiter } from "@/lib/utils/rate-limit";
+import { logger } from "@/lib/utils/logger";
+import {
+  HUNT_MEDIA_STAFF_ROLES,
+  SIGNED_URL_SECONDS,
+  UPLOAD_POLICIES,
+  buildObjectPath,
+  checkUpload,
+  cleanFilename,
+  parseEntityRef,
+  resolvePurpose,
+  type Resolved,
+} from "@/lib/media/upload-policy";
 
+type Db = Awaited<ReturnType<typeof createSupabaseServiceClient>>;
+
+function unwrap<T>(result: Resolved<T>): T {
+  if (!result.ok) throw new ApiError(result.status, result.message);
+  return result.value;
+}
+
+/** Hunt media may only be attached to a hunt the caller created (staff excepted). */
+async function assertCanAttachToHunt(supabase: Db, huntId: string, userId: string, role: string): Promise<void> {
+  if ((HUNT_MEDIA_STAFF_ROLES as readonly string[]).includes(role)) return;
+  const { data, error } = await supabase.from("hunts").select("created_by").eq("id", huntId).maybeSingle();
+  if (error) throw new ApiError(500, "Could not check the hunt");
+  if (!data || (data as { created_by?: string }).created_by !== userId) {
+    throw new ApiError(403, "You can only add media to your own hunts.");
+  }
+}
+
+/**
+ * POST /api/v1/media/upload (multipart): file, purpose (hunt_media | avatar |
+ * capture; legacy `bucket` = hunt-media | avatars | captures still accepted),
+ * optional entity_type + entity_id. See src/lib/media/upload-policy.ts.
+ *
+ * Response: { media: { ...row, url, url_expires_in } }. `url` is a public URL
+ * for hunt media and a signed URL (url_expires_in seconds) otherwise; `path`
+ * is the durable reference for private objects.
+ */
 export async function POST(request: NextRequest) {
   try {
-    await uploadLimiter.check(request);
     const user = await getAuthUser(request);
     if (!user) throw new ApiError(401, "Not authenticated");
+    await uploadLimiter.check(request, user.id);
 
     const formData = await request.formData();
-    const file = formData.get("file") as File | null;
-    const bucket = (formData.get("bucket") as string) || "hunt-media";
-    const entityType = formData.get("entity_type") as string | null;
-    const entityId = formData.get("entity_id") as string | null;
+    const file = formData.get("file");
+    if (!(file instanceof File)) throw new ApiError(400, "No file provided");
 
-    if (!file) throw new ApiError(400, "No file provided");
-
-    // Validate file size (2MB max)
-    if (file.size > 2 * 1024 * 1024) {
-      throw new ApiError(400, "File too large (max 2MB)");
-    }
-
-    // Validate content type
-    const ALLOWED_TYPES = [
-      "image/jpeg", "image/png", "image/gif", "image/webp",
-      "audio/mpeg", "audio/wav", "audio/webm",
-      "video/mp4", "video/webm",
-    ];
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      throw new ApiError(400, `File type not allowed. Accepted: ${ALLOWED_TYPES.join(", ")}`);
-    }
-
-    // Restrict bucket to allowed values
-    const ALLOWED_BUCKETS = ["hunt-media", "avatars", "captures"];
-    if (!ALLOWED_BUCKETS.includes(bucket)) {
-      throw new ApiError(400, "Invalid storage bucket");
-    }
+    const purpose = unwrap(resolvePurpose(formData.get("purpose"), formData.get("bucket")));
+    const policy = UPLOAD_POLICIES[purpose];
+    const ext = unwrap(checkUpload(policy, user.role, { type: file.type, size: file.size }));
+    const { entityType, entityId } = unwrap(
+      parseEntityRef(formData.get("entity_type"), formData.get("entity_id"))
+    );
 
     const supabase = await createSupabaseServiceClient();
-    const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
-    const path = `${user.id}/${Date.now()}.${ext}`;
+    if (purpose === "hunt_media" && entityType === "hunt" && entityId) {
+      await assertCanAttachToHunt(supabase, entityId, user.id, user.role);
+    }
 
+    const path = buildObjectPath(user.id, randomUUID(), ext);
     const { data: uploadData, error: uploadError } = await supabase.storage
-      .from(bucket)
-      .upload(path, file, {
-        contentType: file.type,
-        upsert: false,
-      });
+      .from(policy.bucket)
+      .upload(path, file, { contentType: file.type, upsert: false });
+    if (uploadError || !uploadData) {
+      logger.error("media.upload.failed", { userId: user.id, bucket: policy.bucket, error: uploadError?.message });
+      throw new ApiError(500, "Upload failed");
+    }
 
-    if (uploadError) throw new ApiError(500, uploadError.message);
-
-    const {
-      data: { publicUrl },
-    } = supabase.storage.from(bucket).getPublicUrl(uploadData.path);
-
-    // Record in media table
     const { data: media, error: mediaError } = await supabase
       .from("media")
       .insert({
-        bucket,
+        bucket: policy.bucket,
         path: uploadData.path,
-        filename: file.name,
+        filename: cleanFilename(file.name),
         content_type: file.type,
         size_bytes: file.size,
         entity_type: entityType,
@@ -71,11 +88,33 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
 
-    if (mediaError) throw new ApiError(500, mediaError.message);
+    if (mediaError || !media) {
+      // Do not leave an orphaned object behind.
+      await supabase.storage.from(policy.bucket).remove([uploadData.path]);
+      logger.error("media.upload.record_failed", { userId: user.id, error: mediaError?.message });
+      throw new ApiError(500, "Upload failed");
+    }
 
+    if (policy.publicRead) {
+      const { data: { publicUrl } } = supabase.storage.from(policy.bucket).getPublicUrl(uploadData.path);
+      return Response.json({ media: { ...media, url: publicUrl, url_expires_in: null } }, { status: 201 });
+    }
+
+    const { data: signed, error: signError } = await supabase.storage
+      .from(policy.bucket)
+      .createSignedUrl(uploadData.path, SIGNED_URL_SECONDS);
+    if (signError || !signed) {
+      logger.error("media.upload.sign_failed", { userId: user.id, bucket: policy.bucket, error: signError?.message });
+    }
     return Response.json(
-      { media: { ...media, url: publicUrl } },
-      { status: 201 }
+      {
+        media: {
+          ...media,
+          url: signed?.signedUrl ?? null,
+          url_expires_in: signed ? SIGNED_URL_SECONDS : null,
+        },
+      },
+      { status: 201, headers: { "Cache-Control": "private, no-store" } }
     );
   } catch (error) {
     return errorResponse(error);

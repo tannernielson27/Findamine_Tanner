@@ -60,7 +60,7 @@ const EMBEDS = {
 function seed(overrides: Record<string, Row[]> = {}, opts: { unique?: boolean; rpc?: Record<string, (a: Row) => unknown> } = {}): SupabaseDouble {
   return installDouble(
     {
-      hunts: [{ id: HUNT, status: "published", identity_mode: "real_name", metadata: {} }],
+      hunts: [{ id: HUNT, status: "published", review_status: "approved", identity_mode: "real_name", metadata: {} }],
       play_sessions: [
         { id: SESSION, hunt_id: HUNT, user_id: "u1", status: "active", started_at: new Date().toISOString(), total_score: 0 },
       ],
@@ -345,7 +345,7 @@ describe("POST /play/[huntId]/complete", () => {
 
 describe("POST /play/[huntId]/start with identity mode codename_chosen", () => {
   const chosen = {
-    hunts: [{ id: HUNT, status: "published", identity_mode: "codename_chosen", metadata: {} }],
+    hunts: [{ id: HUNT, status: "published", review_status: "approved", identity_mode: "codename_chosen", metadata: {} }],
     play_sessions: [] as Row[],
   };
 
@@ -389,7 +389,7 @@ describe("POST /play/[huntId]/start with identity mode codename_chosen", () => {
 
 describe("POST /play/[huntId]/start on team hunts", () => {
   const teamHunt = (extra: Record<string, Row[]> = {}) => ({
-    hunts: [{ id: HUNT, status: "published", identity_mode: "real_name", play_mode: "team_self_select", created_by: "owner", metadata: {} }],
+    hunts: [{ id: HUNT, status: "published", review_status: "approved", identity_mode: "real_name", play_mode: "team_self_select", created_by: "owner", metadata: {} }],
     play_sessions: [] as Row[],
     teams: [{ id: "team-1", hunt_id: HUNT, name: "Otters", status: "forming", max_size: 4 }],
     team_members: [] as Row[],

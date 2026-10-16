@@ -10,6 +10,8 @@ import { evaluateBadges, updateStreak } from "@/lib/services/gamification";
 import { getCompletion } from "../../_lib/completions";
 import { gradeAnswer } from "../../_lib/grading";
 import { bandForUser } from "@/lib/utils/age-band";
+import { isOwnAudioPath, parseAudioAnswer } from "@/lib/play/audio-answer";
+import { internalError } from "@/lib/utils/internal-error";
 
 export async function POST(
   request: NextRequest,
@@ -17,10 +19,10 @@ export async function POST(
 ) {
   const start = performance.now();
   try {
-    await playLimiter.check(request);
     const { huntId } = await params;
     const user = await getAuthUser(request);
     if (!user) throw new ApiError(401, "Not authenticated");
+    await playLimiter.check(request, user.id);
 
     const body = await request.json();
     const { find_id, answer } = body;
@@ -69,6 +71,18 @@ export async function POST(
       content: Record<string, unknown>;
       challenge_type: string;
     } | null;
+
+    // A spoken answer must reference this player's own upload for this stop
+    // (POST ../audio), or for a child, say the recording stayed on the device.
+    if (task?.challenge_type === "audio_response") {
+      const audio = parseAudioAnswer(answer);
+      const valid = audio && (audio.path === null
+        ? user.role === "child"
+        : user.role !== "child" && isOwnAudioPath(audio.path, user.id, completion.id));
+      if (!valid) {
+        throw new ApiError(400, "Your recording wasn't saved. Please record your answer again.");
+      }
+    }
 
     // Determine correctness. Open-ended tasks (no answer key) accept any real
     // submission; a blank one is rejected without using up an attempt.
@@ -129,7 +143,7 @@ export async function POST(
       })
       .eq("id", completion.id);
 
-    if (updateError) throw new ApiError(500, updateError.message);
+    if (updateError) throw internalError("/api/v1/play/[huntId]/answer", updateError);
 
     // Store answer feedback
     await supabase.from("answer_feedback").insert({
