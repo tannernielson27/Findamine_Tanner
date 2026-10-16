@@ -2,15 +2,16 @@ import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { generalLimiter } from "@/lib/utils/rate-limit";
+import { internalError } from "@/lib/utils/internal-error";
 
 /**
  * Mentor session tracking — logs peer mentoring interactions.
  */
 export async function POST(request: NextRequest) {
   try {
-    await generalLimiter.check(request);
     const user = await getAuthUser(request);
     if (!user) throw new ApiError(401, "Not authenticated");
+    await generalLimiter.check(request, user.id);
 
     const body = await request.json();
     const { mentee_id, hunt_id, team_id, help_type, notes } = body;
@@ -36,7 +37,7 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
 
-    if (error) throw new ApiError(500, error.message);
+    if (error) throw internalError("/api/v1/mentor-sessions", error);
     return Response.json({ session: data }, { status: 201 });
   } catch (error) {
     return errorResponse(error);

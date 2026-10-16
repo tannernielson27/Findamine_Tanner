@@ -11,9 +11,9 @@ import { generalLimiter } from "@/lib/utils/rate-limit";
  */
 export async function POST(request: NextRequest) {
   try {
-    await generalLimiter.check(request);
     const user = await getAuthUser(request);
     if (!user) throw new ApiError(401, "Not authenticated");
+    await generalLimiter.check(request, user.id);
 
     const body = await request.json();
     const {

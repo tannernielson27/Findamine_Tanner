@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isTrustedOrigin } from "@/lib/utils/trusted-origins";
 
 // Pages that pending_consent users CAN access
 const CONSENT_ALLOWED_PATHS = [
@@ -9,6 +10,9 @@ const CONSENT_ALLOWED_PATHS = [
   "/register",
   "/forgot-password",
   "/reset-password",
+  // Legal pages: parents and pending accounts must be able to read them.
+  "/privacy",
+  "/terms",
 ];
 
 /**
@@ -36,12 +40,24 @@ const PROTECTED_PREFIXES = [
  */
 const REQUEST_PATH_HEADER = "x-findamine-path";
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, x-client-type",
-  "Access-Control-Max-Age": "86400",
-};
+/**
+ * CORS for API routes. The web app and the iOS wrapper (which loads the
+ * remote site) are same-origin and need none; cross-origin access is granted
+ * only to the trusted origins (the configured site and the Capacitor local
+ * origins), never "*". Crons, the health check and native clients send no
+ * Origin and are unaffected.
+ */
+function corsHeaders(request: NextRequest): Record<string, string> {
+  const origin = request.headers.get("origin");
+  const headers: Record<string, string> = { Vary: "Origin" };
+  if (origin && isTrustedOrigin(request, origin)) {
+    headers["Access-Control-Allow-Origin"] = origin;
+    headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
+    headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, x-client-type";
+    headers["Access-Control-Max-Age"] = "86400";
+  }
+  return headers;
+}
 
 function isUnder(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
@@ -52,7 +68,7 @@ export default async function proxy(request: NextRequest) {
 
   // CORS preflight for API routes
   if (pathname.startsWith("/api/") && request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
+    return new Response(null, { status: 204, headers: corsHeaders(request) });
   }
 
   // The page being asked for, minus Next's internal RSC cache-busting param.
@@ -137,7 +153,7 @@ export default async function proxy(request: NextRequest) {
 
   // Append CORS headers to API responses
   if (pathname.startsWith("/api/")) {
-    for (const [key, value] of Object.entries(CORS_HEADERS)) {
+    for (const [key, value] of Object.entries(corsHeaders(request))) {
       supabaseResponse.headers.set(key, value);
     }
   }

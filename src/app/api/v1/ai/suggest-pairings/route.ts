@@ -7,9 +7,9 @@ import { VALID_SUBJECTS, VALID_LOCATION_TYPES, validateEnum, clampInt } from "@/
 
 export async function POST(request: NextRequest) {
   try {
-    await aiLimiter.check(request);
     const user = await getAuthUser(request);
     requireRole(user, "teacher", "hunt_creator", "admin", "researcher");
+    await aiLimiter.check(request, user.id);
 
     const body = await request.json();
     const subject = body.subject ? validateEnum(body.subject, VALID_SUBJECTS, "subject", "science_nature") : undefined;

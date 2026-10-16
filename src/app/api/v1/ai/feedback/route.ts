@@ -8,9 +8,9 @@ import { bandForUser } from "@/lib/utils/age-band";
 
 export async function POST(request: NextRequest) {
   try {
-    await aiLimiter.check(request);
     const user = await getAuthUser(request);
     if (!user) throw new ApiError(401, "Not authenticated");
+    await aiLimiter.check(request, user.id);
 
     const body = await request.json();
     const supabase = await createSupabaseServiceClient();

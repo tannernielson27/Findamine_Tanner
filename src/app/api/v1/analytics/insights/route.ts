@@ -9,9 +9,9 @@ import { generalLimiter } from "@/lib/utils/rate-limit";
  */
 export async function GET(request: NextRequest) {
   try {
-    await generalLimiter.check(request);
     const user = await getAuthUser(request);
     requireRole(user, "teacher", "hunt_creator", "admin", "researcher");
+    await generalLimiter.check(request, user.id);
 
     const supabase = await createSupabaseServiceClient();
 

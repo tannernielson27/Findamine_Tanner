@@ -19,9 +19,9 @@ interface AssessmentRow {
  */
 export async function GET(request: NextRequest) {
   try {
-    await generalLimiter.check(request);
     const user = await getAuthUser(request);
     if (!user) throw new ApiError(401, "Not authenticated");
+    await generalLimiter.check(request, user.id);
 
     const supabase = await createSupabaseServiceClient();
     const { data, error } = await supabase
@@ -58,9 +58,9 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    await authLimiter.check(request);
     const user = await getAuthUser(request);
     if (!user) throw new ApiError(401, "Not authenticated");
+    await authLimiter.check(request, user.id);
 
     const body = await request.json().catch(() => null);
     const responses = parseResponses(body?.responses);

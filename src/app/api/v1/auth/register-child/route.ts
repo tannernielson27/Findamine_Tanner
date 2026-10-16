@@ -6,6 +6,7 @@ import {
   errorResponse,
   ApiError,
 } from "@/lib/utils/api-auth";
+import { assertCleanText } from "@/lib/moderation/guard";
 import crypto from "crypto";
 import { sendConsentVerificationEmail } from "@/lib/services/email";
 
@@ -20,6 +21,9 @@ export async function POST(request: NextRequest) {
     if (!display_name) {
       throw new ApiError(400, "Display name is required for child accounts");
     }
+    // Child accounts get the strict filter (teens created here are filtered at
+    // the same level: a parent/teacher is choosing the name for a minor).
+    assertCleanText(String(display_name), { role: "child", label: "That display name" });
 
     // Determine role from date of birth
     let role = "child";

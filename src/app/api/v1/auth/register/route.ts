@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { ApiError } from "@/lib/utils/api-auth";
+import { assertCleanText } from "@/lib/moderation/guard";
 import { emailRateLimitKey, registerEmailLimiter, registerIpLimiter } from "@/lib/utils/rate-limit";
 import { withLogging } from "@/lib/utils/with-logging";
 import { botGuard } from "@/lib/utils/bot-guard";
@@ -95,6 +96,9 @@ export const POST = withLogging("POST /api/v1/auth/register", async (request: Ne
     throw new ApiError(resolved.status, resolved.message);
   }
   const userRole = resolved.role;
+  if (typeof display_name === "string") {
+    assertCleanText(display_name, { role: userRole, label: "That display name" });
+  }
 
   // Resolve before creating anything so a misconfigured deploy leaves no orphans.
   const siteUrl = resolveSiteUrl(request.nextUrl.origin);

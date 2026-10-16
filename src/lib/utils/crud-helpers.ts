@@ -8,6 +8,7 @@ import {
 } from "@/lib/utils/api-auth";
 import type { AuthUser } from "@/lib/types/database";
 import type { UserRole } from "@/lib/types/enums";
+import { checkText, jsonStrings } from "@/lib/hunts/text-filter";
 
 /** Roles that may edit or delete rows they did not create, and curate the shared library. */
 const CURATOR_ROLES: UserRole[] = ["admin", "researcher"];
@@ -16,6 +17,15 @@ const LIBRARY_FLAG = "is_library";
 
 function isCurator(user: AuthUser): boolean {
   return CURATOR_ROLES.includes(user.role);
+}
+
+/** Reject a write whose player-visible text contains blocked language (400). */
+export function assertCleanFields(row: Record<string, unknown>, textFields: string[]): void {
+  for (const field of textFields) {
+    if (checkText(jsonStrings(row[field]).join("\n")).flagged) {
+      throw new ApiError(400, `The ${field.replace(/_/g, " ")} contains language that isn't allowed on Findamine.`);
+    }
+  }
 }
 
 /** Copy only whitelisted fields from a request body. */
@@ -51,12 +61,15 @@ export function createCrudHandlers(
     writeRoles?: UserRole[];
     allowedInsertFields: string[];
     ownerColumn?: string;
+    /** Player-visible fields screened by the content filter on write. */
+    textFields?: string[];
   }
 ) {
   const {
     writeRoles = ["teacher", "hunt_creator", "admin", "researcher"],
     allowedInsertFields,
     ownerColumn = "created_by",
+    textFields = [],
   } = options;
 
   async function GET(request: NextRequest) {
@@ -102,6 +115,7 @@ export function createCrudHandlers(
         ...pickFields(body, allowedInsertFields, user),
         [ownerColumn]: user.id,
       };
+      assertCleanFields(insert, textFields);
 
       const { data, error } = await supabase
         .from(table)
@@ -126,12 +140,15 @@ export function createItemHandlers(
     writeRoles?: UserRole[];
     allowedUpdateFields: string[];
     ownerColumn?: string;
+    /** Player-visible fields screened by the content filter on write. */
+    textFields?: string[];
   }
 ) {
   const {
     writeRoles = ["teacher", "hunt_creator", "admin", "researcher"],
     allowedUpdateFields,
     ownerColumn = "created_by",
+    textFields = [],
   } = options;
 
   /**
@@ -202,6 +219,7 @@ export function createItemHandlers(
       if (Object.keys(updates).length === 0) {
         throw new ApiError(400, "No updatable fields provided");
       }
+      assertCleanFields(updates, textFields);
 
       await assertCanModify(supabase, id, user, "edit");
 

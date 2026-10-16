@@ -57,46 +57,51 @@ async function statusOf(run: () => Promise<void>): Promise<number> {
   }
 }
 
-describe("getCompositeKey", () => {
-  it("is IP-only for an unauthenticated request", () => {
-    expect(rl.getCompositeKey(request())).toBe(CAMPUS_IP);
+describe("per-user limits (M9: keys never come from unverified cookies or tokens)", () => {
+  it("reads the IP from the edge's x-forwarded-for, first hop", () => {
+    const r = new NextRequest("http://localhost:3000/x", { headers: { "x-forwarded-for": "1.2.3.4, 10.0.0.1" } });
+    expect(rl.getClientIp(r)).toBe("1.2.3.4");
+    const fallback = new NextRequest("http://localhost:3000/x", { headers: { "x-real-ip": "5.6.7.8" } });
+    expect(rl.getClientIp(fallback)).toBe("5.6.7.8");
   });
 
-  it("gives two signed-in students on one IP different keys (the real @supabase/ssr cookie)", () => {
-    const ana = rl.getCompositeKey(request({ cookies: { "sb-abcdefghijkl-auth-token": sessionCookie("user-ana") } }));
-    const ben = rl.getCompositeKey(request({ cookies: { "sb-abcdefghijkl-auth-token": sessionCookie("user-ben") } }));
-
-    expect(ana).toBe(`user-ana:${CAMPUS_IP}`);
-    expect(ben).toBe(`user-ben:${CAMPUS_IP}`);
+  it("limits a verified user at the limiter's own max", async () => {
+    for (let i = 0; i < 10; i++) await rl.authLimiter.check(request({ ip: "10.2.0.1" }), "user-ana");
+    expect(await statusOf(() => rl.authLimiter.check(request({ ip: "10.2.0.1" }), "user-ana"))).toBe(429);
   });
 
-  it("joins a session cookie that was split into chunks", () => {
-    const value = sessionCookie("user-chunked");
-    const cut = Math.floor(value.length / 2);
-    const key = rl.getCompositeKey(
-      request({
-        cookies: {
-          // Deliberately out of order: chunks must be sorted by index.
-          "sb-abcdefghijkl-auth-token.1": value.slice(cut),
-          "sb-abcdefghijkl-auth-token.0": value.slice(0, cut),
-        },
-      })
+  it("gives two signed-in students on one campus IP separate buckets", async () => {
+    for (let i = 0; i < 10; i++) await rl.authLimiter.check(request({ ip: "10.2.0.2" }), "user-ben");
+    expect(await statusOf(() => rl.authLimiter.check(request({ ip: "10.2.0.2" }), "user-cal"))).toBe(200);
+  });
+
+  it("follows the user across IPs (a new network is not a new bucket)", async () => {
+    for (let i = 0; i < 10; i++) await rl.authLimiter.check(request({ ip: `10.3.0.${i}` }), "user-dee");
+    expect(await statusOf(() => rl.authLimiter.check(request({ ip: "10.3.1.1" }), "user-dee"))).toBe(429);
+  });
+
+  it("ignores junk sb-*-auth-token cookies: they never mint a fresh bucket", async () => {
+    // Without a verified user the only key is the IP, so a new cookie per
+    // request changes nothing. 10 * 30 = the per-IP ceiling for authLimiter.
+    for (let i = 0; i < 300; i++) {
+      await rl.authLimiter.check(request({ ip: "10.4.0.1", cookies: { [`sb-x${i}-auth-token`]: `junk-${i}` } }));
+    }
+    const status = await statusOf(() =>
+      rl.authLimiter.check(request({ ip: "10.4.0.1", cookies: { "sb-new-auth-token": sessionCookie("someone-else") } }))
     );
-    expect(key).toBe(`user-chunked:${CAMPUS_IP}`);
+    expect(status).toBe(429);
   });
 
-  it("separates bearer tokens even though they all start with the same characters", () => {
-    const ana = rl.getCompositeKey(request({ bearer: accessToken("user-ana") }));
-    const ben = rl.getCompositeKey(request({ bearer: accessToken("user-ben") }));
-    expect(ana).toBe(`user-ana:${CAMPUS_IP}`);
-    expect(ben).not.toBe(ana);
+  it("ignores made-up bearer tokens too", async () => {
+    for (let i = 0; i < 300; i++) {
+      await rl.authLimiter.check(request({ ip: "10.5.0.1", bearer: accessToken(`fake-${i}`) }));
+    }
+    expect(await statusOf(() => rl.authLimiter.check(request({ ip: "10.5.0.1", bearer: accessToken("fresh") })))).toBe(429);
   });
 
-  it("still tells sessions apart when the cookie cannot be decoded", () => {
-    const a = rl.getCompositeKey(request({ cookies: { "sb-abcdefghijkl-auth-token": "garbage-one" } }));
-    const b = rl.getCompositeKey(request({ cookies: { "sb-abcdefghijkl-auth-token": "garbage-two" } }));
-    expect(a).not.toBe(b);
-    expect(a.endsWith(`:${CAMPUS_IP}`)).toBe(true);
+  it("caps a whole IP even when every request names a different (verified) user", async () => {
+    for (let i = 0; i < 300; i++) await rl.authLimiter.check(request({ ip: "10.6.0.1" }), `student-${i}`);
+    expect(await statusOf(() => rl.authLimiter.check(request({ ip: "10.6.0.1" }), "student-new"))).toBe(429);
   });
 });
 

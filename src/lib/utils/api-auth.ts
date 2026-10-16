@@ -4,6 +4,34 @@ import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import type { AuthUser } from "@/lib/types/database";
 import type { UserRole } from "@/lib/types/enums";
 
+/** Account statuses that may not use the API at all. */
+const BLOCKED_STATUSES = new Set(["suspended", "banned", "inactive"]);
+
+/**
+ * The caller's profile, or null when the account is deleted, suspended, banned
+ * or inactive. Routes use the service client, which bypasses RLS, so this is
+ * where a sanctioned account actually loses access. pending_consent accounts
+ * still resolve: src/proxy.ts keeps them on the consent pages.
+ */
+async function loadActiveProfile(
+  serviceClient: Awaited<ReturnType<typeof createSupabaseServiceClient>>,
+  authId: string
+): Promise<AuthUser | null> {
+  const { data: profile } = await serviceClient
+    .from("users")
+    .select("id, auth_id, role, display_name, status")
+    .eq("auth_id", authId)
+    .is("deleted_at", null)
+    .single();
+  if (!profile || BLOCKED_STATUSES.has(profile.status)) return null;
+  return {
+    id: profile.id,
+    auth_id: profile.auth_id,
+    role: profile.role,
+    display_name: profile.display_name,
+  } as AuthUser;
+}
+
 /**
  * Extract the authenticated user from the request.
  * Supports both cookie-based auth (web) and Bearer token auth (mobile).
@@ -21,14 +49,7 @@ export async function getAuthUser(
     } = await serviceClient.auth.getUser(token);
     if (!authUser) return null;
 
-    const { data: profile } = await serviceClient
-      .from("users")
-      .select("id, auth_id, role, display_name")
-      .eq("auth_id", authUser.id)
-      .is("deleted_at", null)
-      .single();
-
-    return profile as AuthUser | null;
+    return loadActiveProfile(serviceClient, authUser.id);
   }
 
   // Fall back to cookie-based auth (web)
@@ -53,14 +74,7 @@ export async function getAuthUser(
   if (!authUser) return null;
 
   const serviceClient = await createSupabaseServiceClient();
-  const { data: profile } = await serviceClient
-    .from("users")
-    .select("id, auth_id, role, display_name")
-    .eq("auth_id", authUser.id)
-    .is("deleted_at", null)
-    .single();
-
-  return profile as AuthUser | null;
+  return loadActiveProfile(serviceClient, authUser.id);
 }
 
 /**

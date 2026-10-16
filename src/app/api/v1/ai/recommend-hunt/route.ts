@@ -11,9 +11,9 @@ import { DEFAULT_GRADE_BAND, gradeBandFor } from "@/lib/utils/grade-bands";
 
 export async function POST(request: NextRequest) {
   try {
-    await aiLimiter.check(request);
     const user = await getAuthUser(request);
     requireRole(user, "teacher", "hunt_creator", "admin", "researcher");
+    await aiLimiter.check(request, user.id);
 
     const body = await request.json();
 

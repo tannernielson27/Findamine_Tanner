@@ -2,13 +2,14 @@ import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { generalLimiter } from "@/lib/utils/rate-limit";
+import { internalError } from "@/lib/utils/internal-error";
 
 // Batch insert behavioral events (L1)
 export async function POST(request: NextRequest) {
   try {
-    await generalLimiter.check(request);
     const user = await getAuthUser(request);
     if (!user) throw new ApiError(401, "Not authenticated");
+    await generalLimiter.check(request, user.id);
 
     const body = await request.json();
     const events = body.events;
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
 
     const { error } = await supabase.from("behavioral_events").insert(rows);
 
-    if (error) throw new ApiError(500, error.message);
+    if (error) throw internalError("/api/v1/events/batch", error);
 
     return Response.json({ inserted: rows.length }, { status: 201 });
   } catch (error) {

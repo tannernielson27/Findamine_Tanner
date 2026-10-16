@@ -8,9 +8,9 @@ import type { AgeBand } from "@/lib/themes/tokens";
 import { bandForUser } from "@/lib/utils/age-band";
 
 export const POST = withLogging("POST /api/v1/ai/hints", async (request: NextRequest) => {
-  await aiLimiter.check(request);
   const user = await getAuthUser(request);
   if (!user) throw new ApiError(401, "Not authenticated");
+  await aiLimiter.check(request, user.id);
 
   const body = await request.json();
   const { find_id, level } = body;

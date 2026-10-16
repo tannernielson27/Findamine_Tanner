@@ -8,9 +8,9 @@ import type { AgeBand } from "@/lib/themes/tokens";
 
 export async function POST(request: NextRequest) {
   try {
-    await aiLimiter.check(request);
     const user = await getAuthUser(request);
     requireRole(user, "teacher", "hunt_creator", "admin", "researcher");
+    await aiLimiter.check(request, user.id);
 
     const body = await request.json();
     const { content_type, location_name, subject_domain, grade_min, grade_max, existing_content } = body;

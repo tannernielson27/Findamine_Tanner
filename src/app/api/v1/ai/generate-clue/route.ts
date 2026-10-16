@@ -14,9 +14,9 @@ function gradeRangeFrom(min: number, rawMax: unknown) {
 
 export async function POST(request: NextRequest) {
   try {
-    await aiLimiter.check(request);
     const user = await getAuthUser(request);
     requireRole(user, "teacher", "hunt_creator", "admin", "researcher");
+    await aiLimiter.check(request, user.id);
 
     const body = await request.json();
     const { primer_content, task_content, location_name, grade_min, grade_max } = body;

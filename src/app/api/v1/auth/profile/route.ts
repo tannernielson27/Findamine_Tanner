@@ -5,6 +5,7 @@ import {
   errorResponse,
   ApiError,
 } from "@/lib/utils/api-auth";
+import { assertCleanText } from "@/lib/moderation/guard";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { diffVisibility, classifyChange } from "@/lib/utils/privacy-tracking";
 import { computePrivacyIndex } from "@/lib/utils/privacy-index";
@@ -25,6 +26,7 @@ import {
 } from "@/lib/utils/privacy";
 import { SCHEME_META_KEYS } from "@/lib/utils/scheme-selection";
 import { ownsNormExposure } from "@/lib/services/class-norms";
+import { parseAvatarUrl } from "@/lib/media/avatar-url";
 
 interface PrivacyMeta {
   duration_ms?: number;
@@ -116,8 +118,17 @@ export async function PUT(request: NextRequest) {
 
     // Build the update set.
     const updates: Record<string, unknown> = {};
-    if (body.display_name !== undefined) updates.display_name = body.display_name;
-    if (body.avatar_url !== undefined) updates.avatar_url = body.avatar_url;
+    if (body.display_name !== undefined) {
+      if (typeof body.display_name === "string") {
+        assertCleanText(body.display_name, { role: user.role, label: "That display name" });
+      }
+      updates.display_name = body.display_name;
+    }
+    if (body.avatar_url !== undefined) {
+      const avatar = parseAvatarUrl(body.avatar_url, user.id);
+      if (!avatar.ok) throw new ApiError(400, avatar.message);
+      updates.avatar_url = avatar.value;
+    }
     if (visibilityChanged) updates.profile_visibility = newVisibility;
     if (overridesTouched) updates.profile_visibility_overrides = newOverrides;
 

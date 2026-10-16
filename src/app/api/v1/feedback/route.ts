@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, requireRole, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { generalLimiter } from "@/lib/utils/rate-limit";
+import { internalError } from "@/lib/utils/internal-error";
 
 export async function GET(request: NextRequest) {
   try {
@@ -37,9 +38,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    await generalLimiter.check(request);
     const user = await getAuthUser(request);
     requireRole(user, "teacher", "admin");
+    await generalLimiter.check(request, user.id);
 
     const body = await request.json();
     const supabase = await createSupabaseServiceClient();
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest) {
         .select()
         .single();
 
-      if (error) throw new ApiError(500, error.message);
+      if (error) throw internalError("/api/v1/feedback", error);
       return Response.json({ template: data }, { status: 201 });
     }
 
@@ -74,7 +75,7 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
 
-    if (error) throw new ApiError(500, error.message);
+    if (error) throw internalError("/api/v1/feedback", error);
     return Response.json({ feedback: data }, { status: 201 });
   } catch (error) {
     return errorResponse(error);

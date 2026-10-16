@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createHash } from "crypto";
 import { ApiError } from "./api-auth";
 import { logger } from "./logger";
+import { USE_UPSTASH, getUpstashRedis } from "./upstash";
 
 /**
  * Rate limiter with Upstash Redis for production and in-memory fallback for local dev.
@@ -12,93 +13,33 @@ import { logger } from "./logger";
  * in-memory (per instance) instead of failing.
  */
 
-// Support all naming conventions:
-// - UPSTASH_REDIS_KV_REST_API_URL / _TOKEN (Vercel Marketplace, prefixed)
-// - UPSTASH_REDIS_REST_URL / _TOKEN (manual / @upstash/redis default)
-// - KV_REST_API_URL / _TOKEN (Vercel Marketplace, unprefixed)
-const UPSTASH_URL =
-  process.env.UPSTASH_REDIS_KV_REST_API_URL ||
-  process.env.UPSTASH_REDIS_REST_URL ||
-  process.env.KV_REST_API_URL;
-const UPSTASH_TOKEN =
-  process.env.UPSTASH_REDIS_KV_REST_API_TOKEN ||
-  process.env.UPSTASH_REDIS_REST_TOKEN ||
-  process.env.KV_REST_API_TOKEN;
-
-const USE_UPSTASH = !!(UPSTASH_URL && UPSTASH_TOKEN);
-
-function getIp(request: NextRequest): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  return forwarded?.split(",")[0]?.trim() || "unknown";
+/**
+ * The caller's IP: the first hop of x-forwarded-for, which Vercel's edge sets
+ * itself (a client-sent value is not passed through), else x-real-ip.
+ */
+export function getClientIp(request: NextRequest): string {
+  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  if (forwarded) return forwarded;
+  return request.headers.get("x-real-ip")?.trim() || "unknown";
 }
 
 function fingerprint(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 16);
 }
 
-/** The `sub` claim of a JWT, read without verifying (it only picks a bucket). */
-function jwtSubject(token: string): string | null {
-  try {
-    const payload = JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"));
-    return typeof payload?.sub === "string" && payload.sub.length <= 64 ? payload.sub : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
- * The raw value of the @supabase/ssr session cookie. Its name is
- * sb-<project-ref>-auth-token, and long sessions are split into .0, .1, ...
- * chunks that must be joined in order.
+ * Bucket keys. Nothing a client can choose freely ever becomes a key: the IP
+ * comes from the edge, and a user id only once the route has verified the
+ * session (getAuthUser). An unverified cookie or token is never read here, so
+ * sending a made-up one cannot mint a fresh bucket.
  */
-function readSupabaseSessionCookie(request: NextRequest): string | null {
-  const chunks = request.cookies
-    .getAll()
-    .map((cookie) => ({ match: /^sb-.+-auth-token(?:\.(\d+))?$/.exec(cookie.name), value: cookie.value }))
-    .filter((c): c is { match: RegExpExecArray; value: string } => c.match !== null)
-    .sort((a, b) => Number(a.match[1] ?? -1) - Number(b.match[1] ?? -1));
-  if (chunks.length === 0) return null;
-  return chunks.map((c) => c.value).join("");
+function ipKey(request: NextRequest): string {
+  return `ip:${getClientIp(request)}`;
 }
 
-function sessionCookieSubject(raw: string): string | null {
-  try {
-    const json = raw.startsWith("base64-")
-      ? Buffer.from(raw.slice("base64-".length), "base64url").toString("utf8")
-      : raw;
-    const session = JSON.parse(json);
-    return typeof session?.access_token === "string" ? jwtSubject(session.access_token) : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * A stable identifier for the signed-in caller, or null when unauthenticated.
- * Prefers the user id inside the access token (stable across token refreshes).
- * Every Supabase token and session cookie starts with the same characters, so
- * a prefix can never be used here; anything undecodable is hashed whole.
- */
-function getSessionIdentity(request: NextRequest): string | null {
-  const authHeader = request.headers.get("authorization");
-  if (authHeader?.startsWith("Bearer ")) {
-    const token = authHeader.slice(7).trim();
-    if (token) return jwtSubject(token) ?? fingerprint(token);
-  }
-  const cookie = readSupabaseSessionCookie(request);
-  if (cookie) return sessionCookieSubject(cookie) ?? fingerprint(cookie);
-  return null;
-}
-
-/**
- * Get a composite rate limit key: userId:IP
- * This ensures students in the same classroom (same IP) get individual limits.
- * Falls back to IP-only for unauthenticated requests.
- */
-export function getCompositeKey(request: NextRequest): string {
-  const ip = getIp(request);
-  const identity = getSessionIdentity(request);
-  return identity ? `${identity}:${ip}` : ip;
+/** Ids are UUIDs; anything odd is hashed so a key can never grow unbounded. */
+function userKey(userId: string): string {
+  return /^[A-Za-z0-9-]{1,64}$/.test(userId) ? `user:${userId}` : `user:${fingerprint(userId)}`;
 }
 
 /**
@@ -142,32 +83,30 @@ function logUpstashFailure(prefix: string, error: unknown): void {
   });
 }
 
-interface RateLimiter {
-  /** Count one request against the caller's key (user+IP, or IP-only). */
-  check(request: NextRequest): Promise<void>;
+export interface RateLimiter {
+  /**
+   * Count one request. Always against the caller's IP; with a verified user id
+   * (from getAuthUser) also against that user, at the limiter's real limit.
+   * Pass the user id whenever the route has one: the IP bucket alone is a
+   * loose ceiling sized for a whole class behind one campus NAT.
+   */
+  check(request: NextRequest, userId?: string | null): Promise<void>;
   /** Count one request against an explicit key, e.g. an email fingerprint. */
   checkKey(key: string): Promise<void>;
 }
 
-function createRateLimiter(opts: {
-  max: number;
-  windowMs: number;
-  prefix: string;
-  /**
-   * "session" (default): user+IP for signed-in callers, IP otherwise.
-   * "ip": always the IP. Use this on unauthenticated endpoints, where a
-   * made-up Authorization header would otherwise mint a fresh bucket.
-   */
-  keyBy?: "session" | "ip";
-}): RateLimiter {
-  const requestKey = opts.keyBy === "ip" ? getIp : getCompositeKey;
+/** Students per shared IP the per-IP ceiling of a per-user limiter allows for. */
+const DEFAULT_IP_SHARE = 30;
 
-  // In-memory limiter: the only limiter in local dev, and the per-instance
-  // fallback when Upstash can't be reached in production.
+interface Bucket {
+  consume(key: string): Promise<void>;
+}
+
+/** One sliding-window counter: Upstash in production, in-memory otherwise or on outage. */
+function createBucket(max: number, windowMs: number, prefix: string): Bucket {
   const store = new Map<string, { count: number; resetAt: number }>();
-  const { max, windowMs } = opts;
-
   let lastCleanup = Date.now();
+
   function cleanup() {
     const now = Date.now();
     if (now - lastCleanup < 60_000) return;
@@ -193,56 +132,82 @@ function createRateLimiter(opts: {
     }
   }
 
-  // Upstash Redis (production)
-  let _limiter: import("@upstash/ratelimit").Ratelimit | null = null;
+  let limiter: import("@upstash/ratelimit").Ratelimit | null = null;
 
   async function limitWithUpstash(key: string): Promise<{ success: boolean; reset: number }> {
-    if (!_limiter) {
+    if (!limiter) {
       const { Ratelimit } = await import("@upstash/ratelimit");
-      const { Redis } = await import("@upstash/redis");
-      _limiter = new Ratelimit({
-        redis: new Redis({ url: UPSTASH_URL!, token: UPSTASH_TOKEN! }),
-        limiter: Ratelimit.slidingWindow(opts.max, msToUpstashDuration(opts.windowMs)),
-        prefix: `rl:${opts.prefix}`,
+      limiter = new Ratelimit({
+        redis: await getUpstashRedis(),
+        limiter: Ratelimit.slidingWindow(max, msToUpstashDuration(windowMs)),
+        prefix: `rl:${prefix}`,
       });
     }
-    return _limiter.limit(key);
-  }
-
-  async function consume(key: string): Promise<void> {
-    if (!USE_UPSTASH) {
-      consumeInMemory(key);
-      return;
-    }
-
-    let result: { success: boolean; reset: number };
-    try {
-      result = await limitWithUpstash(key);
-    } catch (error) {
-      // A limiter outage must not turn into a 500 for the user: count this
-      // request against this instance's in-memory limiter instead.
-      logUpstashFailure(opts.prefix, error);
-      consumeInMemory(key);
-      return;
-    }
-
-    if (!result.success) {
-      throw tooManyRequests(Math.ceil((result.reset - Date.now()) / 1000));
-    }
+    return limiter.limit(key);
   }
 
   return {
-    check: (request: NextRequest) => consume(requestKey(request)),
-    checkKey: (key: string) => consume(key),
+    async consume(key: string): Promise<void> {
+      if (!USE_UPSTASH) {
+        consumeInMemory(key);
+        return;
+      }
+
+      let result: { success: boolean; reset: number };
+      try {
+        result = await limitWithUpstash(key);
+      } catch (error) {
+        // A limiter outage must not turn into a 500 for the user: count this
+        // request against this instance's in-memory limiter instead.
+        logUpstashFailure(prefix, error);
+        consumeInMemory(key);
+        return;
+      }
+
+      if (!result.success) {
+        throw tooManyRequests(Math.ceil((result.reset - Date.now()) / 1000));
+      }
+    },
+  };
+}
+
+function createRateLimiter(opts: {
+  max: number;
+  windowMs: number;
+  prefix: string;
+  /**
+   * "user" (default): `max` per verified user, plus a per-IP ceiling of
+   * `max * ipShare` so one network can't flood the route either.
+   * "ip": `max` per IP and nothing else. Use this on unauthenticated
+   * endpoints (sign-in, sign-up), where there is no verified user yet.
+   */
+  keyBy?: "user" | "ip";
+  /** Override DEFAULT_IP_SHARE for a "user" limiter. */
+  ipShare?: number;
+}): RateLimiter {
+  const perUser = createBucket(opts.max, opts.windowMs, opts.prefix);
+  const perIp =
+    opts.keyBy === "ip"
+      ? perUser
+      : createBucket(opts.max * (opts.ipShare ?? DEFAULT_IP_SHARE), opts.windowMs, `${opts.prefix}:ip`);
+
+  return {
+    async check(request: NextRequest, userId?: string | null): Promise<void> {
+      await perIp.consume(ipKey(request));
+      if (opts.keyBy !== "ip" && typeof userId === "string" && userId) {
+        await perUser.consume(userKey(userId));
+      }
+    },
+    checkKey: (key: string) => perUser.consume(key),
   };
 }
 
 // Pre-configured limiters
 
-/** Strict limit for sensitive signed-in actions (per user+IP). */
+/** Strict limit for sensitive signed-in actions (per user). */
 export const authLimiter = createRateLimiter({
   max: 10,
-  windowMs: 15 * 60 * 1000, // 10 requests per 15 minutes per user+IP
+  windowMs: 15 * 60 * 1000, // 10 requests per 15 minutes per user
   prefix: "auth",
 });
 
@@ -307,30 +272,40 @@ export const consentVerifyLimiter = createRateLimiter({
 });
 export const aiLimiter = createRateLimiter({
   max: 20,
-  windowMs: 60 * 1000, // 20 requests per minute per IP
+  windowMs: 60 * 1000, // 20 requests per minute per user
   prefix: "ai",
 });
 
 export const generalLimiter = createRateLimiter({
   max: 100,
-  windowMs: 60 * 1000, // 100 requests per minute per user+IP
+  windowMs: 60 * 1000, // 100 requests per minute per user
   prefix: "general",
 });
 
 export const socialLimiter = createRateLimiter({
   max: 30,
-  windowMs: 60 * 1000, // 30 requests per minute per user+IP
+  windowMs: 60 * 1000, // 30 requests per minute per user
   prefix: "social",
 });
 
 export const playLimiter = createRateLimiter({
   max: 60,
-  windowMs: 60 * 1000, // 60 requests per minute per user+IP
+  windowMs: 60 * 1000, // 60 requests per minute per user
   prefix: "play",
 });
 
 export const uploadLimiter = createRateLimiter({
   max: 10,
-  windowMs: 60 * 1000, // 10 uploads per minute per user+IP
+  windowMs: 60 * 1000, // 10 uploads per minute per user
   prefix: "upload",
+});
+
+/**
+ * Publishing / unpublishing a hunt. Each submission for review emails the
+ * reviewers (debounced in src/lib/moderation/notify.ts), so keep it modest.
+ */
+export const publishLimiter = createRateLimiter({
+  max: 20,
+  windowMs: 60 * 60 * 1000, // 20 per hour per user
+  prefix: "hunt-publish",
 });
