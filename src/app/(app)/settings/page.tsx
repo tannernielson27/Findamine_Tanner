@@ -44,7 +44,13 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ display_name: displayName }),
       });
-      setMessage(res.ok ? "Saved!" : "Failed to save.");
+      if (res.ok) {
+        setMessage("Saved!");
+      } else {
+        // 422 carries a friendly content-filter message; show it.
+        const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+        setMessage(typeof body?.error === "string" && res.status < 500 ? body.error : "Failed to save.");
+      }
     } catch {
       setMessage("Failed to save.");
     } finally {

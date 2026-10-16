@@ -143,7 +143,8 @@ begin
   -- reviews of, their find completions (FKs without ON DELETE CASCADE).
   if to_regclass('public.play_sessions') is not null and to_regclass('public.find_completions') is not null then
     create temporary table if not exists pg_temp.account_completions (id uuid primary key) on commit drop;
-    delete from pg_temp.account_completions;
+    -- WHERE true: hosted Supabase preloads safeupdate, which rejects bare DELETEs.
+    delete from pg_temp.account_completions where true;
     insert into pg_temp.account_completions
       select fc.id from public.find_completions fc
       join public.play_sessions ps on ps.id = fc.play_session_id

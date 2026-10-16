@@ -13,7 +13,11 @@ const CONSENT_ALLOWED_PATHS = [
   // Legal pages: parents and pending accounts must be able to read them.
   "/privacy",
   "/terms",
+  "/account-suspended",
 ];
+
+/** Matches BLOCKED_STATUSES in src/lib/utils/api-auth.ts. */
+const SANCTIONED_STATUSES = ["suspended", "banned", "inactive"];
 
 /**
  * Everything in the (app) route group except the public hunt catalogue
@@ -147,6 +151,10 @@ export default async function proxy(request: NextRequest) {
 
       if (profile?.status === "pending_consent") {
         return redirectTo("/consent-pending");
+      }
+      // Sanctioned accounts get no app shell (the API already refuses them).
+      if (profile && SANCTIONED_STATUSES.includes(profile.status)) {
+        return redirectTo("/account-suspended");
       }
     }
   }
