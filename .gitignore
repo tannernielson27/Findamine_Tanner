@@ -41,3 +41,7 @@ next-env.d.ts
 
 # local DB dumps
 backups/
+
+# App Store Connect API keys
+AuthKey_*.p8
+*.p8
