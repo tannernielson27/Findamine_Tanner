@@ -204,6 +204,10 @@ export default function Navbar({ user }: NavbarProps) {
             <LogOut className="w-5 h-5" aria-hidden="true" />
             Sign out
           </button>
+          <div className="flex gap-4 px-3 pt-1.5 pb-1 text-xs text-themed-muted">
+            <Link href="/privacy" onClick={() => setMenuOpen(false)} className="hover:underline">Privacy Policy</Link>
+            <Link href="/terms" onClick={() => setMenuOpen(false)} className="hover:underline">Terms of Use</Link>
+          </div>
         </motion.nav>
       )}
       </AnimatePresence>

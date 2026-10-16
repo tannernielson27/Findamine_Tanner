@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Settings, RefreshCw, Shield, BookOpen, Users } from "lucide-react";
+import { Settings, RefreshCw, Shield, BookOpen, Users, Ban, FileText } from "lucide-react";
 import { restartOnboardingTour } from "@/components/layout/onboarding";
+import { PRIVACY_PATH, TERMS_PATH } from "@/lib/constants/legal";
+import DeleteAccountSection from "./delete-account-section";
 
 export default function SettingsPage() {
   const [user, setUser] = useState<{ display_name: string; email: string; role: string } | null>(null);
@@ -166,7 +168,42 @@ export default function SettingsPage() {
           <BookOpen className="w-4 h-4" />
           About this research study
         </Link>
+
+        <Link
+          href="/settings/blocked"
+          className="flex items-center gap-2 text-sm text-brand hover:underline font-medium"
+        >
+          <Ban className="w-4 h-4" />
+          Blocked players
+        </Link>
       </div>
+
+      <section
+        aria-labelledby="legal-heading"
+        className="rounded-2xl bg-white border border-gray-100 shadow-sm p-6 mt-6 space-y-4"
+      >
+        <h2 id="legal-heading" className="font-[family-name:var(--font-display)] font-semibold text-gray-900">
+          Legal
+        </h2>
+
+        <Link
+          href={PRIVACY_PATH}
+          className="flex items-center gap-2 text-sm text-brand hover:underline font-medium"
+        >
+          <FileText className="w-4 h-4" />
+          Privacy Policy
+        </Link>
+
+        <Link
+          href={TERMS_PATH}
+          className="flex items-center gap-2 text-sm text-brand hover:underline font-medium"
+        >
+          <FileText className="w-4 h-4" />
+          Terms of Use
+        </Link>
+      </section>
+
+      <DeleteAccountSection role={user.role} />
     </main>
   );
 }

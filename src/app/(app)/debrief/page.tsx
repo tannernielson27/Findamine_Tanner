@@ -9,6 +9,7 @@ import {
   type ConditionDimension,
   type ParticipationStatus,
 } from "@/lib/services/participant-conditions";
+import { CONTACT_EMAIL } from "@/lib/constants/legal";
 
 /**
  * Study debrief surface (condition-aware — Workstream B / Task B9).
@@ -77,7 +78,10 @@ export default async function DebriefPage() {
             You are not taking part in this study. You were not placed in any study group, and
             there is nothing here for you to withdraw from.
           </p>
-          <p>If you have questions about the study, please contact the research team.</p>
+          <p>
+            If you have questions about the study, please contact the research team at{" "}
+            <a href={`mailto:${CONTACT_EMAIL}`} className="text-link hover:text-link-dark underline font-medium">{CONTACT_EMAIL}</a>.
+          </p>
         </div>
       </main>
     );
@@ -128,14 +132,14 @@ export default async function DebriefPage() {
           <p className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs text-gray-600">
             We couldn&apos;t find a study condition linked to your account, so there is nothing
             specific to disclose here. If you believe you took part in the study, please contact
-            the research team.
+            the research team at <a href={`mailto:${CONTACT_EMAIL}`} className="text-link hover:text-link-dark underline font-medium">{CONTACT_EMAIL}</a>.
           </p>
         )}
 
         <p>
           Your individual responses are confidential and are reported only in aggregate,
           de-identified form. If you have questions about the study or wish to withdraw your data,
-          please contact the research team.
+          please contact the research team at <a href={`mailto:${CONTACT_EMAIL}`} className="text-link hover:text-link-dark underline font-medium">{CONTACT_EMAIL}</a>.
         </p>
 
         <div className="border-t border-gray-100 pt-4">

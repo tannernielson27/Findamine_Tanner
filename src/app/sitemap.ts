@@ -11,6 +11,8 @@ const ROUTES: Array<{
   { path: "/", priority: 1.0, changeFrequency: "weekly" },
   { path: "/browse", priority: 0.8, changeFrequency: "weekly" },
   { path: "/browse/standards", priority: 0.6, changeFrequency: "monthly" },
+  { path: "/privacy", priority: 0.3, changeFrequency: "yearly" },
+  { path: "/terms", priority: 0.3, changeFrequency: "yearly" },
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {

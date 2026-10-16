@@ -283,10 +283,12 @@ export default async function Home() {
               style={{ objectFit: "contain" }}
             />
           </div>
-          <div className="flex gap-6">
+          <div className="flex flex-wrap gap-x-6 gap-y-2">
             <Link href="/browse" className="hover:text-gray-700 transition-colors">Browse Hunts</Link>
             <Link href="/register" className="hover:text-gray-700 transition-colors">Sign Up</Link>
             <Link href="/login" className="hover:text-gray-700 transition-colors">Sign In</Link>
+            <Link href="/privacy" className="hover:text-gray-700 transition-colors">Privacy</Link>
+            <Link href="/terms" className="hover:text-gray-700 transition-colors">Terms</Link>
           </div>
         </div>
       </footer>

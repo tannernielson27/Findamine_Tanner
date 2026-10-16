@@ -210,6 +210,11 @@ export default function LoginForm({ next, notice }: LoginFormProps) {
               Sign up
             </Link>
           </p>
+          <p className="pt-2 text-xs">
+            <Link href="/privacy" className="hover:text-gray-700 hover:underline">Privacy Policy</Link>
+            <span aria-hidden="true" className="mx-2">&middot;</span>
+            <Link href="/terms" className="hover:text-gray-700 hover:underline">Terms of Use</Link>
+          </p>
         </div>
       </div>
     </main>
