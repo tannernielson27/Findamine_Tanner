@@ -1,7 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
+import { Flag } from "lucide-react";
+import ReportDialog, { type ReportOutcome } from "@/components/moderation/report-dialog";
+import { socialErrorMessage } from "@/lib/social/friends";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { canViewField } from "@/lib/utils/privacy";
 
@@ -28,6 +31,14 @@ export default function TeamChat({ teamId, currentUserId }: TeamChatProps) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [sendError, setSendError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [reporting, setReporting] = useState<ChatMessage | null>(null);
+  // Authors the viewer blocked. Realtime rows bypass the API's filtering, so
+  // they're checked against this too. Messages from someone who blocked the
+  // viewer are never listed here (that would reveal the block): row-level
+  // security on team_messages hides them from the follow-up read below.
+  const hiddenRef = useRef<Set<string>>(new Set());
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Load initial messages
@@ -36,6 +47,7 @@ export default function TeamChat({ teamId, currentUserId }: TeamChatProps) {
       const res = await fetch(`/api/v1/teams/${teamId}/chat`);
       if (res.ok) {
         const data = await res.json();
+        hiddenRef.current = new Set<string>(data.hidden_user_ids || []);
         setMessages(data.messages || []);
       }
       setLoading(false);
@@ -63,7 +75,7 @@ export default function TeamChat({ teamId, currentUserId }: TeamChatProps) {
             .select("*, users(id, display_name, avatar_url, profile_visibility)")
             .eq("id", payload.new.id)
             .single();
-          if (data) {
+          if (data && !hiddenRef.current.has(data.user_id)) {
             setMessages((prev) => {
               // Avoid duplicates (in case we also added it optimistically)
               if (prev.some((m) => m.id === data.id)) return prev;
@@ -87,23 +99,49 @@ export default function TeamChat({ teamId, currentUserId }: TeamChatProps) {
   const handleSend = async () => {
     if (!input.trim() || sending) return;
     setSending(true);
+    setSendError("");
+    const fallback = "Your message didn't send. Try again.";
 
-    const res = await fetch(`/api/v1/teams/${teamId}/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: input.trim() }),
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      // Add optimistically (real-time might also add it)
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === data.message.id)) return prev;
-        return [...prev, data.message];
+    try {
+      const res = await fetch(`/api/v1/teams/${teamId}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: input.trim() }),
       });
-      setInput("");
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok && data.message) {
+        // Add optimistically (real-time might also add it)
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === data.message.id)) return prev;
+          return [...prev, data.message];
+        });
+        setInput("");
+      } else {
+        // e.g. the content filter's "includes language that isn't allowed"
+        setSendError(socialErrorMessage(res.status, data.error, fallback));
+      }
+    } catch {
+      setSendError(fallback);
     }
     setSending(false);
+  };
+
+  const closeReport = useCallback(() => setReporting(null), []);
+
+  const handleReported = (msg: ChatMessage, outcome: ReportOutcome) => {
+    // A reported message disappears for the reporter right away; a block
+    // hides everything that person sent.
+    if (outcome.blocked) hiddenRef.current = new Set([...hiddenRef.current, msg.user_id]);
+    setMessages((prev) =>
+      prev.filter((m) => m.id !== msg.id && !(outcome.blocked && m.user_id === msg.user_id))
+    );
+    setReporting(null);
+    setNotice(
+      outcome.blocked
+        ? "Thanks. A moderator will review it, and you won't see that player's messages anymore."
+        : "Thanks. The message is hidden and a moderator will review it."
+    );
   };
 
   return (
@@ -141,9 +179,22 @@ export default function TeamChat({ teamId, currentUserId }: TeamChatProps) {
                     </p>
                   )}
                   <p className="text-sm">{msg.message}</p>
-                  <p className="text-[10px] text-gray-500 mt-0.5">
-                    {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </p>
+                  <div className="mt-0.5 flex items-center gap-2">
+                    <p className="text-[10px] text-gray-500">
+                      {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                    {!isMe && (
+                      <button
+                        type="button"
+                        onClick={() => setReporting(msg)}
+                        aria-label="Report this message"
+                        className="-my-2 inline-flex min-h-8 items-center gap-1 rounded px-1 text-[10px] font-medium text-gray-500 transition-colors hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+                      >
+                        <Flag className="h-3 w-3" aria-hidden="true" />
+                        Report
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -151,6 +202,12 @@ export default function TeamChat({ teamId, currentUserId }: TeamChatProps) {
         )}
         <div ref={bottomRef} />
       </div>
+
+      {notice && (
+        <p role="status" className="border-t border-gray-200 px-3 py-2 text-xs text-gray-600">
+          {notice}
+        </p>
+      )}
 
       {/* Input area */}
       <div className="border-t border-gray-200 p-3 flex gap-2">
@@ -170,7 +227,23 @@ export default function TeamChat({ teamId, currentUserId }: TeamChatProps) {
           Send
         </button>
       </div>
+      {sendError && (
+        <p role="alert" className="px-3 text-xs font-medium text-red-700">
+          {sendError}
+        </p>
+      )}
       <p className="text-[10px] text-gray-500 text-right px-3 pb-1">{input.length}/280</p>
+
+      {reporting && (
+        <ReportDialog
+          targetType="message"
+          targetId={reporting.id}
+          subjectLabel="this message"
+          canBlock={!!reporting.user_id && reporting.user_id !== currentUserId}
+          onClose={closeReport}
+          onReported={(outcome) => handleReported(reporting, outcome)}
+        />
+      )}
     </div>
   );
 }

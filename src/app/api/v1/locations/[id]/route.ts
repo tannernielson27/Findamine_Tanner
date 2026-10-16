@@ -7,6 +7,12 @@ import {
   ApiError,
 } from "@/lib/utils/api-auth";
 import { parseCoordinates, parseRadius } from "../validation";
+import { normalizeSafetyNotes } from "@/lib/play/safety";
+import { assertCleanFields } from "@/lib/utils/crud-helpers";
+import { internalError } from "@/lib/utils/internal-error";
+
+/** Location text players see at a stop; screened like other hunt content. */
+const LOCATION_TEXT_FIELDS = ["name", "description", "address", "safety_notes"];
 
 type Supabase = Awaited<ReturnType<typeof createSupabaseServiceClient>>;
 
@@ -75,9 +81,14 @@ export async function PUT(
       if (body[field] !== undefined) updates[field] = body[field];
     }
 
+    if (updates.safety_notes !== undefined) {
+      updates.safety_notes = normalizeSafetyNotes(updates.safety_notes);
+    }
+
     if (updates.name !== undefined && !String(updates.name || "").trim()) {
       throw new ApiError(400, "Location name cannot be empty");
     }
+    assertCleanFields(updates, LOCATION_TEXT_FIELDS);
 
     const radiusMeters = parseRadius(body.radius_meters);
     if (radiusMeters !== undefined) updates.radius_meters = radiusMeters;
@@ -101,7 +112,7 @@ export async function PUT(
       .select()
       .single();
 
-    if (error) throw new ApiError(500, error.message);
+    if (error) throw internalError("/api/v1/locations/[id]", error);
 
     return Response.json({ location: data });
   } catch (error) {
@@ -126,7 +137,7 @@ export async function DELETE(
       .update({ deleted_at: new Date().toISOString() })
       .eq("id", id);
 
-    if (error) throw new ApiError(500, error.message);
+    if (error) throw internalError("/api/v1/locations/[id]", error);
 
     return Response.json({ message: "Location deleted" });
   } catch (error) {

@@ -7,6 +7,12 @@ import {
   ApiError,
 } from "@/lib/utils/api-auth";
 import { parseCoordinates, parseRadius } from "./validation";
+import { normalizeSafetyNotes } from "@/lib/play/safety";
+import { assertCleanFields } from "@/lib/utils/crud-helpers";
+import { internalError } from "@/lib/utils/internal-error";
+
+/** Location text players see at a stop; screened like other hunt content. */
+const LOCATION_TEXT_FIELDS = ["name", "description", "address", "safety_notes"];
 
 export async function GET(request: NextRequest) {
   try {
@@ -30,7 +36,7 @@ export async function GET(request: NextRequest) {
         max_results: 50,
       });
 
-      if (error) throw new ApiError(500, error.message);
+      if (error) throw internalError("/api/v1/locations", error);
       return Response.json({ locations: data });
     }
 
@@ -47,7 +53,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { data, error } = await query;
-    if (error) throw new ApiError(500, error.message);
+    if (error) throw internalError("/api/v1/locations", error);
 
     return Response.json({ locations: data });
   } catch (error) {
@@ -66,6 +72,10 @@ export async function POST(request: NextRequest) {
     }
     const { lat, lng } = parseCoordinates(body.latitude, body.longitude);
     const radiusMeters = parseRadius(body.radius_meters) ?? 50;
+    assertCleanFields(
+      { ...body, safety_notes: normalizeSafetyNotes(body.safety_notes) },
+      LOCATION_TEXT_FIELDS
+    );
 
     const supabase = await createSupabaseServiceClient();
 
@@ -79,7 +89,7 @@ export async function POST(request: NextRequest) {
       p_address: body.address || null,
       p_place_id: body.place_id || null,
       p_location_type: body.location_type || null,
-      p_safety_notes: body.safety_notes || null,
+      p_safety_notes: normalizeSafetyNotes(body.safety_notes),
       p_is_library: body.is_library || false,
       p_created_by: user.id,
     });
@@ -98,14 +108,14 @@ export async function POST(request: NextRequest) {
           address: body.address || null,
           place_id: body.place_id || null,
           location_type: body.location_type || null,
-          safety_notes: body.safety_notes || null,
+          safety_notes: normalizeSafetyNotes(body.safety_notes),
           is_library: body.is_library || false,
           created_by: user.id,
         })
         .select()
         .single();
 
-      if (insertError) throw new ApiError(500, insertError.message);
+      if (insertError) throw internalError("/api/v1/locations", insertError);
       return Response.json({ location: loc }, { status: 201 });
     }
 

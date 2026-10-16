@@ -12,7 +12,25 @@ interface Report {
   status: string;
   created_at: string;
   reporter: { display_name: string | null } | null;
+  /** Migration 072: who wrote the reported item, and what it said at report time. */
+  reported_user_id?: string | null;
+  reported_user?: { id: string; display_name: string | null; role?: string | null } | null;
+  content_snapshot?: string | null;
 }
+
+/** Entity types the review API can take down (see REMOVABLE in the review route). */
+const REMOVABLE_TYPES = new Set(["message", "wall_post", "kudos", "shoutout"]);
+
+const ENTITY_LABEL: Record<string, string> = {
+  message: "Chat message",
+  wall_post: "Wall post",
+  kudos: "Kudos",
+  shoutout: "Shoutout",
+  user: "Player",
+  hunt: "Hunt",
+  review: "Hunt review",
+  content: "Content",
+};
 
 /** Outcomes the review API accepts (moderation_reports.status CHECK). */
 type ReviewStatus = "actioned" | "dismissed";
@@ -47,14 +65,14 @@ export default function ModerationPage() {
       });
   }, []);
 
-  const handleReview = async (reportId: string, status: ReviewStatus) => {
+  const handleReview = async (reportId: string, status: ReviewStatus, removeContent = false) => {
     setBusyId(reportId);
     setError(null);
     try {
       const res = await fetch(`/api/v1/moderation/${reportId}/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify(removeContent ? { status, remove_content: true } : { status }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -89,8 +107,8 @@ export default function ModerationPage() {
         </div>
       ) : state === "forbidden" ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800">
-          Your role can&apos;t view the moderation queue. Reports are reviewed by admins, teachers, and
-          hunt creators — ask an admin to review any pending reports.
+          Your role can&apos;t view the moderation queue. Reports are reviewed by Findamine admins — ask an
+          admin to review any pending reports.
         </div>
       ) : state === "error" ? null : reports.length === 0 ? (
         <div className="rounded-lg border-2 border-dashed border-gray-200 p-12 text-center text-gray-500">
@@ -103,8 +121,22 @@ export default function ModerationPage() {
               <div className="flex justify-between items-start gap-3">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-900">
-                    {r.entity_type} report · {r.reason.replace(/_/g, " ")}
+                    {ENTITY_LABEL[r.entity_type] ?? r.entity_type} report · {r.reason.replace(/_/g, " ")}
                   </p>
+                  {r.content_snapshot && (
+                    <blockquote className="mt-1 border-l-2 border-gray-300 pl-2 text-sm text-gray-800 break-words">
+                      {r.content_snapshot}
+                    </blockquote>
+                  )}
+                  {(r.reported_user || r.reported_user_id) && (
+                    <p className="text-xs text-gray-600 mt-1">
+                      By{" "}
+                      <Link href={`/profile/${r.reported_user?.id ?? r.reported_user_id}`} className="text-brand hover:underline">
+                        {r.reported_user?.display_name || "player"}
+                      </Link>
+                      {r.reported_user?.role && <> ({r.reported_user.role})</>}
+                    </p>
+                  )}
                   {r.details && <p className="text-sm text-gray-600 mt-1 break-words">{r.details}</p>}
                   <p className="text-xs text-gray-500 mt-1">
                     {new Date(r.created_at).toLocaleString()}
@@ -112,7 +144,21 @@ export default function ModerationPage() {
                   </p>
                   <p className="text-[11px] text-gray-400 mt-0.5 font-mono break-all">{r.entity_id}</p>
                 </div>
-                <div className="flex gap-2 shrink-0">
+                <div className="flex flex-wrap justify-end gap-2 shrink-0">
+                  {REMOVABLE_TYPES.has(r.entity_type) && (
+                    <button
+                      onClick={() => {
+                        if (window.confirm("Remove this content for everyone and resolve the report?")) {
+                          handleReview(r.id, "actioned", true);
+                        }
+                      }}
+                      disabled={busyId === r.id}
+                      title="Take the content down and mark the report actioned"
+                      className="rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-700 disabled:opacity-50"
+                    >
+                      Remove &amp; resolve
+                    </button>
+                  )}
                   <button
                     onClick={() => handleReview(r.id, "actioned")}
                     disabled={busyId === r.id}

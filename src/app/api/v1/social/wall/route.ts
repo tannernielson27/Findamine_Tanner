@@ -3,6 +3,35 @@ import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, blockChildren, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { socialLimiter } from "@/lib/utils/rate-limit";
 import { filterProfileForViewer } from "@/lib/utils/privacy";
+import { assertCleanText } from "@/lib/moderation/guard";
+import { getBlockSets, hiddenUserIds, withoutAuthors } from "@/lib/moderation/blocks";
+import { isActiveMember, loadHunt, loadTeam } from "@/app/api/v1/teams/team-rules";
+import { isReviewer } from "@/lib/hunts/review";
+import { logger } from "@/lib/utils/logger";
+
+type Db = Awaited<ReturnType<typeof createSupabaseServiceClient>>;
+
+/**
+ * Who may read a team's wall: its current members, whoever runs the hunt the
+ * team belongs to (the overseeing teacher), and admins/researchers.
+ */
+async function canReadWall(supabase: Db, teamId: string, user: { id: string; role: string }): Promise<boolean> {
+  if (isReviewer(user.role)) return true;
+  if (await isActiveMember(supabase, teamId, user.id)) return true;
+  const team = await loadTeam(supabase, teamId);
+  if (!team) return false;
+  const hunt = await loadHunt(supabase, team.hunt_id);
+  return !!hunt && hunt.created_by === user.id;
+}
+
+/**
+ * Anonymous posts carry no author for anyone but the author and staff: the
+ * user_id and the author embed are removed here, not just hidden in the UI.
+ */
+function anonymize<R extends Record<string, unknown>>(post: R, viewer: { id: string; role: string }): R {
+  if (post.is_anonymous !== true || post.user_id === viewer.id || isReviewer(viewer.role)) return post;
+  return { ...post, user_id: null, users: null };
+}
 
 type EmbeddedUser = {
   id: string;
@@ -21,6 +50,9 @@ export async function GET(request: NextRequest) {
     if (!user) throw new ApiError(401, "Not authenticated");
 
     const supabase = await createSupabaseServiceClient();
+    if (!(await canReadWall(supabase, teamId, user))) {
+      throw new ApiError(403, "Only this team's members can see its wall.");
+    }
 
     const { data } = await supabase
       .from("wall_posts")
@@ -31,13 +63,14 @@ export async function GET(request: NextRequest) {
       .limit(50);
 
     // Wall is team-scoped: authors are teammates, so the viewer relationship is
-    // "team" (or "self"). Honors fields set to "nobody". Anonymous posts already
-    // hide identity client-side via is_anonymous; filtering is layered, not replaced.
-    const posts = (data || []).map((r) => {
+    // "team" (or "self"). Honors fields set to "nobody". Anonymous posts lose
+    // their author entirely (see anonymize), after block filtering used it.
+    const hidden = hiddenUserIds(await getBlockSets(supabase, user.id));
+    const posts = withoutAuthors(data || [], (r) => r.user_id as string, hidden).map((r) => {
       const author = r.users as EmbeddedUser | null;
-      if (!author?.id) return r;
+      if (!author?.id) return anonymize(r, user);
       const rel = author.id === user.id ? "self" : "team";
-      return { ...r, users: { id: author.id, ...filterProfileForViewer(author, rel) } };
+      return anonymize({ ...r, users: { id: author.id, ...filterProfileForViewer(author, rel) } }, user);
     });
 
     return Response.json({ posts });
@@ -48,9 +81,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    await socialLimiter.check(request);
     const user = await getAuthUser(request);
     if (!user) throw new ApiError(401, "Not authenticated");
+    await socialLimiter.check(request, user.id);
     blockChildren(user, "wall posts");
 
     const body = await request.json();
@@ -60,18 +93,12 @@ export async function POST(request: NextRequest) {
     if (typeof body.content !== "string" || body.content.length > 2000) {
       throw new ApiError(400, "Content must be a string of 2000 characters or fewer");
     }
+    assertCleanText(body.content, { role: user.role, label: "That post" });
 
     const supabase = await createSupabaseServiceClient();
 
-    // Verify user is a member of this team
-    const { data: membership } = await supabase
-      .from("team_members")
-      .select("id")
-      .eq("team_id", body.team_id)
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    if (!membership) {
+    // Verify user is a current member of this team
+    if (!(await isActiveMember(supabase, String(body.team_id), user.id))) {
       throw new ApiError(403, "You must be a member of this team to post");
     }
 
@@ -87,7 +114,10 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
 
-    if (error) throw new ApiError(500, error.message);
+    if (error) {
+      logger.error("wall.post_failed", { error: error.message });
+      throw new ApiError(500, "Your post didn't save. Please try again.");
+    }
 
     return Response.json({ post: data }, { status: 201 });
   } catch (error) {

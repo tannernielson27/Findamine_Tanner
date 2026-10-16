@@ -4,6 +4,7 @@ import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { Lock } from "lucide-react";
 import FriendButton from "@/components/social/friend-button";
+import ProfileSafetyActions from "@/components/moderation/profile-safety-actions";
 
 interface BadgeRow {
   earned_at: string;
@@ -66,6 +67,10 @@ export default function PeerProfilePage({ params }: { params: Promise<{ userId: 
   const [data, setData] = useState<ProfileResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  // Bumped on block/unblock: a block removes the friendship, so the friend
+  // button re-reads its state (and is hidden while blocked).
+  const [blocked, setBlocked] = useState(false);
+  const [friendKey, setFriendKey] = useState(0);
 
   useEffect(() => {
     fetch(`/api/v1/users/${userId}/profile`)
@@ -118,9 +123,19 @@ export default function PeerProfilePage({ params }: { params: Promise<{ userId: 
             Control what others see →
           </Link>
         </p>
-      ) : profile.role !== "child" ? (
-        <FriendButton userId={profile.id} />
-      ) : null}
+      ) : (
+        <>
+          {profile.role !== "child" && !blocked && <FriendButton key={friendKey} userId={profile.id} />}
+          <ProfileSafetyActions
+            userId={profile.id}
+            name={profile.display_name || "this player"}
+            onBlockChange={(next) => {
+              setBlocked(next);
+              setFriendKey((k) => k + 1);
+            }}
+          />
+        </>
+      )}
 
       <div className="space-y-3 mt-4">
         {/* Score */}

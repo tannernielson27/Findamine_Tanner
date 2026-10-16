@@ -1,7 +1,7 @@
 import { createSupabaseServerClient, createSupabaseServiceClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Clock, Flag, Play, Users } from "lucide-react";
+import { ArrowLeft, Clock, Flag, Play, ShieldCheck, Users } from "lucide-react";
 import Leaderboard from "@/components/social/leaderboard";
 import HuntAnalytics from "@/components/hunts/hunt-analytics";
 import HuntRating from "@/components/hunts/hunt-rating";
@@ -9,6 +9,8 @@ import HuntMap from "@/components/hunts/hunt-map";
 import { StopList } from "@/components/hunts/stop-detail-modal";
 import HuntTeamPanel from "@/components/teams/hunt-team-panel";
 import { AudienceIcon, formatPlayMode } from "../hunt-meta";
+import { canAccessHunt, isPubliclyAvailable } from "@/lib/hunts/review";
+import { SafetyTipList } from "@/components/play/safety-tips";
 
 const PILL_CLASS =
   "inline-flex items-center gap-1.5 rounded-full border border-themed-border bg-surface px-3 py-1 text-sm text-themed-text";
@@ -37,9 +39,10 @@ export default async function HuntDetailPage({
   // Every play_mode except "solo" is a team mode (team_self_select, team_assigned, ...).
   const isTeamHunt = typeof hunt.play_mode === "string" && hunt.play_mode.startsWith("team_");
 
-  // Draft hunts are only visible to their owner or admins/researchers, the
-  // same rule the hunts API applies.
-  if (hunt.status === "draft") {
+  // Only hunts approved in publish review are public. Drafts are visible to
+  // their owner and reviewers; published-but-unapproved hunts also to the
+  // creator's roster students. Same rule as the hunts API (canAccessHunt).
+  if (!isPubliclyAvailable(hunt)) {
     const authClient = await createSupabaseServerClient();
     const { data: { user: authUser } } = await authClient.auth.getUser();
     const { data: viewer } = authUser
@@ -51,8 +54,7 @@ export default async function HuntDetailPage({
           .maybeSingle()
       : { data: null };
 
-    const canPreview =
-      !!viewer && (viewer.id === hunt.created_by || ["admin", "researcher"].includes(viewer.role));
+    const canPreview = await canAccessHunt(supabase, hunt, viewer);
     if (!canPreview) notFound();
   }
 
@@ -122,6 +124,21 @@ export default async function HuntDetailPage({
           </p>
         )}
       </header>
+
+      {/* Location play happens in the real world (App Store 1.4.5). */}
+      <section
+        aria-labelledby="play-safely-heading"
+        className="mb-6 rounded-xl border border-themed-border bg-themed-bg p-4"
+      >
+        <h2
+          id="play-safely-heading"
+          className="mb-2 inline-flex items-center gap-2 font-[family-name:var(--font-display)] text-lg font-semibold text-themed-text"
+        >
+          <ShieldCheck className="h-5 w-5 text-secondary" aria-hidden="true" />
+          Play safely
+        </h2>
+        <SafetyTipList />
+      </section>
 
       {/* Hunt map */}
       <HuntMap

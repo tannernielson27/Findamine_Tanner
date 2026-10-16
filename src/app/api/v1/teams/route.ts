@@ -15,7 +15,7 @@ import {
   addMember,
   canManageHunt,
   liveTeams,
-  loadHunt,
+  loadAccessibleHunt,
   parseTeamName,
   teamCapacity,
   teamModeOf,
@@ -158,7 +158,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (huntId) {
-      const hunt = await loadHunt(supabase, huntId);
+      const hunt = await loadAccessibleHunt(supabase, huntId, user);
       if (!hunt) throw new ApiError(404, "Hunt not found");
 
       const canManage = canManageHunt(user, hunt);
@@ -205,18 +205,18 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    await socialLimiter.check(request);
     const user = await getAuthUser(request);
     if (!user) throw new ApiError(401, "Not authenticated");
+    await socialLimiter.check(request, user.id);
 
     const body = await request.json().catch(() => null);
     const huntId = body && typeof body.hunt_id === "string" ? body.hunt_id : "";
     if (!huntId) throw new ApiError(400, "hunt_id is required");
-    const name = parseTeamName(body.name);
+    const name = parseTeamName(body.name, user.role);
 
     const supabase = await createSupabaseServiceClient();
 
-    const hunt = await loadHunt(supabase, huntId);
+    const hunt = await loadAccessibleHunt(supabase, huntId, user);
     if (!hunt) throw new ApiError(404, "Hunt not found");
 
     const selfSelect = teamModeOf(hunt.play_mode) === "self_select";

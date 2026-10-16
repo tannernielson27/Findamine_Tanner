@@ -9,6 +9,15 @@ import {
 } from "@/lib/utils/api-auth";
 import { generalLimiter } from "@/lib/utils/rate-limit";
 import { botGuard } from "@/lib/utils/bot-guard";
+import { internalError } from "@/lib/utils/internal-error";
+import { withoutInternalReviewFields } from "@/lib/hunts/review";
+
+/** Catalogue rows without review bookkeeping (who reviewed/affirmed, notes). */
+function publicRows(rows: unknown): unknown {
+  return Array.isArray(rows)
+    ? rows.map((row) => (row && typeof row === "object" ? withoutInternalReviewFields(row as Record<string, unknown>) : row))
+    : rows;
+}
 
 const DIFFICULTY_PROGRESSIONS = ["ascending", "descending", "mixed", "plateau"];
 
@@ -41,7 +50,7 @@ export async function GET(request: NextRequest) {
         .is("deleted_at", null)
         .order("updated_at", { ascending: false });
 
-      if (error) throw new ApiError(500, error.message);
+      if (error) throw internalError("/api/v1/hunts", error);
       return Response.json({ hunts: data });
     }
 
@@ -56,8 +65,8 @@ export async function GET(request: NextRequest) {
         max_results: 50,
       });
 
-      if (error) throw new ApiError(500, error.message);
-      return Response.json({ hunts: data });
+      if (error) throw internalError("/api/v1/hunts nearby", error);
+      return Response.json({ hunts: publicRows(data) });
     }
 
     // Basic list of public hunts
@@ -83,9 +92,9 @@ export async function GET(request: NextRequest) {
     }
 
     const { data, error } = await query;
-    if (error) throw new ApiError(500, error.message);
+    if (error) throw internalError("/api/v1/hunts list", error);
 
-    return Response.json({ hunts: data });
+    return Response.json({ hunts: publicRows(data) });
   } catch (error) {
     return errorResponse(error);
   }
@@ -133,7 +142,7 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
 
-    if (error) throw new ApiError(500, error.message);
+    if (error) throw internalError("/api/v1/hunts", error);
 
     return Response.json({ hunt }, { status: 201 });
   } catch (error) {

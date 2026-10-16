@@ -14,10 +14,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await socialLimiter.check(request);
     const { id } = await params;
     const user = await getAuthUser(request);
     if (!user) throw new ApiError(401, "Not authenticated");
+    await socialLimiter.check(request, user.id);
 
     const supabase = await createSupabaseServiceClient();
 

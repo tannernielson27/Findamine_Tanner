@@ -17,6 +17,11 @@ vi.mock("@/lib/utils/rate-limit", () => {
   const limiter = { check: async () => {}, checkKey: async () => {} };
   return { authLimiter: limiter, socialLimiter: limiter, generalLimiter: limiter };
 });
+// after() needs a live Next request scope; moderator alerts are covered in report-alerts.test.ts.
+vi.mock("next/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/server")>()),
+  after: () => {},
+}));
 
 import { POST as postReport } from "@/app/api/v1/reports/route";
 import { GET as listReports } from "@/app/api/v1/moderation/route";
@@ -59,9 +64,16 @@ function req(method: string, path: string, token: string | null, body?: unknown)
 
 const idParams = (id: string) => ({ params: Promise.resolve({ id }) });
 
+/** A hunt stop the play page can report (the route resolves it to snapshot the clue). */
+const installWithFind = () =>
+  install(
+    { hunts: [{ id: "hunt-1", created_by: "res1" }], finds: [{ id: UUID, hunt_id: "hunt-1", clue_text: "By the fountain" }] },
+    { embeds: { finds: { hunts: { table: "hunts", localKey: "hunt_id" } } } }
+  );
+
 describe("POST /api/v1/reports", () => {
   it("stores the play page's report under the real moderation_reports columns", async () => {
-    const db = install();
+    const db = installWithFind();
     const res = await postReport(
       req("POST", "/api/v1/reports", "tok-player", { category: "spam", target_type: "find", target_id: UUID })
     );
@@ -76,6 +88,8 @@ describe("POST /api/v1/reports", () => {
       reason: "spam",
       details: "[find]",
       status: "pending",
+      reported_user_id: "res1",
+      content_snapshot: "By the fountain",
     });
     for (const wrong of ["target_type", "target_id", "category", "description"]) {
       expect(row).not.toHaveProperty(wrong);
@@ -83,7 +97,8 @@ describe("POST /api/v1/reports", () => {
   });
 
   it("keeps an allowed entity type and the reporter's comment", async () => {
-    const db = install();
+    // The route now resolves the reported row (author + snapshot), so it must exist.
+    const db = install({ wall_posts: [{ id: UUID, user_id: "res1", content: "a post" }] });
     await postReport(
       req("POST", "/api/v1/reports", "tok-player", {
         category: "mean_hurtful",
@@ -96,7 +111,7 @@ describe("POST /api/v1/reports", () => {
   });
 
   it("returns an error instead of reported:true when the insert fails", async () => {
-    const db = install();
+    const db = installWithFind();
     const realFrom = db.client.from;
     const spy = vi.spyOn(db.client, "from").mockImplementation((table: string) => {
       if (table !== "moderation_reports") return realFrom(table);

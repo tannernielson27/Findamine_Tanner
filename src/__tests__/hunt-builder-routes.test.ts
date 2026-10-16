@@ -1,4 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+// after() needs a live Next request scope; reviewer alerts are covered in report-alerts.test.ts.
+vi.mock("next/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/server")>()),
+  after: () => {},
+}));
 import { NextRequest } from "next/server";
 
 /**
@@ -36,6 +41,7 @@ vi.mock("@/lib/utils/api-auth", async (importOriginal) => ({
 }));
 vi.mock("@/lib/utils/rate-limit", () => ({
   generalLimiter: { check: async () => {} },
+  publishLimiter: { check: async () => {} },
 }));
 
 import { parseFindFields } from "@/app/api/v1/hunts/find-fields";
@@ -142,7 +148,7 @@ describe("GET /hunts/{id}", () => {
 
 describe("POST /hunts/{id}/clone", () => {
   const source = {
-    id: HUNT_ID, title: "Campus Walk", status: "published", is_public: true,
+    id: HUNT_ID, title: "Campus Walk", status: "published", is_public: true, review_status: "approved",
     created_by: "someone-else", created_at: "x", updated_at: "y", deleted_at: null,
     search_vector: "'campus':1 'walk':2", metadata: { scoring_mode: "binary" },
     finds: [
@@ -181,7 +187,10 @@ describe("POST /hunts/{id}/clone", () => {
 
     const res = await cloneHunt(req("POST", `/api/v1/hunts/${HUNT_ID}/clone`), huntParams);
     expect(res.status).toBe(500);
-    expect((await res.json()).error).toMatch(/Failed to copy stop 1: boom/);
+    // The database's message is logged, not returned (L1).
+    const error = (await res.json()).error;
+    expect(error).toMatch(/Couldn't copy stop 1/);
+    expect(error).not.toMatch(/boom/);
     expect(made.hunts[2].delete).toHaveBeenCalled();
     expect(made.hunts[2].eq).toHaveBeenCalledWith("id", "new-hunt");
   });
@@ -233,7 +242,7 @@ describe("DELETE /hunts/{id}/finds/{findId}", () => {
 describe("POST /hunts/{id}/publish", () => {
   it("explains that a hunt with no stops cannot be published", async () => {
     install({ hunts: [ok({ created_by: "teacher-1" })], finds: [ok([])] });
-    const res = await publishHunt(req("POST", `/api/v1/hunts/${HUNT_ID}/publish`), huntParams);
+    const res = await publishHunt(req("POST", `/api/v1/hunts/${HUNT_ID}/publish`, { safety_affirmed: true }), huntParams);
     expect(res.status).toBe(400);
     expect((await res.json()).error).toMatch(/at least one stop/);
   });
@@ -247,7 +256,7 @@ describe("POST /hunts/{id}/publish", () => {
         { id: "c", location_id: null, metadata: {} },
       ])],
     });
-    const res = await publishHunt(req("POST", `/api/v1/hunts/${HUNT_ID}/publish`), huntParams);
+    const res = await publishHunt(req("POST", `/api/v1/hunts/${HUNT_ID}/publish`, { safety_affirmed: true }), huntParams);
     expect(res.status).toBe(400);
     expect((await res.json()).error).toMatch(/stop 3 has no location/);
 
@@ -258,19 +267,22 @@ describe("POST /hunts/{id}/publish", () => {
         { id: "b", location_id: "l2", metadata: { needs_placement: true } },
       ])],
     });
-    const placeholder = await publishHunt(req("POST", `/api/v1/hunts/${HUNT_ID}/publish`), huntParams);
+    const placeholder = await publishHunt(req("POST", `/api/v1/hunts/${HUNT_ID}/publish`, { safety_affirmed: true }), huntParams);
     expect(placeholder.status).toBe(400);
     expect((await placeholder.json()).error).toMatch(/stops 1, 2 have a placeholder location/);
   });
 
-  it("publishes once every stop has a real location", async () => {
+  it("publishes once every stop has a real location, submitting it for review (unlisted)", async () => {
     const made = install({
       hunts: [ok({ created_by: "teacher-1" }), ok({ id: HUNT_ID, status: "published" })],
       finds: [ok([{ id: "a", location_id: "l1", metadata: { needs_placement: false } }])],
     });
-    const res = await publishHunt(req("POST", `/api/v1/hunts/${HUNT_ID}/publish`), huntParams);
+    const res = await publishHunt(req("POST", `/api/v1/hunts/${HUNT_ID}/publish`, { safety_affirmed: true }), huntParams);
     expect(res.status).toBe(200);
-    expect(made.hunts[1].update).toHaveBeenCalledWith({ status: "published", is_public: true });
+    // Publish review (migration 073): playable, but not in the catalogue yet.
+    expect(made.hunts[1].update).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "published", is_public: false, review_status: "pending" })
+    );
   });
 });
 

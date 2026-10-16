@@ -151,6 +151,8 @@ describe("kudos routes", () => {
         { id: "k-in", sender_id: ADA, receiver_id: ME, message: "nice", created_at: "2026-01-01" },
         { id: "k-other", sender_id: ADA, receiver_id: BO, message: "hi", created_at: "2026-01-02" },
       ],
+      // Kudos now require a connection (friends, crew, team or class).
+      friend_connections: [{ id: "fc-ada", requester_id: ME, addressee_id: ADA, status: "accepted" }],
     });
   });
 

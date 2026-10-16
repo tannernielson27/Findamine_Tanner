@@ -8,4 +8,5 @@ const taskFields = [
 
 export const { GET, POST } = createCrudHandlers("tasks", {
   allowedInsertFields: taskFields,
+  textFields: ["title", "description", "content", "feedback"],
 });

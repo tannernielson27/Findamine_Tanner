@@ -5,6 +5,8 @@ import { socialLimiter } from "@/lib/utils/rate-limit";
 import { filterProfileForViewer } from "@/lib/utils/privacy";
 import { getViewerRelationships } from "@/lib/utils/viewer";
 import { withViewerSide } from "@/lib/social/friends";
+import { isBlockedBetween } from "@/lib/moderation/blocks";
+import { internalError } from "@/lib/utils/internal-error";
 
 type EmbeddedUser = {
   id: string;
@@ -76,9 +78,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    await socialLimiter.check(request);
     const user = await getAuthUser(request);
     if (!user) throw new ApiError(401, "Not authenticated");
+    await socialLimiter.check(request, user.id);
     blockChildren(user, "friend requests");
 
     const body = await request.json().catch(() => null);
@@ -100,6 +102,9 @@ export async function POST(request: NextRequest) {
     if (addressee.role === "child") {
       throw new ApiError(403, "Friend requests aren't available for this account.");
     }
+    if (await isBlockedBetween(supabase, user.id, addresseeId)) {
+      throw new ApiError(403, "You can't send a friend request to this player.");
+    }
 
     const { data, error } = await supabase
       .from("friend_connections")
@@ -108,7 +113,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (!error) return Response.json({ connection: data }, { status: 201 });
-    if (error.code !== "23505") throw new ApiError(500, error.message);
+    if (error.code !== "23505") throw internalError("/api/v1/social/friends", error);
 
     // One row per pair (idx_friends_pair): say what the existing one means.
     const { data: sent } = await supabase
@@ -139,7 +144,7 @@ export async function POST(request: NextRequest) {
         .eq("id", received.id)
         .select()
         .single();
-      if (reopenError) throw new ApiError(500, reopenError.message);
+      if (reopenError) throw internalError("/api/v1/social/friends", reopenError);
       return Response.json({ connection: reopened }, { status: 201 });
     }
     throw new ApiError(409, "A friend request between you two already exists.");

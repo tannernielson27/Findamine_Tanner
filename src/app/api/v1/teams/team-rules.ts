@@ -1,6 +1,8 @@
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { ApiError } from "@/lib/utils/api-auth";
+import { assertCleanText } from "@/lib/moderation/guard";
 import type { AuthUser } from "@/lib/types/database";
+import { canAccessHunt } from "@/lib/hunts/review";
 
 /**
  * Shared rules for team membership.
@@ -38,6 +40,7 @@ export interface HuntForTeams {
   title: string | null;
   play_mode: string;
   status: string;
+  review_status?: string | null;
   created_by: string | null;
   max_team_size: number | null;
   max_teams: number | null;
@@ -54,11 +57,27 @@ export interface TeamRow {
 export async function loadHunt(supabase: ServiceClient, huntId: string): Promise<HuntForTeams | null> {
   const { data } = await supabase
     .from("hunts")
-    .select("id, title, play_mode, status, created_by, max_team_size, max_teams")
+    .select("id, title, play_mode, status, review_status, created_by, max_team_size, max_teams")
     .eq("id", huntId)
     .is("deleted_at", null)
     .maybeSingle();
   return (data as HuntForTeams | null) ?? null;
+}
+
+/**
+ * The hunt, if `user` may open it (see canAccessHunt): drafts and rejected
+ * hunts only for their creator and reviewers, pending ones also for the
+ * creator's roster students. Anything else reads as not found.
+ */
+export async function loadAccessibleHunt(
+  supabase: ServiceClient,
+  huntId: string,
+  user: { id: string; role: string }
+): Promise<HuntForTeams | null> {
+  const hunt = await loadHunt(supabase, huntId);
+  if (!hunt) return null;
+  const access = { created_by: hunt.created_by ?? "", status: hunt.status, review_status: hunt.review_status ?? null };
+  return (await canAccessHunt(supabase, access, user)) ? hunt : null;
 }
 
 export async function loadTeam(supabase: ServiceClient, teamId: string): Promise<TeamRow | null> {
@@ -98,12 +117,13 @@ export function latestPerUser<T extends { user_id: string }>(rows: T[]): T[] {
 }
 
 /** Trimmed team name, or a 400 the form can show. */
-export function parseTeamName(raw: unknown): string {
+export function parseTeamName(raw: unknown, role?: string | null): string {
   const name = typeof raw === "string" ? raw.replace(/\s+/g, " ").trim() : "";
   if (!name) throw new ApiError(400, "Give your team a name.");
   if (name.length > TEAM_NAME_MAX) {
     throw new ApiError(400, `Team names can be at most ${TEAM_NAME_MAX} characters.`);
   }
+  assertCleanText(name, { role, label: "That team name" });
   return name;
 }
 

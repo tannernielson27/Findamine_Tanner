@@ -7,6 +7,14 @@ import {
   ApiError,
 } from "@/lib/utils/api-auth";
 import { parseFindFields } from "../../../find-fields";
+import {
+  assertCleanFindText,
+  FIND_REVIEW_KEYS,
+  findTextChanged,
+  requeuedMessage,
+  settleRequeue,
+} from "@/lib/hunts/review";
+import { internalError } from "@/lib/utils/internal-error";
 
 export async function PUT(
   request: NextRequest,
@@ -23,7 +31,7 @@ export async function PUT(
     // Verify hunt ownership
     const { data: hunt } = await supabase
       .from("hunts")
-      .select("created_by")
+      .select("created_by, status, review_status")
       .eq("id", id)
       .is("deleted_at", null)
       .single();
@@ -37,6 +45,22 @@ export async function PUT(
     if (Object.keys(updates).length === 0) {
       throw new ApiError(400, "No editable fields provided");
     }
+    assertCleanFindText(updates);
+
+    // On a listed hunt, note whether this edit changes what reviewers approved
+    // (the finds trigger applies the same rule in the database, and moves a
+    // pending hunt's review_submitted_at forward on any such edit).
+    const wasListed = hunt.review_status === "approved" && hunt.status !== "draft";
+    let predicted = false;
+    if (wasListed) {
+      const { data: before } = await supabase
+        .from("finds")
+        .select(FIND_REVIEW_KEYS.join(", "))
+        .eq("id", findId)
+        .eq("hunt_id", id)
+        .maybeSingle();
+      predicted = !!before && findTextChanged(before as unknown as Record<string, unknown>, updates);
+    }
 
     const { data: find, error } = await supabase
       .from("finds")
@@ -47,8 +71,12 @@ export async function PUT(
       .select("*, locations(*), tasks(*), primers(*)")
       .maybeSingle();
 
-    if (error) throw new ApiError(500, error.message);
+    if (error) throw internalError("/api/v1/hunts/[id]/finds/[findId]", error);
     if (!find) throw new ApiError(404, "Stop not found in this hunt");
+
+    if (await settleRequeue(supabase, id, wasListed, predicted)) {
+      return Response.json({ find, review_status: "pending", message: requeuedMessage(user.id, hunt.created_by) });
+    }
 
     return Response.json({ find });
   } catch (error) {
@@ -70,7 +98,7 @@ export async function DELETE(
     // Verify hunt ownership
     const { data: hunt } = await supabase
       .from("hunts")
-      .select("created_by")
+      .select("created_by, status, review_status")
       .eq("id", id)
       .is("deleted_at", null)
       .single();
@@ -88,7 +116,7 @@ export async function DELETE(
       .is("deleted_at", null)
       .select("id");
 
-    if (error) throw new ApiError(500, error.message);
+    if (error) throw internalError("/api/v1/hunts/[id]/finds/[findId]", error);
     if (!removed || removed.length === 0) throw new ApiError(404, "Stop not found in this hunt");
 
     return Response.json({ message: "Find deleted" });

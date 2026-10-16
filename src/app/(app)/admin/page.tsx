@@ -59,6 +59,7 @@ export default async function AdminPage() {
         {isAdmin && (
           <AdminLink href="/admin/moderation" title="Moderation Queue" desc="Review flagged content and reports" />
         )}
+        <AdminLink href="/admin/moderation/hunts" title="Hunt Review" desc="Approve hunts before they are listed in Discover" />
         <AdminLink href="/admin/research" title="Research Studies" desc="Manage treatment studies and dimensions" />
         <AdminLink href="/admin/surveys" title="Surveys" desc="Create and manage surveys" />
       </div>

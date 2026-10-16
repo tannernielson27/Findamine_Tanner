@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, requireRole, errorResponse, ApiError } from "@/lib/utils/api-auth";
+import { assertCleanText } from "@/lib/moderation/guard";
 import { formationMethodFor, latestPerUser, liveTeams } from "../team-rules";
 
 type FormationStrategy = "random" | "teacher_assigned" | "personality_similar" |
@@ -29,11 +30,14 @@ export async function POST(request: NextRequest) {
     const teamSizeClamped = Math.max(2, Math.min(10, parseInt(team_size) || 4));
     const supabase = await createSupabaseServiceClient();
 
-    // Verify hunt exists and user owns it
+    // Verify hunt exists and user owns it. Only the owner or a reviewer gets
+    // past this, and canAccessHunt always lets both in, so no further access
+    // check is needed here.
     const { data: hunt } = await supabase
       .from("hunts")
       .select("id, created_by")
       .eq("id", hunt_id)
+      .is("deleted_at", null)
       .single();
 
     if (!hunt) throw new ApiError(404, "Hunt not found");
@@ -73,6 +77,7 @@ export async function POST(request: NextRequest) {
           seen.add(sid);
         }
         const name = typeof a?.team_name === "string" && a.team_name.trim() ? a.team_name.trim().slice(0, 40) : `Team ${i + 1}`;
+        assertCleanText(name, { role: user.role, label: "That team name" });
         return { name, ids: ids as string[] };
       });
 

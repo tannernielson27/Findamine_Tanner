@@ -7,4 +7,5 @@ const primerFields = [
 
 export const { GET, PUT, DELETE } = createItemHandlers("primers", {
   allowedUpdateFields: primerFields,
+  textFields: ["title", "content"],
 });

@@ -6,6 +6,8 @@ import Link from "next/link";
 import FindEditor, { type EditableFind } from "@/components/hunts/find-editor";
 import HuntCoverageReport from "@/components/hunts/hunt-coverage-report";
 import LocationPicker from "@/components/maps/location-picker";
+import { PublishSafetyCheck } from "@/components/hunts/publish-safety-check";
+import { ReviewStatusNotice } from "@/components/hunts/review-status-notice";
 
 interface HuntDetail {
   id: string;
@@ -20,6 +22,9 @@ interface HuntDetail {
   center_longitude: number | null;
   search_radius_km: number | null;
   metadata: Record<string, unknown> | null;
+  /** Publish review (migration 073): only "approved" hunts are listed in Discover. */
+  review_status?: "not_submitted" | "pending" | "approved" | "rejected";
+  review_reason?: string | null;
   finds: FindItem[];
 }
 
@@ -60,6 +65,9 @@ export default function HuntDetailPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [editor, setEditor] = useState<EditorState>({ mode: "closed" });
+  // Publishing goes through a safety affirmation first.
+  const [showPublishCheck, setShowPublishCheck] = useState(false);
+  const closePublishCheck = useCallback(() => setShowPublishCheck(false), []);
   const [loadError, setLoadError] = useState("");
   // Outcome of the last action: every mutation ends in one of these.
   const [feedback, setFeedback] = useState<{ kind: "success" | "error"; text: string } | null>(null);
@@ -103,16 +111,22 @@ export default function HuntDetailPage() {
     if (!hunt) return false;
     setActionLoading(true);
     const result = await api(`/api/v1/hunts/${hunt.id}`, jsonBody("PUT", changes));
-    if (result.ok) succeed(successText);
+    // The server explains when an edit sent a listed hunt back for review.
+    if (result.ok) succeed(typeof result.data?.message === "string" ? result.data.message : successText);
     else fail("Couldn't save", result.error);
     await fetchHunt();
     setActionLoading(false);
     return result.ok;
   };
 
-  const handlePublish = async () => {
+  const handlePublish = async (safetyAffirmed = false) => {
     if (!hunt) return;
     const unpublishing = hunt.status !== "draft";
+    if (!unpublishing && !safetyAffirmed) {
+      setShowPublishCheck(true);
+      return;
+    }
+    setShowPublishCheck(false);
     if (
       unpublishing &&
       !confirm(
@@ -122,11 +136,19 @@ export default function HuntDetailPage() {
       return;
     }
     setActionLoading(true);
-    const result = await api(`/api/v1/hunts/${hunt.id}/${unpublishing ? "unpublish" : "publish"}`, { method: "POST" });
+    const result = unpublishing
+      ? await api(`/api/v1/hunts/${hunt.id}/unpublish`, { method: "POST" })
+      : await api(`/api/v1/hunts/${hunt.id}/publish`, jsonBody("POST", { safety_affirmed: true }));
     if (result.ok) {
-      succeed(unpublishing ? "Hunt unpublished. It is a draft again and can be edited." : "Hunt published. Players can now find and play it.");
+      succeed(
+        unpublishing
+          ? "Hunt unpublished. It is a draft again and can be edited."
+          : result.data?.review_status === "approved"
+          ? "Hunt published and listed in Discover."
+          : "Submitted for review. You and your classes can play it now, and we'll let you know when it's live in Discover."
+      );
     } else {
-      fail(unpublishing ? "Couldn't unpublish" : "Couldn't publish", result.error);
+      fail(unpublishing ? "Couldn't unpublish" : "Couldn't submit", result.error);
     }
     await fetchHunt();
     setActionLoading(false);
@@ -240,6 +262,13 @@ export default function HuntDetailPage() {
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-4">
+      {showPublishCheck && (
+        <PublishSafetyCheck
+          busy={actionLoading}
+          onConfirm={() => handlePublish(true)}
+          onCancel={closePublishCheck}
+        />
+      )}
       <Link href="/dashboard/hunts" className="text-sm text-brand hover:underline mb-4 inline-block">
         &larr; My Hunts
       </Link>
@@ -273,7 +302,7 @@ export default function HuntDetailPage() {
 
         <div className="flex gap-2 flex-wrap">
           <button
-            onClick={handlePublish}
+            onClick={() => handlePublish()}
             disabled={actionLoading}
             className={`rounded-md px-3 py-1.5 text-sm font-medium ${
               isDraft
@@ -281,7 +310,7 @@ export default function HuntDetailPage() {
                 : "border border-gray-300 text-gray-700 hover:bg-gray-50"
             } disabled:opacity-50`}
           >
-            {isDraft ? "Publish" : "Unpublish"}
+            {isDraft ? "Submit for review" : "Unpublish"}
           </button>
           <button
             onClick={handleClone}
@@ -327,11 +356,13 @@ export default function HuntDetailPage() {
         </div>
       )}
 
+      <ReviewStatusNotice status={hunt.status} reviewStatus={hunt.review_status} reason={hunt.review_reason} />
+
       {/* Why the editing controls are gone */}
       {!isDraft && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 mb-4">
           <strong>This hunt is {hunt.status.replace(/_/g, " ")}, so its stops and settings are locked.</strong>{" "}
-          To add, edit, reorder or remove stops, click <em>Unpublish</em> first, make your changes, then publish again.
+          To add, edit, reorder or remove stops, click <em>Unpublish</em> first, make your changes, then submit it again (it goes back through review).
           Unpublishing takes the hunt offline: nobody can start it, and anyone in the middle of playing may be cut off.
         </div>
       )}

@@ -6,6 +6,8 @@ import {
   errorResponse,
   ApiError,
 } from "@/lib/utils/api-auth";
+import { canAccessHunt } from "@/lib/hunts/review";
+import { logger } from "@/lib/utils/logger";
 
 type Row = Record<string, unknown>;
 
@@ -15,6 +17,11 @@ type Row = Record<string, unknown>;
 // identity columns as of migration 069.
 const SERVER_MANAGED = ["id", "created_at", "updated_at", "deleted_at"];
 const HUNT_GENERATED = ["search_vector"];
+// A copy is a new, unreviewed hunt: it starts outside the review queue.
+const HUNT_REVIEW = [
+  "review_status", "review_reason", "review_submitted_at", "reviewed_at", "reviewed_by",
+  "safety_affirmed_at", "safety_affirmed_by",
+];
 
 function omit(row: Row, keys: string[]): Row {
   const copy: Row = { ...row };
@@ -46,13 +53,12 @@ export async function POST(
 
     if (fetchError || !source) throw new ApiError(404, "Hunt not found");
 
-    // Someone else's unpublished draft is not visible, so it is not clonable.
-    const isOwner =
-      source.created_by === user.id || ["admin", "researcher"].includes(user.role);
-    if (source.status === "draft" && !isOwner) throw new ApiError(404, "Hunt not found");
+    // Someone else's draft, or a hunt not yet approved for the public
+    // catalogue, is not visible to them, so it is not clonable.
+    if (!(await canAccessHunt(supabase, source, user))) throw new ApiError(404, "Hunt not found");
 
     const { finds, ...sourceHunt } = source as Row & { finds: Row[] | null };
-    const huntData = omit(sourceHunt, [...SERVER_MANAGED, ...HUNT_GENERATED]);
+    const huntData = omit(sourceHunt, [...SERVER_MANAGED, ...HUNT_GENERATED, ...HUNT_REVIEW]);
 
     const { data: newHunt, error: huntError } = await supabase
       .from("hunts")
@@ -68,7 +74,8 @@ export async function POST(
       .single();
 
     if (huntError || !newHunt) {
-      throw new ApiError(500, huntError?.message || "Failed to copy hunt");
+      logger.error("hunt.clone.hunt_failed", { huntId: id, error: huntError?.message });
+      throw new ApiError(500, "Couldn't copy the hunt. Please try again.");
     }
 
     // Clone finds
@@ -114,7 +121,8 @@ export async function POST(
           .select("id")
           .single();
         if (error || !created) {
-          throw new ApiError(500, `Failed to copy ${table}: ${error?.message || "unknown error"}`);
+          logger.error("hunt.clone.resource_failed", { huntId: id, table, error: error?.message });
+          throw new ApiError(500, "Couldn't copy the hunt's stops. Please try again.");
         }
         cloned[table].set(oldId, created.id as string);
         return created.id as string;
@@ -146,7 +154,10 @@ export async function POST(
           primer_id: primerId,
           sort_order: index,
         });
-        if (findError) throw new ApiError(500, `Failed to copy stop ${index + 1}: ${findError.message}`);
+        if (findError) {
+          logger.error("hunt.clone.find_failed", { huntId: id, stop: index + 1, error: findError.message });
+          throw new ApiError(500, `Couldn't copy stop ${index + 1}. Please try again.`);
+        }
       }
     } catch (copyError) {
       // Don't leave a half-copied hunt behind looking like a finished clone.

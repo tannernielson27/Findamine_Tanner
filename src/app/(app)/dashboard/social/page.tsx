@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { Flag } from "lucide-react";
+import ReportDialog, { type ReportOutcome } from "@/components/moderation/report-dialog";
 import StreakDisplay from "@/components/gamification/streak-display";
 import { buildKudosRecipients, type RecipientGroup } from "@/lib/social/recipients";
 import { RECRUIT_BONUS, WELCOME_BONUS } from "@/lib/utils/referral-rewards";
@@ -18,6 +20,9 @@ interface Kudos {
   id: string;
   message: string;
   created_at: string;
+  sender_id: string;
+  /** Viewer-relative; only received kudos can be reported. */
+  direction?: "sent" | "received";
   sender: { display_name: string | null } | null;
   receiver: { display_name: string | null } | null;
 }
@@ -113,6 +118,8 @@ export default function SocialPage() {
   const [redeemCode, setRedeemCode] = useState("");
   const [redeemMsg, setRedeemMsg] = useState("");
   const [copied, setCopied] = useState(false);
+  const [reportingKudos, setReportingKudos] = useState<Kudos | null>(null);
+  const [kudosNotice, setKudosNotice] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -213,6 +220,26 @@ export default function SocialPage() {
       setKudosError(fallback);
     }
     setSending(false);
+  };
+
+  const closeKudosReport = useCallback(() => setReportingKudos(null), []);
+
+  const handleKudosReported = async (reported: Kudos, outcome: ReportOutcome) => {
+    // Hidden for the reporter straight away; a block hides all of that
+    // player's kudos and removes the friendship, so refresh friends too.
+    setKudos((prev) =>
+      prev.filter((k) => k.id !== reported.id && !(outcome.blocked && k.sender_id === reported.sender_id))
+    );
+    setReportingKudos(null);
+    setKudosNotice(
+      outcome.blocked
+        ? "Thanks for reporting. You won't see this player anymore."
+        : "Thanks for reporting. A moderator will review it."
+    );
+    if (outcome.blocked) {
+      const rows = await fetchFriendRows();
+      if (rows) setFriends(rows);
+    }
   };
 
   const acceptedFriends = friends.filter((f) => f.status === "accepted");
@@ -369,7 +396,10 @@ export default function SocialPage() {
 
           {/* Disclosure gate — hidden profiles don't collect crew bonuses. The
               cost of privacy is shown, not just applied (prospectus §3.2) —
-              unless the participant is in the S3 "silent" arm. */}
+              unless the participant is in the S3 "silent" arm. Only active
+              study participants are gated at all: the API reports everyone
+              else as "silent" with no gate status, so this never renders
+              for them. */}
           {referral && referral.forfeit_notice !== "silent" && referral.disclosure_eligible === false && (
             <section className="rounded-xl border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 p-4 mb-6">
               <p className="text-sm font-medium text-themed-text mb-1">
@@ -557,18 +587,37 @@ export default function SocialPage() {
                 </div>
               )}
 
+              {kudosNotice && (
+                <p role="status" className="border-b border-themed-border px-4 py-2.5 text-sm text-themed-muted">
+                  {kudosNotice}
+                </p>
+              )}
+
               {kudos.length === 0 ? (
                 <p className="p-8 text-center text-base text-themed-muted">No kudos yet.</p>
               ) : (
                 <div className="divide-y divide-themed-border max-h-72 overflow-y-auto">
                   {kudos.map((k) => (
-                    <div key={k.id} className="px-4 py-3">
-                      <p className="text-base text-themed-text break-words">&ldquo;{k.message}&rdquo;</p>
-                      <p className="text-sm text-themed-muted mt-1">
-                        {k.sender?.display_name || "Someone"} &rarr; {k.receiver?.display_name || "Someone"}
-                        {" · "}
-                        {timeAgo(k.created_at)}
-                      </p>
+                    <div key={k.id} className="flex items-start gap-2 px-4 py-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-base text-themed-text break-words">&ldquo;{k.message}&rdquo;</p>
+                        <p className="text-sm text-themed-muted mt-1">
+                          {k.sender?.display_name || "Someone"} &rarr; {k.receiver?.display_name || "Someone"}
+                          {" · "}
+                          {timeAgo(k.created_at)}
+                        </p>
+                      </div>
+                      {k.direction === "received" && (
+                        <button
+                          type="button"
+                          onClick={() => setReportingKudos(k)}
+                          aria-label={`Report kudos from ${k.sender?.display_name || "this player"}`}
+                          className="-mr-2 inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-2 text-sm text-themed-muted transition-colors hover:text-[var(--color-error)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                        >
+                          <Flag className="h-4 w-4" aria-hidden="true" />
+                          Report
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -576,6 +625,17 @@ export default function SocialPage() {
             </section>
           </div>
         </>
+      )}
+
+      {reportingKudos && (
+        <ReportDialog
+          targetType="kudos"
+          targetId={reportingKudos.id}
+          subjectLabel="this kudos"
+          canBlock
+          onClose={closeKudosReport}
+          onReported={(outcome) => handleKudosReported(reportingKudos, outcome)}
+        />
       )}
     </main>
   );

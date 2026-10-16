@@ -8,4 +8,5 @@ const taskFields = [
 
 export const { GET, PUT, DELETE } = createItemHandlers("tasks", {
   allowedUpdateFields: taskFields,
+  textFields: ["title", "description", "content", "feedback"],
 });

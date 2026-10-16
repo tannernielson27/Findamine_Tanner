@@ -4,6 +4,7 @@ import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { filterProfileForViewer, type ViewerRelationship } from "@/lib/utils/privacy";
 import { getViewerRelationships } from "@/lib/utils/viewer";
 import { canManageHunt, isActiveMember, loadHunt, loadTeam, parseTeamName } from "../team-rules";
+import { internalError } from "@/lib/utils/internal-error";
 
 interface TeamMemberRow {
   user_id: string;
@@ -101,7 +102,7 @@ export async function PATCH(
     }
 
     const updates: Record<string, unknown> = {};
-    if (body.name !== undefined) updates.name = parseTeamName(body.name);
+    if (body.name !== undefined) updates.name = parseTeamName(body.name, user.role);
     if (body.status !== undefined) {
       const validStatuses = ["forming", "ready", "active", "completed", "disbanded"];
       if (!validStatuses.includes(body.status)) throw new ApiError(400, "Invalid status");
@@ -117,7 +118,7 @@ export async function PATCH(
       .select()
       .single();
 
-    if (error) throw new ApiError(500, error.message);
+    if (error) throw internalError("/api/v1/teams/[id]", error);
 
     return Response.json({ team: data });
   } catch (error) {

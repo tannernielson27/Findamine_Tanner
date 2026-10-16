@@ -8,7 +8,7 @@ import {
   activeMemberCount,
   activeTeamIdsInHunt,
   addMember,
-  loadHunt,
+  loadAccessibleHunt,
   loadTeam,
   teamCapacity,
   teamModeOf,
@@ -20,17 +20,17 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await socialLimiter.check(request);
     const { id } = await params;
     const user = await getAuthUser(request);
     if (!user) throw new ApiError(401, "Not authenticated");
+    await socialLimiter.check(request, user.id);
 
     const supabase = await createSupabaseServiceClient();
 
     const team = await loadTeam(supabase, id);
     if (!team) throw new ApiError(404, "Team not found");
 
-    const hunt = await loadHunt(supabase, team.hunt_id);
+    const hunt = await loadAccessibleHunt(supabase, team.hunt_id, user);
     if (!hunt) throw new ApiError(404, "Team not found");
     if (teamModeOf(hunt.play_mode) !== "self_select") {
       throw new ApiError(403, "Teams for this hunt are assigned by your teacher. You can't join one yourself.");

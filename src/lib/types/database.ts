@@ -38,8 +38,16 @@ export interface Hunt {
   target_audience: TargetAudience;
   play_mode: PlayMode;
   status: HuntStatus;
+  /** Listed in the public catalogue; only true once review_status is "approved" (migration 073). */
   is_public: boolean;
   is_template: boolean;
+  review_status: "not_submitted" | "pending" | "approved" | "rejected";
+  review_reason: string | null;
+  review_submitted_at: string | null;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  safety_affirmed_at: string | null;
+  safety_affirmed_by: string | null;
   center_latitude: number | null;
   center_longitude: number | null;
   search_radius_km: number | null;

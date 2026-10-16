@@ -8,6 +8,8 @@ import {
 } from "@/lib/utils/api-auth";
 import { parseFindFields } from "../../find-fields";
 import { canSeeAnswerKeys, redactAnswerKeys } from "../../redact-finds";
+import { assertCleanFindText, canAccessHunt, requeuedMessage, settleRequeue } from "@/lib/hunts/review";
+import { internalError } from "@/lib/utils/internal-error";
 
 export async function GET(
   request: NextRequest,
@@ -23,11 +25,11 @@ export async function GET(
     // Check if hunt is draft — only owner/admin can see draft hunt finds
     const { data: hunt } = await supabase
       .from("hunts")
-      .select("status, created_by")
+      .select("status, created_by, review_status")
       .eq("id", id)
       .single();
 
-    if (hunt?.status === "draft" && hunt.created_by !== user.id && !["admin", "researcher"].includes(user.role)) {
+    if (!hunt || !(await canAccessHunt(supabase, hunt, user))) {
       throw new ApiError(404, "Hunt not found");
     }
 
@@ -38,7 +40,7 @@ export async function GET(
       .is("deleted_at", null)
       .order("sort_order", { ascending: true });
 
-    if (error) throw new ApiError(500, error.message);
+    if (error) throw internalError("/api/v1/hunts/[id]/finds", error);
 
     const rows = finds || [];
     return Response.json({
@@ -60,12 +62,13 @@ export async function POST(
 
     const body = await request.json();
     const fields = parseFindFields(body);
+    assertCleanFindText(fields);
     const supabase = await createSupabaseServiceClient();
 
     // Verify hunt ownership
     const { data: hunt } = await supabase
       .from("hunts")
-      .select("created_by")
+      .select("created_by, status, review_status")
       .eq("id", id)
       .is("deleted_at", null)
       .single();
@@ -102,7 +105,17 @@ export async function POST(
       .select("*, locations(*), tasks(*), primers(*)")
       .single();
 
-    if (error) throw new ApiError(500, error.message);
+    if (error) throw internalError("/api/v1/hunts/[id]/finds", error);
+
+    // A new stop on a listed hunt is unreviewed content: back to the queue
+    // (the finds trigger does the same in the database).
+    const wasListed = hunt.review_status === "approved" && hunt.status !== "draft";
+    if (await settleRequeue(supabase, id, wasListed, true)) {
+      return Response.json(
+        { find, review_status: "pending", message: requeuedMessage(user.id, hunt.created_by) },
+        { status: 201 }
+      );
+    }
 
     return Response.json({ find }, { status: 201 });
   } catch (error) {

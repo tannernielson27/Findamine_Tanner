@@ -44,8 +44,8 @@ const ASSIGNED_HUNT = "hunt-assigned";
 function seed(extra: Record<string, Row[]> = {}): SupabaseDouble {
   return installDouble({
     hunts: [
-      { id: SELF_HUNT, title: "Campus Quest", play_mode: "team_self_select", status: "published", created_by: "teacher", max_team_size: 2, max_teams: null },
-      { id: ASSIGNED_HUNT, title: "Class Hunt", play_mode: "team_assigned", status: "published", created_by: "teacher", max_team_size: 4, max_teams: null },
+      { id: SELF_HUNT, title: "Campus Quest", play_mode: "team_self_select", status: "published", review_status: "approved", created_by: "teacher", max_team_size: 2, max_teams: null },
+      { id: ASSIGNED_HUNT, title: "Class Hunt", play_mode: "team_assigned", status: "published", review_status: "approved", created_by: "teacher", max_team_size: 4, max_teams: null },
     ],
     teams: [
       { id: "t1", hunt_id: SELF_HUNT, name: "Owls", status: "forming", max_size: 2, created_at: "2026-01-01T00:00:00Z" },
@@ -114,6 +114,29 @@ describe("team-rules helpers", () => {
       { user_id: "a", scores: { openness: 1 } },
     ];
     expect(latestPerUser(rows)).toEqual([rows[0], rows[1]]);
+  });
+});
+
+describe("hunt access on team routes (M6)", () => {
+  const unlisted = (reviewStatus: string) => (db: SupabaseDouble) => {
+    db.table("hunts").find((h) => h.id === SELF_HUNT)!.review_status = reviewStatus;
+  };
+
+  it("hides a pending hunt's teams from players outside the creator's rosters", async () => {
+    const db = seed();
+    unlisted("pending")(db);
+    expect((await join("t1")).status).toBe(404);
+    expect((await createTeam(req("POST", "/api/v1/teams", { hunt_id: SELF_HUNT, name: "Bats" }))).status).toBe(404);
+    expect((await listTeams(req("GET", `/api/v1/teams?hunt_id=${SELF_HUNT}`))).status).toBe(404);
+    expect(active(db, "t1")).toHaveLength(0);
+  });
+
+  it("closes a rejected hunt to everyone but its creator and reviewers", async () => {
+    const db = seed();
+    unlisted("rejected")(db);
+    expect((await join("t1")).status).toBe(404);
+    h.user = { id: "teacher", role: "teacher" };
+    expect((await listTeams(req("GET", `/api/v1/teams?hunt_id=${SELF_HUNT}`))).status).toBe(200);
   });
 });
 

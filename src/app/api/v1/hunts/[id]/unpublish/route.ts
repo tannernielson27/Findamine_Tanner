@@ -6,15 +6,20 @@ import {
   errorResponse,
   ApiError,
 } from "@/lib/utils/api-auth";
+import { publishLimiter } from "@/lib/utils/rate-limit";
+import { assertTrustedOrigin } from "@/lib/utils/origin";
+import { logger } from "@/lib/utils/logger";
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    assertTrustedOrigin(request);
     const { id } = await params;
     const user = await getAuthUser(request);
     requireRole(user, "teacher", "hunt_creator", "admin", "researcher");
+    await publishLimiter.check(request, user.id);
 
     const supabase = await createSupabaseServiceClient();
 
@@ -33,12 +38,21 @@ export async function POST(
 
     const { data: hunt, error } = await supabase
       .from("hunts")
-      .update({ status: "draft", is_public: false })
+      // Back to a draft leaves the review queue too; publishing again resubmits it.
+      .update({
+        status: "draft",
+        is_public: false,
+        review_status: "not_submitted",
+        review_submitted_at: null,
+      })
       .eq("id", id)
       .select()
       .single();
 
-    if (error) throw new ApiError(500, error.message);
+    if (error) {
+      logger.error("hunt.unpublish.update_failed", { huntId: id, error: error.message });
+      throw new ApiError(500, "Couldn't unpublish this hunt. Please try again.");
+    }
 
     return Response.json({ hunt });
   } catch (error) {
