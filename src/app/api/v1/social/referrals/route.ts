@@ -6,8 +6,9 @@ import {
   getOrCreateReferralCode,
   redeemReferral,
   isDisclosureEligible,
-  resolveReferralSwitches,
+  referralSwitchesFor,
 } from "@/lib/services/referral";
+import { getIsActiveParticipant } from "@/lib/services/participant-conditions";
 import { trackEvent } from "@/lib/utils/track-event";
 import { filterProfileForViewer, type ViewerRelationship } from "@/lib/utils/privacy";
 import { getViewerRelationships } from "@/lib/utils/viewer";
@@ -94,7 +95,12 @@ export async function GET(request: NextRequest) {
     const disclosureEligible = isDisclosureEligible(
       me?.profile_visibility as Record<string, string> | undefined
     );
-    const switches = resolveReferralSwitches(me?.metadata as Record<string, unknown> | undefined);
+    // The gate status and forfeit notice are study manipulations: only active
+    // participants get them. If participation can't be read, show nothing —
+    // never pressure someone who may not be in the study.
+    const myMeta = me?.metadata as Record<string, unknown> | undefined;
+    const studyParticipant = await getIsActiveParticipant(user.id, myMeta, supabase).catch(() => false);
+    const switches = referralSwitchesFor(myMeta, studyParticipant);
 
     // Storyline S3 (migration 059): under `silent` the recruiter is never told
     // what hiding has cost them. Forfeits are still LOGGED at award time; only
@@ -142,9 +148,9 @@ export async function GET(request: NextRequest) {
 // POST: redeem a referral code (become someone's minion).
 export async function POST(request: NextRequest) {
   try {
-    await socialLimiter.check(request);
     const user = await getAuthUser(request);
     if (!user) throw new ApiError(401, "Not authenticated");
+    await socialLimiter.check(request, user.id);
 
     const body = await request.json();
     if (!body.code || typeof body.code !== "string") {

@@ -10,6 +10,8 @@ import { AgeBandProvider } from "@/lib/themes/age-band-provider";
 import { enrollParticipant } from "@/lib/services/enrollment";
 import type { AgeBand } from "@/lib/themes/tokens";
 import { bandForUser } from "@/lib/utils/age-band";
+import { researchEligibility } from "@/lib/utils/research-eligibility";
+import { applyNonParticipantDefaults } from "@/lib/services/non-participant-defaults";
 
 /** Set by src/proxy.ts: the path + query being requested. */
 const REQUEST_PATH_HEADER = "x-findamine-path";
@@ -39,16 +41,39 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   let profile = null;
   let ageBand: AgeBand = "intermediate";
   let privacyFriction: "low" | "high" | null = null;
+  // Adults only (owner decision 2026-10-15): one shared rule decides who sees
+  // the consent gate, may consent, and may be randomized.
+  let researchEligible = false;
+  let needsDateOfBirth = false;
 
   if (authUser) {
     const serviceClient = await createSupabaseServiceClient();
     const { data } = await serviceClient
       .from("users")
-      .select("id, display_name, role, avatar_url, metadata")
+      .select("id, display_name, role, avatar_url, metadata, date_of_birth, profile_visibility")
       .eq("auth_id", authUser.id)
       .is("deleted_at", null)
       .maybeSingle();
-    profile = data;
+    // DOB and the visibility map stay on the server: only the fields the
+    // navbar needs are passed on to client components.
+    const storedVisibility = data?.profile_visibility;
+    profile = data
+      ? {
+          id: data.id,
+          display_name: data.display_name,
+          role: data.role,
+          avatar_url: data.avatar_url,
+          metadata: data.metadata,
+        }
+      : null;
+    // Invitable adults see the consent gate; those with no date of birth on
+    // file (parent / teacher / hunt_creator) are asked for it there before
+    // they can join. Enrollment itself requires an 18+ DOB.
+    const eligibility = data
+      ? researchEligibility({ role: data.role, date_of_birth: data.date_of_birth })
+      : null;
+    researchEligible = eligibility?.eligible ?? false;
+    needsDateOfBirth = eligibility?.eligible === true && eligibility.ageBasis === "needs_date_of_birth";
 
     // A session without a (live) profile row cannot use the app. /login tells
     // the person what happened instead of rendering empty pages.
@@ -58,7 +83,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
     // Auto-enroll into the active study (idempotent; never throws). This is the
     // canonical enrollment trigger — runs once the user is real and authenticated.
-    if (profile) {
+    // Ineligible users are never randomized (enrollment re-checks this too).
+    if (profile && researchEligible) {
       const enrollment = await enrollParticipant(profile.id);
       const meta = (profile.metadata || {}) as Record<string, unknown>;
       const assigned = enrollment.frictionCondition ?? meta.privacy_friction;
@@ -73,6 +99,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         .eq("user_id", profile.id)
         .maybeSingle();
       ageBand = bandForUser(userProfile?.effective_band, profile.role);
+
+      // Anyone outside the study starts private-leaning instead of with an
+      // empty map (which is enforced as "everyone"). Skips enrolled users.
+      await applyNonParticipantDefaults(
+        profile.id,
+        ageBand,
+        storedVisibility as Record<string, unknown> | null | undefined
+      );
     }
   }
 
@@ -80,13 +114,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <AgeBandProvider initialBand={ageBand}>
       <Navbar user={profile ? { ...profile, privacy_friction: privacyFriction } : null} />
       {profile && <Onboarding role={profile.role} />}
-      {/* Research-consent gate for study-eligible participants. Children can't
-          self-consent and staff aren't participants, so they're excluded. */}
-      {profile && !["child", "admin", "researcher"].includes(profile.role) && <ConsentGate />}
+      {/* Research-consent gate: adults only. Children, teens, under-18s by date
+          of birth, and staff never see it (researchEligibility). */}
+      {profile && researchEligible && <ConsentGate needsDateOfBirth={needsDateOfBirth} />}
       {/* Neutral-default participants must make an explicit first privacy choice. */}
-      {profile && !["child", "admin", "researcher"].includes(profile.role) && (
-        <PrivacyFirstChoiceGate />
-      )}
+      {profile && researchEligible && <PrivacyFirstChoiceGate />}
       {children}
     </AgeBandProvider>
   );

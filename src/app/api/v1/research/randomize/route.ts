@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, requireRole, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { assignParticipant } from "@/lib/services/randomization";
+import { canJoinResearch } from "@/lib/utils/research-eligibility";
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,6 +17,18 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = await createSupabaseServiceClient();
+
+    // The study is adults-only: staff cannot randomize a minor (or a colleague)
+    // by hand either. Same rule as the consent route and auto-enrollment.
+    const { data: target } = await supabase
+      .from("users")
+      .select("role, date_of_birth")
+      .eq("id", user_id)
+      .maybeSingle();
+    if (!target) throw new ApiError(404, "User not found");
+    if (!canJoinResearch(target)) {
+      throw new ApiError(403, "This user is not eligible for the study (adults 18 or older, with a date of birth on file)");
+    }
 
     // Get study dimensions
     const { data: studyDims } = await supabase

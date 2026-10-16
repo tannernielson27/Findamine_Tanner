@@ -9,6 +9,7 @@
  */
 
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
+import { isWithdrawn } from "@/lib/utils/conditions";
 
 export interface StudySummary {
   code: string;
@@ -119,6 +120,47 @@ export async function getParticipationStatus(
     .eq("user_id", userId);
   if (error) throw new Error(error.message);
   return participationFromEnrollments(data || []);
+}
+
+/**
+ * Whether study mechanics may act on this user: enrolled and not withdrawn
+ * (by enrollment row or the metadata stop key), with a live granted research
+ * consent. Pure.
+ */
+export function isActiveParticipant(input: {
+  participation: ParticipationStatus;
+  metadata: Record<string, unknown> | null | undefined;
+  hasLiveConsent: boolean;
+}): boolean {
+  return (
+    input.participation === "participant" &&
+    !isWithdrawn(input.metadata) &&
+    input.hasLiveConsent
+  );
+}
+
+/**
+ * Read whether a user is an active research participant (see
+ * isActiveParticipant). Throws when a read fails, like getParticipationStatus.
+ */
+export async function getIsActiveParticipant(
+  userId: string,
+  metadata: Record<string, unknown> | null | undefined,
+  client?: ServiceClient
+): Promise<boolean> {
+  const supabase = client ?? (await createSupabaseServiceClient());
+  const participation = await getParticipationStatus(userId, supabase);
+  if (participation !== "participant" || isWithdrawn(metadata)) return false;
+  const { data, error } = await supabase
+    .from("consent_records")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("consent_type", "research")
+    .eq("granted", true)
+    .is("revoked_at", null)
+    .limit(1);
+  if (error) throw new Error(error.message);
+  return isActiveParticipant({ participation, metadata, hasLiveConsent: (data || []).length > 0 });
 }
 
 /** Active auto-enroll study's dimensions + the user's own levels. Never throws. */

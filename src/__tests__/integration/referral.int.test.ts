@@ -34,6 +34,12 @@ describe("referral economy against the Supabase double", () => {
         { user_id: "rec2", code: "WXYZ6789" },
       ],
       minion_links: [],
+      // The recruiters are active study participants: the disclosure gate and
+      // its switches only apply to them (non-participants: research-adults-only.int.test.ts).
+      study_enrollments: ["rec", "rec2"].map((id) => ({ study_id: "s1", user_id: id, withdrawn_at: null })),
+      consent_records: ["rec", "rec2"].map((id) => ({
+        user_id: id, consent_type: "research", granted: true, revoked_at: null,
+      })),
     });
   });
 

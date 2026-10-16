@@ -18,6 +18,8 @@ const D_DEFAULT = "dim-b-default";
 function seed(n: number, opts: { consent?: boolean; activeDims?: boolean } = {}): SupabaseDouble {
   const users = Array.from({ length: n }, (_, i) => ({
     id: `u${i + 1}`,
+    role: "adult", // the study is adults-only (research-eligibility.ts)
+    date_of_birth: "1990-01-01", // enrollment requires an 18+ DOB on file
     school_id: null,
     metadata: { existing_key: "keep-me" },
     profile_visibility: {},

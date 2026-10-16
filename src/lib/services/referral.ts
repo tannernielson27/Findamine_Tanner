@@ -11,6 +11,7 @@ import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { trackEvent } from "@/lib/utils/track-event";
 import { canViewField } from "@/lib/utils/privacy";
 import { RECRUIT_BONUS, WELCOME_BONUS } from "@/lib/utils/referral-rewards";
+import { getIsActiveParticipant } from "@/lib/services/participant-conditions";
 
 /** Share of a minion's score awarded to their recruiter. Calibration knob. */
 export const REFERRAL_FRACTION = 0.15;
@@ -24,7 +25,9 @@ type ServiceClient = Awaited<ReturnType<typeof createSupabaseServiceClient>>;
  * referral earnings. This is what makes the privacy↔reward tradeoff real
  * (prospectus §3.2): you must be findable (display_name) and your success
  * visible (total_score) to benefit from the social economy. Restricting them
- * forfeits the bonus — visibly (see awardReferralPoints).
+ * forfeits the bonus — visibly (see awardReferralPoints). The gate applies to
+ * active study participants only (referralSwitchesFor); everyone else is paid
+ * regardless of their visibility settings.
  */
 export const DISCLOSURE_GATED_FIELDS = ["display_name", "total_score"] as const;
 
@@ -62,6 +65,29 @@ export function resolveReferralSwitches(
     referral_gate: gate === "ungated" ? "ungated" : "gated",
     forfeit_notice: notice === "silent" ? "silent" : "shown",
   };
+}
+
+/**
+ * What applies to someone OUTSIDE the study (children, teens, decliners,
+ * withdrawn participants, staff): payouts are never withheld for privacy
+ * settings and nothing tells them what hiding "cost". The visibility gate and
+ * the forfeit notice are study manipulations, so they only reach enrolled,
+ * consented, non-withdrawn participants.
+ */
+export const NON_PARTICIPANT_REFERRAL_SWITCHES: ReferralSwitches = {
+  referral_gate: "ungated",
+  forfeit_notice: "silent",
+};
+
+/**
+ * The switches in force for a recruiter: their assigned (or study-default)
+ * levels when an active participant, else the non-participant policy. Pure.
+ */
+export function referralSwitchesFor(
+  meta: Record<string, unknown> | null | undefined,
+  activeParticipant: boolean
+): ReferralSwitches {
+  return activeParticipant ? resolveReferralSwitches(meta) : NON_PARTICIPANT_REFERRAL_SWITCHES;
 }
 
 /** Points a recruiter earns from a minion's score. Pure + testable. */
@@ -239,9 +265,9 @@ export async function awardReferralPoints(
     const eligible = isDisclosureEligible(
       recruiter?.profile_visibility as Record<string, string> | undefined
     );
-    const switches = resolveReferralSwitches(
-      recruiter?.metadata as Record<string, unknown> | undefined
-    );
+    const recruiterMeta = recruiter?.metadata as Record<string, unknown> | undefined;
+    const studyParticipant = await getIsActiveParticipant(link.recruiter_id, recruiterMeta, supabase);
+    const switches = referralSwitchesFor(recruiterMeta, studyParticipant);
     const base = {
       amount,
       share,
@@ -251,9 +277,13 @@ export async function awardReferralPoints(
       hunt_id: huntId,
       eligible,
       ...switches,
+      // Non-participants are paid under the non-participant policy, not a study
+      // arm: analysis must separate their events from the ungated arm's.
+      study_participant: studyParticipant,
     };
 
-    // Under the gated switch a hidden recruiter forfeits (logged, not paid).
+    // Under the gated switch (active participants only) a hidden recruiter
+    // forfeits (logged, not paid).
     // Under ungated the bonus is always paid, and the event records what the
     // gate would have done so the analysis can compare the two arms.
     if (switches.referral_gate === "gated" && !eligible) {

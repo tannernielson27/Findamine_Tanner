@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 import { motion } from "framer-motion";
 import { backdrop, dialog } from "@/lib/motion";
+import { checkResearchDateOfBirth } from "@/lib/utils/research-eligibility";
 
 /**
  * Informed-consent gate for the research study (IRB requirement).
@@ -16,19 +17,32 @@ import { backdrop, dialog } from "@/lib/motion";
  *
  * Bump CONSENT_FORM_VERSION whenever the wording below changes: it is stored
  * with each decision and exported, so it shows which text a person agreed to.
+ * 1.1 added an explicit "I am 18 or older" checkbox. 1.2 replaced it with a
+ * required date of birth (owner decision 2026-10-15): parents, teachers and
+ * creators register without one, so `needsDateOfBirth` users enter it here;
+ * the consent route checks it is 18+ and saves it to their account. Users
+ * with a DOB on file were already age-checked and see no extra field.
+ * Who sees this gate at all is decided by researchEligibility (research-eligibility.ts).
  */
 
-const CONSENT_FORM_VERSION = "1.0";
+const CONSENT_FORM_VERSION = "1.2";
+
+interface ConsentGateProps {
+  /** No date of birth on file: ask for one before a grant can be recorded. */
+  needsDateOfBirth?: boolean;
+}
 
 interface ConsentRecord {
   consent_type: string;
   granted: boolean;
 }
 
-export default function ConsentGate() {
+export default function ConsentGate({ needsDateOfBirth = false }: ConsentGateProps) {
   const router = useRouter();
   const [needsDecision, setNeedsDecision] = useState<boolean | null>(null);
   const [signature, setSignature] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
+  const [underAge, setUnderAge] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const decidedRef = useRef(false);
@@ -46,6 +60,15 @@ export default function ConsentGate() {
 
   async function decide(granted: boolean) {
     if (decidedRef.current) return;
+    if (granted && needsDateOfBirth) {
+      const check = checkResearchDateOfBirth(dateOfBirth);
+      if (!check.ok) {
+        // Under 18: explain kindly and record nothing. Invalid: ask again.
+        if (check.reason === "under_18") setUnderAge(true);
+        else setError("Please enter a valid date of birth.");
+        return;
+      }
+    }
     setSubmitting(true);
     setError(null);
     let ok = false;
@@ -58,9 +81,18 @@ export default function ConsentGate() {
           granted,
           form_version: CONSENT_FORM_VERSION,
           signature_name: granted ? signature.trim() || null : null,
+          // Only sent when none is on file; the server re-checks it is 18+ and
+          // saves it to the account (it never overwrites a stored one).
+          date_of_birth: granted && needsDateOfBirth ? dateOfBirth : undefined,
         }),
       });
       ok = res.ok;
+      // The server is the authority on age: honor an adults-only refusal.
+      if (res.status === 403 && granted) {
+        setSubmitting(false);
+        setUnderAge(true);
+        return;
+      }
     } catch {
       ok = false; // network failure: re-enable the buttons and say so
     }
@@ -77,6 +109,43 @@ export default function ConsentGate() {
   }
 
   if (needsDecision !== true) return null;
+
+  if (underAge) {
+    return (
+      <motion.div
+        variants={backdrop}
+        initial="hidden"
+        animate="visible"
+        className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="consent-title"
+      >
+        <motion.div variants={dialog} className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
+          <div className="p-6">
+            <div className="flex items-center gap-2 mb-3">
+              <ShieldCheck aria-hidden="true" className="w-6 h-6 text-brand" />
+              <h2 id="consent-title" className="text-lg font-bold text-gray-900">
+                Thanks for your interest
+              </h2>
+            </div>
+            <p className="text-sm text-gray-600">
+              The research study is for adults (18 or older) only, so you won&apos;t be part of it.
+              Nothing has been recorded, and you can keep playing Findamine just as before.
+            </p>
+            <div className="mt-5 flex justify-end">
+              <button
+                onClick={() => setNeedsDecision(false)}
+                className="min-h-11 rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark"
+              >
+                Keep playing
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div
@@ -131,11 +200,31 @@ export default function ConsentGate() {
               </p>
             </div>
             <p>
-              By selecting <strong>I consent</strong>, you confirm that you are 18 or older and agree
-              to take part. If you select <strong>I do not consent</strong>, no study data will be
-              collected about you.
+              By selecting <strong>I consent</strong>, you agree to take part. If you select{" "}
+              <strong>I do not consent</strong>, no study data will be collected about you.
             </p>
           </div>
+
+          {needsDateOfBirth && (
+            <div className="mt-4">
+              <label htmlFor="consent-dob" className="block text-sm font-medium text-gray-700 mb-1">
+                Date of birth
+              </label>
+              <input
+                id="consent-dob"
+                type="date"
+                required
+                value={dateOfBirth}
+                onChange={(e) => setDateOfBirth(e.target.value)}
+                max={new Date().toISOString().split("T")[0]}
+                className="block w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-base sm:text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition"
+              />
+              <p className="mt-1.5 text-xs text-gray-500">
+                Needed to take part. It is saved to your account and used only to confirm you are 18
+                or older.
+              </p>
+            </div>
+          )}
 
           <label className="mt-4 block text-xs text-gray-500">
             Type your name to sign (optional)
@@ -159,7 +248,7 @@ export default function ConsentGate() {
             </button>
             <button
               onClick={() => decide(true)}
-              disabled={submitting}
+              disabled={submitting || (needsDateOfBirth && !dateOfBirth)}
               className="min-h-11 rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark disabled:opacity-50"
             >
               {submitting ? "Saving..." : "I consent"}

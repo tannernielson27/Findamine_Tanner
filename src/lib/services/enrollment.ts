@@ -22,6 +22,11 @@ import { trackEvent } from "@/lib/utils/track-event";
 import { recordPrivacyIndexSnapshot } from "@/lib/services/privacy-snapshots";
 import { createDueDeliveriesForUser } from "@/lib/services/survey-delivery";
 import { conditionsFromMetadata } from "@/lib/utils/conditions";
+import { canJoinResearch } from "@/lib/utils/research-eligibility";
+import {
+  NON_PARTICIPANT_DEFAULTS_KEY,
+  isUntouchedNonParticipantDefault,
+} from "@/lib/utils/non-participant-defaults";
 
 export type PrivacyDefaultCondition = "private" | "neutral" | "public";
 export type PrivacyFrictionCondition = "low" | "high";
@@ -44,6 +49,7 @@ export type EnrollmentStage =
   | "init"
   | "find_study"
   | "check_existing"
+  | "check_eligibility"
   | "check_consent"
   | "load_dimensions"
   | "randomize"
@@ -172,12 +178,24 @@ export async function enrollParticipant(userId: string): Promise<EnrollmentResul
       .maybeSingle();
     if (existing) return { enrolled: false };
 
+    // 2a. Adults only (owner decision 2026-10-15). Checked here as well as at
+    // the consent route and the layout, so a consent record that predates the
+    // rule — or one written by any other path — can never randomize a minor.
+    stage = "check_eligibility";
+    const { data: who, error: whoError } = await supabase
+      .from("users")
+      .select("role, date_of_birth")
+      .eq("id", userId)
+      .maybeSingle();
+    if (whoError) throw new Error(whoError.message);
+    // An 18+ date of birth must be on file: accounts registered without one
+    // (parent / teacher / hunt_creator) give it in the consent dialog first.
+    if (!canJoinResearch(who)) return { enrolled: false };
+
     // 2b. Research-consent gate (IRB). Never assign a condition, set defaults,
     // snapshot, or collect any study data until the participant has granted
-    // informed research consent. Because children cannot self-grant a 'research'
-    // consent (see the consent route), gating here also excludes them from the
-    // adults-only study. Consent is captured by the ConsentGate UI; the (app)
-    // layout re-runs this enrollment on the next load once consent exists.
+    // informed research consent. Consent is captured by the ConsentGate UI; the
+    // (app) layout re-runs this enrollment on the next load once consent exists.
     stage = "check_consent";
     const { data: consent } = await supabase
       .from("consent_records")
@@ -250,7 +268,12 @@ export async function enrollParticipant(userId: string): Promise<EnrollmentResul
 
     const ageBand = profileRow?.effective_band || "intermediate";
     const existingVisibility = (userRow?.profile_visibility || {}) as Record<string, unknown>;
-    const hasVisibility = Object.keys(existingVisibility).length > 0;
+    // A non-participant default map this app wrote before consent (and the
+    // person never changed) is not the participant's own choice: it gives way
+    // to the assigned condition exactly as an empty map does.
+    const hasVisibility =
+      Object.keys(existingVisibility).length > 0 &&
+      !isUntouchedNonParticipantDefault(existingVisibility, userRow?.metadata as Record<string, unknown>);
 
     // 7. Merge metadata (never overwrite other keys); set initial visibility only if empty.
     const initialVisibility = hasVisibility
@@ -260,8 +283,14 @@ export async function enrollParticipant(userId: string): Promise<EnrollmentResul
     // Every assigned dimension is also written generically as `dim_<name>` so a
     // newly crossed factor reaches the `conditions` map (migration 053) with no
     // code change; the three legacy keys stay for existing readers.
+    // When the non-participant map is replaced, its stamp goes with it.
+    const priorMetadata = Object.fromEntries(
+      Object.entries((userRow?.metadata || {}) as Record<string, unknown>).filter(
+        ([key]) => hasVisibility || key !== NON_PARTICIPANT_DEFAULTS_KEY
+      )
+    );
     const metadata: Record<string, unknown> = {
-      ...(userRow?.metadata || {}),
+      ...priorMetadata,
       ...dimensionMetadataKeys(named),
       privacy_treatment: treatment,
       privacy_default: defaultCondition ?? null,
