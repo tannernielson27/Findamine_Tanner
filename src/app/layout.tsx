@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { NativeBootstrap } from "@/components/native/native-bootstrap";
 
 export const metadata: Metadata = {
   // Sections set a short title (metadata-only layout.tsx files); the template
@@ -26,6 +27,9 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   themeColor: "#0EA5E9",
+  // Lets the page draw under the iPhone notch / home indicator; globals.css
+  // pads with env(safe-area-inset-*), which is 0 everywhere else.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -36,6 +40,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased" style={{ fontFamily: "'Inter', system-ui, sans-serif", fontSize: "16px" }}>
+        <NativeBootstrap />
         {children}
       </body>
     </html>

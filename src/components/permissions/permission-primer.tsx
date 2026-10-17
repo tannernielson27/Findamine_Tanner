@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { MapPin, Mic, type LucideIcon } from "lucide-react";
+import { Bell, Camera, MapPin, Mic, type LucideIcon } from "lucide-react";
 import { motion } from "framer-motion";
 import { dialog } from "@/lib/motion";
 import {
@@ -12,14 +12,16 @@ import {
   detectPlatform,
   hasSeenPrimer,
   markPrimerSeen,
-  queryPermission,
   type AppPlatform,
   type PermissionKind,
 } from "@/lib/permissions/primer";
+import { queryPlatformPermission } from "@/lib/native/permissions";
 
 const ICONS: Record<PermissionKind, LucideIcon> = {
   location: MapPin,
   microphone: Mic,
+  camera: Camera,
+  notifications: Bell,
 };
 
 const PRIMARY_BUTTON =
@@ -98,7 +100,8 @@ export function PermissionPrimer({ kind, onContinue, onDismiss, deniedActions }:
 
   useEffect(() => {
     let cancelled = false;
-    void queryPermission(kind).then((status) => {
+    // Browser Permissions API on the web; the native plugin inside the iOS app.
+    void queryPlatformPermission(kind).then((status) => {
       if (cancelled) return;
       const decision = decidePrimer(status, hasSeenPrimer(kind));
       if (decision === "skip") onContinueRef.current();

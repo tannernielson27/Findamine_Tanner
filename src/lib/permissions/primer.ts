@@ -8,7 +8,7 @@
    Keep the primer copy in step with the iOS purpose strings in
    docs/ios-permission-strings.md: the reviewer reads both. */
 
-export type PermissionKind = "location" | "microphone";
+export type PermissionKind = "location" | "microphone" | "camera" | "notifications";
 
 /** What the platform reports, collapsed to the states we act on. */
 export type PermissionStatus = "granted" | "denied" | "prompt" | "unknown";
@@ -41,17 +41,37 @@ export const PRIMER_COPY: Record<PermissionKind, PrimerCopy> = {
     continueLabel: "Continue",
     dismissLabel: "Not now",
   },
+  // Native app only: the web build uses the browser's file picker.
+  camera: {
+    title: "Use your camera?",
+    reason:
+      "Findamine uses your camera only when you tap Take Photo, so you can take a geo-selfie at a stop or photograph something for a challenge. Geo-selfies are stored privately with your hunt.",
+    continueLabel: "Continue",
+    dismissLabel: "Not now",
+  },
+  // Native app only, and only after the player asks for notifications in Settings.
+  notifications: {
+    title: "Turn on notifications?",
+    reason:
+      "Findamine uses your notifications only to tell you about your own hunts, classes and teams, like a new hunt from your teacher. You can turn them off here or in your iPhone's Settings at any time.",
+    continueLabel: "Continue",
+    dismissLabel: "Not now",
+  },
 };
 
 /** What each permission unlocks, used in the "it's off" message. */
 const FEATURE_FOR: Record<PermissionKind, string> = {
   location: "navigation steps",
   microphone: "spoken answers",
+  camera: "photos",
+  notifications: "notifications",
 };
 
 const SETTING_NAME: Record<PermissionKind, string> = {
   location: "Location",
   microphone: "Microphone",
+  camera: "Camera",
+  notifications: "Notifications",
 };
 
 /** Heading for the "permission is off" state. Platform-neutral. */
@@ -111,6 +131,8 @@ interface PermissionsLike {
 const QUERY_NAME: Record<PermissionKind, string> = {
   location: "geolocation",
   microphone: "microphone",
+  camera: "camera",
+  notifications: "notifications",
 };
 
 /**

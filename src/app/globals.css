@@ -65,6 +65,38 @@ body {
   color: var(--color-text, #111827);
 }
 
+/* ─── Safe areas (iPhone notch, Dynamic Island, home indicator) ───
+   The viewport uses viewport-fit=cover (app/layout.tsx), so the page runs
+   under the status bar in the iOS app and in a home-screen web app. The
+   env() values are 0 in a normal browser tab and on other devices, so the
+   web layout is unchanged there. The app navbar (.fm-app-header) pads its
+   own top so it stays sticky under the status bar; pages without it (login,
+   landing, legal) get the top padding on body instead. */
+body {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+body:not(:has(.fm-app-header)) {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Inside the iOS wrapper (class set by components/native/native-bootstrap):
+   no rubber-band flash of white past the page edges and no long-press
+   callouts on UI chrome, so it behaves like a native app. Text selection in
+   inputs and content is untouched. */
+html.fm-native {
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html.fm-native a,
+html.fm-native button,
+html.fm-native img {
+  -webkit-touch-callout: none;
+}
+
 /* ─── Trail-marker motifs ───────────────────────────────────────
    Topographic contour lines, drawn from the hunt maps. Used once per
    screen at most (page header band), never behind body text. */

@@ -98,7 +98,7 @@ export default function ReportDialog({
       variants={backdrop}
       initial="hidden"
       animate="visible"
-      className="fixed inset-0 z-[90] flex items-end justify-center bg-gray-900/50 p-4 backdrop-blur-sm sm:items-center"
+      className="fixed inset-0 z-[90] flex items-end justify-center bg-gray-900/50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:items-center"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}

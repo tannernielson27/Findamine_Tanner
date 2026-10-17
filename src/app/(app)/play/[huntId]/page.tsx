@@ -16,6 +16,8 @@ import { PrivacyNoticeToast } from "@/components/play/privacy-notice-toast";
 import { SafetyNotice, useSafetyAcknowledgement } from "@/components/play/safety-notice";
 import { SafetyReminder, StopSafetyNote } from "@/components/play/safety-tips";
 import { PermissionDeniedNotice, PermissionPrimer } from "@/components/permissions/permission-primer";
+import { PhotoPicker } from "@/components/native/photo-picker";
+import { locationSupported, watchLocation } from "@/lib/native/geolocation";
 import type { PrivacyNotice } from "@/lib/services/privacy-notice";
 import {
   celebrationForResult,
@@ -368,7 +370,7 @@ export default function PlayPage() {
     // Wait for the location primer: the OS prompt must follow an explanation.
     if (locationConsent !== "granted") return;
 
-    if (!navigator.geolocation) {
+    if (!locationSupported()) {
       setGpsStatus("unavailable");
       return;
     }
@@ -377,10 +379,12 @@ export default function PlayPage() {
     // (or left this step) can't push the wrong stop into the challenge.
     let active = true;
 
-    const watchId = navigator.geolocation.watchPosition(
+    // navigator.geolocation on the web, Core Location in the iOS app.
+    const stopWatching = watchLocation(
       async (pos) => {
+        if (!active) return;
         setGpsStatus("active");
-        setUserPos({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setUserPos({ lat: pos.latitude, lng: pos.longitude });
         // Skip this fix if the previous ping is still in flight; the next
         // position update will try again.
         if (arriveInFlightRef.current) return;
@@ -391,8 +395,8 @@ export default function PlayPage() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               find_id: currentFind.id,
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude,
+              latitude: pos.latitude,
+              longitude: pos.longitude,
             }),
           });
           const data = await res.json();
@@ -418,25 +422,15 @@ export default function PlayPage() {
           arriveInFlightRef.current = false;
         }
       },
-      (err) => {
-        switch (err.code) {
-          case err.PERMISSION_DENIED:
-            setGpsStatus("denied");
-            break;
-          case err.POSITION_UNAVAILABLE:
-            setGpsStatus("unavailable");
-            break;
-          case err.TIMEOUT:
-            setGpsStatus("timeout");
-            break;
-        }
+      (kind) => {
+        if (active) setGpsStatus(kind);
       },
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
     );
 
     return () => {
       active = false;
-      navigator.geolocation.clearWatch(watchId);
+      stopWatching();
     };
   }, [step, currentFind, huntId, locationConsent]);
 
@@ -1215,40 +1209,33 @@ export default function PlayPage() {
               Take a photo of yourself at this location to remember your adventure!
             </p>
 
-            <label className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand px-5 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-within:ring-2 focus-within:ring-brand focus-within:ring-offset-2 mb-2 ${uploadingPhoto ? "cursor-wait opacity-50" : "cursor-pointer"}`}>
+            {/* Browser file input on the web; native camera (after the camera primer) in the iOS app. */}
+            <PhotoPicker
+              disabled={uploadingPhoto}
+              className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand px-5 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-within:ring-2 focus-within:ring-brand focus-within:ring-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 mb-2 ${uploadingPhoto ? "cursor-wait opacity-50" : "cursor-pointer"}`}
+              onFile={async (file) => {
+                if (!currentFind || uploadingPhoto) return;
+                setUploadingPhoto(true);
+                setError(null);
+                try {
+                  const formData = new FormData();
+                  formData.append("file", file);
+                  formData.append("find_id", currentFind.id);
+                  await safeFetch(`/api/v1/play/${huntId}/capture`, {
+                    method: "POST",
+                    body: formData,
+                  });
+                  setStep("feedback");
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : "Failed to upload photo");
+                } finally {
+                  setUploadingPhoto(false);
+                }
+              }}
+            >
               <Camera className="h-5 w-5" aria-hidden="true" />
               <span aria-live="polite">{uploadingPhoto ? "Uploading photo..." : "Take Photo"}</span>
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="sr-only"
-                disabled={uploadingPhoto}
-                onChange={async (e) => {
-                  const input = e.target;
-                  const file = input.files?.[0];
-                  if (!file || !currentFind || uploadingPhoto) return;
-                  setUploadingPhoto(true);
-                  setError(null);
-                  try {
-                    const formData = new FormData();
-                    formData.append("file", file);
-                    formData.append("find_id", currentFind.id);
-                    await safeFetch(`/api/v1/play/${huntId}/capture`, {
-                      method: "POST",
-                      body: formData,
-                    });
-                    setStep("feedback");
-                  } catch (err) {
-                    setError(err instanceof Error ? err.message : "Failed to upload photo");
-                    // Let the same photo be picked again after a failure
-                    input.value = "";
-                  } finally {
-                    setUploadingPhoto(false);
-                  }
-                }}
-              />
-            </label>
+            </PhotoPicker>
 
             <div>
               <button onClick={handleCaptureSkip} disabled={uploadingPhoto} className="disabled:opacity-50inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-link underline-offset-2 transition-colors hover:text-link-dark hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 underline">

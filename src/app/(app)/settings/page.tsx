@@ -6,6 +6,7 @@ import { Settings, RefreshCw, Shield, BookOpen, Users, Ban, FileText } from "luc
 import { restartOnboardingTour } from "@/components/layout/onboarding";
 import { PRIVACY_PATH, TERMS_PATH } from "@/lib/constants/legal";
 import DeleteAccountSection from "./delete-account-section";
+import { PushSettings } from "@/components/native/push-settings";
 
 export default function SettingsPage() {
   const [user, setUser] = useState<{ display_name: string; email: string; role: string } | null>(null);
@@ -183,6 +184,9 @@ export default function SettingsPage() {
           Blocked players
         </Link>
       </div>
+
+      {/* iOS app only; renders nothing on the web and for child accounts. */}
+      <PushSettings role={user.role} />
 
       <section
         aria-labelledby="legal-heading"

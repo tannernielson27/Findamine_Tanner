@@ -89,7 +89,7 @@ export function PrivacyNoticeToast({ notice, onClose }: PrivacyNoticeToastProps)
       initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: reducedMotion ? 0.15 : 0.25 }}
-      className="fixed bottom-4 left-1/2 z-[55] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-lg"
+      className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 z-[55] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-lg"
     >
       <div className="flex items-start gap-3">
         <span aria-hidden="true" className="text-lg leading-none">🔒</span>

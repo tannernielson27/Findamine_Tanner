@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Findamine</title>
+  <style>
+    html, body { height: 100%; margin: 0; background: #FEFCF6; }
+    @media (prefers-color-scheme: dark) { html, body { background: #0B1220; } }
+  </style>
+</head>
+<body>
+  <!-- Capacitor needs an index.html in webDir. The app normally loads the live
+       site (server.url in capacitor.config.ts) and never shows this page; if it
+       ever does, go straight to the site, or to the offline screen. -->
+  <script src="app-url.js"></script>
+  <script>
+    if (window.FINDAMINE_APP_URL && navigator.onLine) window.location.replace(window.FINDAMINE_APP_URL);
+    else window.location.replace("offline.html");
+  </script>
+</body>
+</html>

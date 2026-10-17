@@ -11,6 +11,7 @@ import NotificationBell from "./notification-bell";
 import SurveyNudge from "./survey-nudge";
 import { Compass, Map, PlusCircle, Users, ShieldCheck, Settings, LogOut, Menu, X, Lock, Trophy, type LucideIcon } from "lucide-react";
 import { navLinksFor, type NavIconKey } from "./nav-links";
+import { forgetPushDevice } from "@/lib/native/push";
 
 const NAV_ICONS: Record<NavIconKey, LucideIcon> = {
   dashboard: Compass,
@@ -41,6 +42,8 @@ export default function Navbar({ user }: NavbarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   async function handleLogout() {
+    // iOS app: drop this phone's push token while the session is still valid.
+    await forgetPushDevice();
     const supabase = createSupabaseBrowserClient();
     await supabase.auth.signOut();
     router.push("/");
@@ -51,7 +54,9 @@ export default function Navbar({ user }: NavbarProps) {
   const navLinks = navLinksFor(user);
 
   return (
-    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-themed-border">
+    // fm-app-header: globals.css pads the page top itself only when this header is absent.
+    // pt-[env(...)]: clears the iPhone status bar / notch (viewport-fit=cover); 0 elsewhere.
+    <header className="fm-app-header sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-themed-border pt-[env(safe-area-inset-top)]">
       <div className="mx-auto max-w-6xl flex items-center justify-between gap-3 px-4 h-14">
         {/* Logo */}
         <Link href={user ? "/dashboard" : "/"} className="flex shrink-0 items-center gap-2 rounded-lg group">

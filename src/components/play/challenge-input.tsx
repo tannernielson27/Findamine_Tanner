@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Camera, ChevronDown, ChevronUp, Mic, RotateCcw, Square } from "lucide-react";
 import { PermissionDeniedNotice, PermissionPrimer } from "@/components/permissions/permission-primer";
+import { PhotoPicker } from "@/components/native/photo-picker";
 import { MAX_AUDIO_SECONDS, audioExtension } from "@/lib/play/audio-answer";
 
 interface ChallengeInputProps {
@@ -327,9 +328,7 @@ function PhotoObservation({
   const [preview, setPreview] = useState<string | null>(null);
   const [observation, setObservation] = useState(answer);
 
-  const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handlePhoto = (file: File) => {
     const reader = new FileReader();
     reader.onload = () => {
       const base64 = reader.result as string;
@@ -362,20 +361,19 @@ function PhotoObservation({
           </button>
         </div>
       ) : (
-        <label className="flex min-h-32 items-center justify-center rounded-xl border-2 border-dashed border-themed-border bg-surface p-6 mb-3 cursor-pointer transition-colors hover:border-link hover:bg-link/5 focus-within:ring-2 focus-within:ring-brand focus-within:ring-offset-2">
-          <div className="text-center">
-            <Camera className="mx-auto mb-2 h-8 w-8 text-link" aria-hidden="true" />
-            <p className="text-base font-semibold text-themed-text">Tap to take a photo</p>
-          </div>
-          <input
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="sr-only"
-            onChange={handlePhoto}
+        <div className="mb-3">
+          {/* Browser file input on the web; native camera (after the camera primer) in the iOS app. */}
+          <PhotoPicker
+            onFile={handlePhoto}
             disabled={disabled}
-          />
-        </label>
+            className="flex min-h-32 items-center justify-center rounded-xl border-2 border-dashed border-themed-border bg-surface p-6 cursor-pointer transition-colors hover:border-link hover:bg-link/5 focus-within:ring-2 focus-within:ring-brand focus-within:ring-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+          >
+            <div className="text-center">
+              <Camera className="mx-auto mb-2 h-8 w-8 text-link" aria-hidden="true" />
+              <p className="text-base font-semibold text-themed-text">Tap to take a photo</p>
+            </div>
+          </PhotoPicker>
+        </div>
       )}
 
       {/* Observation text */}

@@ -8,6 +8,7 @@ import AiPromptTemplates from "./ai-prompt-templates";
 import AiModeIndicator, { detectMode, type AiMode } from "./ai-mode-indicator";
 import { gradeRangeForAudience } from "@/lib/utils/grade-bands";
 import { MAX_SAFETY_NOTES_LENGTH } from "@/lib/play/safety";
+import { classifyLocationError, getCurrentLocation, locationSupported } from "@/lib/native/geolocation";
 
 /** An existing stop, as returned by GET /api/v1/hunts/{id} (finds with their relations). */
 export interface EditableFind {
@@ -143,23 +144,23 @@ export default function FindEditor({ huntId, audience, onSaved, onCancel, find, 
   const [currentAiMode, setCurrentAiMode] = useState<AiMode | null>(null);
 
   const handleUseMyLocation = () => {
-    if (!navigator.geolocation) {
+    if (!locationSupported()) {
       setError("GPS not available on this device");
       return;
     }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLatitude(pos.coords.latitude.toFixed(6));
-        setLongitude(pos.coords.longitude.toFixed(6));
-      },
-      (err) =>
+    // navigator.geolocation on the web, Core Location in the iOS app.
+    getCurrentLocation({ enableHighAccuracy: true })
+      .then((pos) => {
+        setLatitude(pos.latitude.toFixed(6));
+        setLongitude(pos.longitude.toFixed(6));
+      })
+      .catch((err: unknown) =>
         setError(
-          err.code === err.PERMISSION_DENIED
+          classifyLocationError(err) === "denied"
             ? "Location is off for Findamine. Turn it on in Settings (or your browser's site settings) to place this stop where you're standing, or enter the coordinates yourself."
             : "Couldn't get your location right now. Try again outdoors, or enter the coordinates yourself."
-        ),
-      { enableHighAccuracy: true }
-    );
+        )
+      );
   };
 
   const handleGenerateClue = async () => {
