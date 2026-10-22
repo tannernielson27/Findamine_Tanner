@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     const { data, error } = await supabase
       .from("hunts")
       .select(
-        "id, title, description, theme, theme_narrative, target_audience, play_mode, grade_range_min, grade_range_max, status, review_status, review_reason, review_submitted_at, reviewed_at, created_by, creator:users!created_by(display_name, role), finds(sort_order, clue_text, clue_hints, deleted_at, tasks(title, description, content, feedback, challenge_type), primers(title, content), locations(name, description, address, safety_notes))"
+        "id, title, description, cover_image_url, theme, theme_narrative, target_audience, play_mode, grade_range_min, grade_range_max, status, review_status, review_reason, review_submitted_at, reviewed_at, created_by, creator:users!created_by(display_name, role), finds(sort_order, clue_text, clue_hints, deleted_at, tasks(title, description, content, feedback, challenge_type), primers(title, content), locations(name, description, address, safety_notes))"
       )
       .eq("review_status", status)
       .neq("status", "draft")

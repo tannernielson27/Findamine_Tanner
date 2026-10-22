@@ -8,11 +8,13 @@ import HuntCoverageReport from "@/components/hunts/hunt-coverage-report";
 import LocationPicker from "@/components/maps/location-picker";
 import { PublishSafetyCheck } from "@/components/hunts/publish-safety-check";
 import { ReviewStatusNotice } from "@/components/hunts/review-status-notice";
+import { CoverImagePicker } from "@/components/hunts/cover-image-picker";
 
 interface HuntDetail {
   id: string;
   title: string;
   description: string | null;
+  cover_image_url?: string | null;
   status: string;
   target_audience: string;
   play_mode: string;
@@ -418,6 +420,18 @@ export default function HuntDetailPage() {
           </button>
         </div>
       )}
+
+      <CoverImagePicker
+        key={hunt.id}
+        huntId={hunt.id}
+        huntTitle={hunt.title}
+        coverImageUrl={hunt.cover_image_url ?? null}
+        disabled={actionLoading}
+        onChange={(change) => {
+          succeed(change.message ?? (change.coverImageUrl ? "Cover photo saved." : "Cover photo removed."));
+          void fetchHunt();
+        }}
+      />
 
       {/* Hunt settings */}
       {isDraft && (

@@ -11,12 +11,38 @@ import { generalLimiter } from "@/lib/utils/rate-limit";
 import { botGuard } from "@/lib/utils/bot-guard";
 import { internalError } from "@/lib/utils/internal-error";
 import { withoutInternalReviewFields } from "@/lib/hunts/review";
+import { logger } from "@/lib/utils/logger";
 
 /** Catalogue rows without review bookkeeping (who reviewed/affirmed, notes). */
 function publicRows(rows: unknown): unknown {
   return Array.isArray(rows)
     ? rows.map((row) => (row && typeof row === "object" ? withoutInternalReviewFields(row as Record<string, unknown>) : row))
     : rows;
+}
+
+/**
+ * search_hunts() returns a fixed column list without cover_image_url
+ * (migration 079 added the column), so read the covers for its rows and merge
+ * them in. A failed lookup only costs the photos: cards fall back to art.
+ */
+async function withCoverImages(
+  supabase: Awaited<ReturnType<typeof createSupabaseServiceClient>>,
+  rows: unknown
+): Promise<unknown> {
+  if (!Array.isArray(rows) || rows.length === 0) return rows;
+  const ids = rows
+    .map((row) => (row && typeof row === "object" ? (row as { id?: unknown }).id : null))
+    .filter((id): id is string => typeof id === "string");
+  const { data, error } = await supabase.from("hunts").select("id, cover_image_url").in("id", ids);
+  if (error) logger.warn("hunts.nearby.covers_failed", { error: error.message });
+  const covers = new Map(
+    ((data || []) as { id: string; cover_image_url: string | null }[]).map((h) => [h.id, h.cover_image_url])
+  );
+  return rows.map((row) =>
+    row && typeof row === "object"
+      ? { ...row, cover_image_url: covers.get((row as { id?: string }).id ?? "") ?? null }
+      : row
+  );
 }
 
 const DIFFICULTY_PROGRESSIONS = ["ascending", "descending", "mixed", "plateau"];
@@ -66,7 +92,7 @@ export async function GET(request: NextRequest) {
       });
 
       if (error) throw internalError("/api/v1/hunts nearby", error);
-      return Response.json({ hunts: publicRows(data) });
+      return Response.json({ hunts: publicRows(await withCoverImages(supabase, data)) });
     }
 
     // Basic list of public hunts

@@ -22,6 +22,10 @@ const HUNT_REVIEW = [
   "review_status", "review_reason", "review_submitted_at", "reviewed_at", "reviewed_by",
   "safety_affirmed_at", "safety_affirmed_by",
 ];
+// The cover photo is an object in the source hunt's hunt-covers folder
+// (migration 079); the copy starts with generated art instead of pointing at
+// a file the source's owner can delete.
+const HUNT_MEDIA = ["cover_image_url"];
 
 function omit(row: Row, keys: string[]): Row {
   const copy: Row = { ...row };
@@ -58,7 +62,7 @@ export async function POST(
     if (!(await canAccessHunt(supabase, source, user))) throw new ApiError(404, "Hunt not found");
 
     const { finds, ...sourceHunt } = source as Row & { finds: Row[] | null };
-    const huntData = omit(sourceHunt, [...SERVER_MANAGED, ...HUNT_GENERATED, ...HUNT_REVIEW]);
+    const huntData = omit(sourceHunt, [...SERVER_MANAGED, ...HUNT_GENERATED, ...HUNT_REVIEW, ...HUNT_MEDIA]);
 
     const { data: newHunt, error: huntError } = await supabase
       .from("hunts")
