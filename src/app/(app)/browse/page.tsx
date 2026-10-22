@@ -146,13 +146,16 @@ export default async function ExplorePage({ searchParams }: { searchParams: Sear
         />
       </div>
 
-      <Link
-        href={exploreHref({ q, filters, audience: rawAudience, view: "map" })}
-        className="fixed left-1/2 z-30 inline-flex h-12 -translate-x-1/2 items-center gap-2 rounded-full bg-ink px-5 text-[15px] font-bold text-white no-underline shadow-[0_8px_20px_rgb(28_36_48/0.28)] transition-colors hover:bg-ink-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 bottom-[calc(var(--fm-tabbar-h)_+_var(--fm-minibar-h)_+_var(--fm-tabbar-gap)_+_30px_+_env(safe-area-inset-bottom))]"
-      >
-        <MapIcon className="h-[18px] w-[18px]" aria-hidden="true" />
-        Map
-      </Link>
+      {/* Nothing to map on an empty list, and the pill would cover the empty state's actions. */}
+      {hunts.length > 0 && (
+        <Link
+          href={exploreHref({ q, filters, audience: rawAudience, view: "map" })}
+          className="fixed left-1/2 z-30 inline-flex h-12 -translate-x-1/2 items-center gap-2 rounded-full bg-ink px-5 text-[15px] font-bold text-white no-underline shadow-[0_8px_20px_rgb(28_36_48/0.28)] transition-colors hover:bg-ink-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 bottom-[calc(var(--fm-tabbar-h)_+_var(--fm-minibar-h)_+_var(--fm-tabbar-gap)_+_30px_+_env(safe-area-inset-bottom))]"
+        >
+          <MapIcon className="h-[18px] w-[18px]" aria-hidden="true" />
+          Map
+        </Link>
+      )}
     </main>
   );
 }

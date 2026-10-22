@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { cn } from "@/lib/utils/cn";
+import { useShellActiveHunt } from "@/components/layout/active-hunt-context";
 
 export type SheetDetent = "collapsed" | "half" | "full";
 
@@ -16,12 +17,14 @@ export type SheetDetent = "collapsed" | "half" | "full";
 const FULL_TOP = 16;
 /** Visible height when collapsed: handle, title, one row card, and room for the tab bar. */
 const COLLAPSED_VISIBLE = 300;
+/** Extra collapsed height while the active-hunt mini-bar (64px + 12px gap) floats over the sheet. */
+export const MINIBAR_ALLOWANCE = 76;
 const TAP_SLOP = 6;
 const ORDER: SheetDetent[] = ["collapsed", "half", "full"];
 
 /** Pixel offset (translateY) of each detent for a container of height `h`. Pure. */
-export function detentOffsets(h: number): Record<SheetDetent, number> {
-  const max = Math.max(0, h - FULL_TOP - COLLAPSED_VISIBLE);
+export function detentOffsets(h: number, extraVisible = 0): Record<SheetDetent, number> {
+  const max = Math.max(0, h - FULL_TOP - COLLAPSED_VISIBLE - extraVisible);
   return {
     full: 0,
     half: Math.min(max, Math.max(0, Math.round(h * 0.42) - FULL_TOP)),
@@ -54,7 +57,10 @@ export function ResultsSheet({ title, subtitle, above, header, children, contain
   const listRef = useRef<HTMLDivElement>(null);
   const [listTop, setListTop] = useState(0);
 
-  const offsets = detentOffsets(containerHeight);
+  // The mini-bar floats over the bottom of the sheet; keep the collapsed
+  // sheet's title and first card visible above it.
+  const { hunt: activeHunt } = useShellActiveHunt();
+  const offsets = detentOffsets(containerHeight, activeHunt ? MINIBAR_ALLOWANCE : 0);
   const offset = dragY ?? offsets[detent];
   const visible = Math.max(0, containerHeight - FULL_TOP - offset);
 
