@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { Frown, Meh, Smile, type LucideIcon } from "lucide-react";
 import { postJson } from "@/lib/play/play-api";
+import { cn } from "@/lib/utils/cn";
 
 const STRATEGIES = [
   { key: "read_carefully", label: "Read carefully" },
@@ -12,10 +14,11 @@ const STRATEGIES = [
   { key: "guessed", label: "Guessed" },
 ];
 
-const CONFIDENCE = [
-  { emoji: "😞", label: "Not confident" },
-  { emoji: "😐", label: "Somewhat confident" },
-  { emoji: "😊", label: "Very confident" },
+/** Confidence 1-3, in this order. Labels unchanged from the original emoji buttons. */
+const CONFIDENCE: { icon: LucideIcon; label: string }[] = [
+  { icon: Frown, label: "Not confident" },
+  { icon: Meh, label: "Somewhat confident" },
+  { icon: Smile, label: "Very confident" },
 ];
 
 interface TechniqueReviewProps {
@@ -24,8 +27,9 @@ interface TechniqueReviewProps {
 }
 
 /**
- * Optional post-challenge reflection. Key it on the stop so it starts fresh
- * at every stop. Posts { hunt_id, confidence 1-3, strategies } once.
+ * Optional post-challenge reflection, on the dark results screen. Key it on
+ * the stop so it starts fresh at every stop. Posts { hunt_id, confidence 1-3,
+ * strategies } once.
  */
 export function TechniqueReview({ huntId, onError }: TechniqueReviewProps) {
   const [open, setOpen] = useState(false);
@@ -46,56 +50,61 @@ export function TechniqueReview({ huntId, onError }: TechniqueReviewProps) {
     setOpen(false);
   }
 
-  if (done) return <p className="text-sm text-secondary mt-2">Thanks for reflecting!</p>;
+  if (done) return <p role="status" className="text-center text-base text-[#D6EFE0]">Thanks for reflecting!</p>;
 
-  return (
-    <div className="mt-3">
-      {!open ? (
+  if (!open) {
+    return (
+      <div className="text-center">
         <button
+          type="button"
           onClick={() => setOpen(true)}
-          className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-link underline-offset-2 transition-colors hover:text-link-dark hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+          className="inline-flex min-h-12 items-center rounded-xl px-3 text-base font-semibold text-white underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
         >
           Reflect on your approach (optional)
         </button>
-      ) : (
-        <div className="rounded-lg border border-link/30 bg-link/10 p-3">
-          <p className="text-sm font-semibold text-themed-text mb-2" id="review-strategies-label">What helped you?</p>
-          <div className="flex flex-wrap gap-2 mb-3" role="group" aria-labelledby="review-strategies-label">
-            {STRATEGIES.map((s) => {
-              const selected = strategies.includes(s.key);
-              return (
-                <button
-                  key={s.key}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() =>
-                    setStrategies((prev) => (prev.includes(s.key) ? prev.filter((k) => k !== s.key) : [...prev, s.key]))
-                  }
-                  className={`inline-flex min-h-11 items-center rounded-full border px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 ${
-                    selected ? "border-link bg-link text-white" : "border-themed-border bg-surface text-themed-text hover:bg-themed-bg"
-                  }`}
-                >
-                  {s.label}
-                </button>
-              );
-            })}
-          </div>
-          <p className="text-sm font-semibold text-themed-text mb-1" id="review-confidence-label">How confident are you?</p>
-          <div className="flex gap-2 mb-2" role="group" aria-labelledby="review-confidence-label">
-            {CONFIDENCE.map((c, i) => (
-              <button
-                key={i}
-                type="button"
-                aria-label={c.label}
-                className="inline-flex h-12 w-12 items-center justify-center rounded-lg text-2xl leading-none transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
-                onClick={() => void submit(i + 1)}
-              >
-                <span aria-hidden="true">{c.emoji}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-[20px] bg-white/10 p-4 text-white">
+      <p className="mb-2 text-base font-bold" id="review-strategies-label">What helped you?</p>
+      <div className="mb-4 flex flex-wrap gap-2" role="group" aria-labelledby="review-strategies-label">
+        {STRATEGIES.map((s) => {
+          const selected = strategies.includes(s.key);
+          return (
+            <button
+              key={s.key}
+              type="button"
+              aria-pressed={selected}
+              onClick={() =>
+                setStrategies((prev) => (prev.includes(s.key) ? prev.filter((k) => k !== s.key) : [...prev, s.key]))
+              }
+              className={cn(
+                "inline-flex min-h-12 items-center rounded-full px-4 text-base transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white",
+                selected ? "bg-white font-bold text-juniper-deep" : "border border-white/40 bg-transparent text-white hover:bg-white/10"
+              )}
+            >
+              {s.label}
+            </button>
+          );
+        })}
+      </div>
+      <p className="mb-2 text-base font-bold" id="review-confidence-label">How confident are you?</p>
+      <div className="flex gap-2" role="group" aria-labelledby="review-confidence-label">
+        {CONFIDENCE.map(({ icon: Icon, label }, i) => (
+          <button
+            key={label}
+            type="button"
+            aria-label={label}
+            title={label}
+            className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 text-white transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            onClick={() => void submit(i + 1)}
+          >
+            <Icon className="h-7 w-7" aria-hidden="true" />
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

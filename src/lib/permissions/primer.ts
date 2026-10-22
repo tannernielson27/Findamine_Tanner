@@ -22,8 +22,8 @@ export type AppPlatform = "ios" | "android" | "web";
 export interface PrimerCopy {
   title: string;
   reason: string;
+  /** The primer's only action: it always leads to the OS prompt (5.1.1(iv)). */
   continueLabel: string;
-  dismissLabel: string;
 }
 
 export const PRIMER_COPY: Record<PermissionKind, PrimerCopy> = {
@@ -32,14 +32,12 @@ export const PRIMER_COPY: Record<PermissionKind, PrimerCopy> = {
     reason:
       "Findamine uses your location only while you're playing a hunt, to show you on the map and tell you when you've reached a stop. We save where you checked in at each stop, and never track you in the background.",
     continueLabel: "Continue",
-    dismissLabel: "Not now",
   },
   microphone: {
     title: "Use your microphone?",
     reason:
       "Findamine uses your microphone only to record your spoken answer to this challenge. It starts recording when you continue and stops when you tap Stop Recording. Your recording is saved privately with your answer; on a child's account it stays on this device.",
     continueLabel: "Continue",
-    dismissLabel: "Not now",
   },
   // Native app only: the web build uses the browser's file picker.
   camera: {
@@ -47,7 +45,6 @@ export const PRIMER_COPY: Record<PermissionKind, PrimerCopy> = {
     reason:
       "Findamine uses your camera only when you tap Take Photo, so you can take a geo-selfie at a stop or photograph something for a challenge. Geo-selfies are stored privately with your hunt.",
     continueLabel: "Continue",
-    dismissLabel: "Not now",
   },
   // Native app only, and only after the player asks for notifications in Settings.
   notifications: {
@@ -55,7 +52,6 @@ export const PRIMER_COPY: Record<PermissionKind, PrimerCopy> = {
     reason:
       "Findamine uses your notifications only to tell you about your own hunts, classes and teams, like a new hunt from your teacher. You can turn them off here or in your iPhone's Settings at any time.",
     continueLabel: "Continue",
-    dismissLabel: "Not now",
   },
 };
 

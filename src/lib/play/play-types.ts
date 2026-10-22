@@ -61,7 +61,12 @@ export interface HuntSummaryData {
 }
 
 export type GpsStatus = "waiting" | "active" | "denied" | "unavailable" | "timeout";
-export type LocationConsent = "pending" | "granted" | "declined";
+/**
+ * "granted" once the player has gone past the location primer. There is no
+ * "declined": the primer always leads to the OS prompt (App Store 5.1.1(iv)),
+ * and a "no" there shows up as gpsStatus "denied".
+ */
+export type LocationConsent = "pending" | "granted";
 
 export interface StartOptions {
   codename?: string;

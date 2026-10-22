@@ -98,7 +98,6 @@ export function PhotoPicker({ onFile, disabled, className, children }: PhotoPick
       <PermissionPrimer
         kind="camera"
         onContinue={() => void pick("camera")}
-        onDismiss={() => setShowPrimer(false)}
         deniedActions={
           <button type="button" onClick={() => void pick("library")} className={LIBRARY_BUTTON}>
             <ImageIcon className="h-4 w-4" aria-hidden="true" />

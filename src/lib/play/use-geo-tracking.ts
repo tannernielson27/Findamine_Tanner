@@ -8,6 +8,8 @@ import type { Find, GpsStatus, HotCold, LocationConsent, StopStep } from "@/lib/
 export interface UserPosition {
   lat: number;
   lng: number;
+  /** Metres, when the platform reports it. */
+  accuracy: number | null;
 }
 
 interface GeoTrackingInput {
@@ -70,7 +72,7 @@ export function useGeoTracking({
       async (pos) => {
         if (!active) return;
         setGpsStatus("active");
-        setUserPos({ lat: pos.latitude, lng: pos.longitude });
+        setUserPos({ lat: pos.latitude, lng: pos.longitude, accuracy: pos.accuracy });
         // Skip this fix if the previous ping is still in flight; the next
         // position update will try again.
         if (arriveInFlightRef.current) return;

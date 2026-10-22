@@ -171,6 +171,9 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
           }
         }
       } catch (err) {
+        // A failed start must land on the error screen with a retry, never on
+        // a stale codename prompt or the "no stops" empty state.
+        setNeedsCodename(false);
         setLoadError(err instanceof Error ? err.message : "Failed to load hunt");
       } finally {
         setLoading(false);

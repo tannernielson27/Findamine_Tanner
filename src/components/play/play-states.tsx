@@ -1,21 +1,36 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { RotateCcw } from "lucide-react";
+import type { ReactNode } from "react";
+import { MapPinOff, RotateCcw } from "lucide-react";
+import { Button, ButtonLink } from "@/components/ui/button";
 import type { StartOptions } from "@/lib/play/play-types";
 
-const PRIMARY =
-  "flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand px-5 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50";
-const SECONDARY =
-  "flex min-h-12 items-center justify-center gap-2 rounded-lg border border-themed-border bg-surface px-4 text-base font-semibold text-themed-text transition-colors hover:bg-themed-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-40";
+/** Full-screen ground for the pre-play states (no app chrome on /play). */
+function PlayFrame({ children }: { children: ReactNode }) {
+  return (
+    <main className="fixed inset-0 z-[51] flex flex-col items-center justify-center overflow-y-auto bg-map-ground px-4 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] text-ink">
+      {children}
+    </main>
+  );
+}
+
+const CARD = "w-full max-w-md rounded-[24px] bg-white p-6 shadow-[0_8px_24px_rgb(28_36_48/0.16)]";
 
 export function PlayLoading() {
   return (
-    <main className="mx-auto max-w-2xl px-4 py-12">
-      <div className="fm-shimmer space-y-4">
-        <div className="h-4 bg-themed-border rounded w-1/3" />
-        <div className="h-2 bg-themed-border rounded" />
-        <div className="h-64 bg-themed-border/60 rounded-xl" />
+    <main className="fixed inset-0 z-[51] bg-map-ground px-4 pt-[calc(12px+env(safe-area-inset-top))]" aria-busy="true">
+      <p role="status" className="sr-only">Loading your hunt…</p>
+      <div className="fm-shimmer flex flex-col gap-2.5" aria-hidden="true">
+        <div className="flex gap-2.5">
+          <div className="h-[52px] w-[52px] rounded-full bg-white/80" />
+          <div className="h-[52px] flex-1 rounded-full bg-white/80" />
+          <div className="h-[52px] w-[52px] rounded-full bg-white/80" />
+        </div>
+        <div className="h-[164px] rounded-[24px] bg-white/80" />
+      </div>
+      <div className="fm-shimmer absolute inset-x-4 bottom-[calc(16px+env(safe-area-inset-bottom))] flex flex-col gap-3" aria-hidden="true">
+        <div className="h-24 rounded-[20px] bg-ink/15" />
+        <div className="h-16 rounded-[20px] bg-white/80" />
       </div>
     </main>
   );
@@ -32,19 +47,19 @@ interface CodenameFormProps {
 export function CodenameForm({ value: codenameInput, onChange: setCodenameInput, error, onStart }: CodenameFormProps) {
   const trimmedCodename = codenameInput.trim();
   return (
-    <main className="mx-auto max-w-2xl px-4 py-12">
+    <PlayFrame>
       <form
-        className="bg-surface rounded-xl border border-themed-border shadow-[var(--shadow-card)] p-5 sm:p-8"
+        className={CARD}
         onSubmit={(e) => {
           e.preventDefault();
           if (trimmedCodename) onStart({ codename: trimmedCodename });
         }}
       >
-        <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold text-themed-text mb-2">Choose your explorer name</h1>
-        <p className="text-base text-themed-muted mb-4">
+        <h1 className="mb-2 font-[family-name:var(--font-display)] text-[26px] font-semibold leading-tight">Choose your explorer name</h1>
+        <p className="mb-4 text-base">
           This hunt shows players by an explorer name instead of their real name. Pick yours to start.
         </p>
-        <label htmlFor="explorer-name" className="block text-sm font-semibold text-themed-text mb-1">
+        <label htmlFor="explorer-name" className="mb-1 block text-base font-bold">
           Explorer name
         </label>
         <input
@@ -56,21 +71,21 @@ export function CodenameForm({ value: codenameInput, onChange: setCodenameInput,
           autoComplete="off"
           aria-describedby={error ? "explorer-name-error" : undefined}
           aria-invalid={error ? true : undefined}
-          className="min-h-12 w-full rounded-lg border border-themed-border bg-surface px-3 py-2 text-base text-themed-text placeholder:text-themed-muted focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand mb-3"
+          className="mb-3 min-h-14 w-full rounded-2xl border-2 border-themed-border bg-white px-4 text-lg text-ink focus:border-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
         />
         {error && (
-          <p id="explorer-name-error" role="alert" className="text-base text-error mb-3">{error}</p>
+          <p id="explorer-name-error" role="alert" className="mb-3 text-base font-semibold text-[#B42318]">{error}</p>
         )}
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <button type="submit" disabled={!trimmedCodename} className={`${PRIMARY} sm:flex-1`}>
-            Start Hunt
-          </button>
-          <button type="button" onClick={() => onStart({ assign_codename: true })} className={`${SECONDARY} sm:flex-1`}>
+        <div className="flex flex-col gap-2">
+          <Button type="submit" size="lg" block disabled={!trimmedCodename}>
+            Start hunt
+          </Button>
+          <Button variant="secondary" size="lg" block onClick={() => onStart({ assign_codename: true })}>
             Pick one for me
-          </button>
+          </Button>
         </div>
       </form>
-    </main>
+    </PlayFrame>
   );
 }
 
@@ -79,31 +94,41 @@ interface PlayLoadErrorProps {
   onRetry: () => void;
 }
 
+/** The start (or load) failed: say why, offer a retry. Never the "no stops" state. */
 export function PlayLoadError({ message, onRetry }: PlayLoadErrorProps) {
-  const router = useRouter();
   return (
-    <main className="mx-auto max-w-2xl px-4 py-12">
-      <div role="alert" className="bg-surface rounded-xl border border-themed-border shadow-[var(--shadow-card)] px-5 py-8 text-center sm:px-8">
-        <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold text-themed-text mb-2">We couldn&apos;t load this hunt</h1>
-        <p className="text-base text-themed-muted mb-6">{message}</p>
-        <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
-          <button onClick={onRetry} className={`${PRIMARY} sm:w-auto`}>
-            <RotateCcw className="h-4 w-4" aria-hidden="true" />
-            Try Again
-          </button>
-          <button onClick={() => router.push("/browse")} className={`${SECONDARY} w-full px-5 sm:w-auto`}>
-            Back to Browse
-          </button>
+    <PlayFrame>
+      <div role="alert" className={`${CARD} text-center`}>
+        <h1 className="mb-2 font-[family-name:var(--font-display)] text-[26px] font-semibold leading-tight">We couldn&apos;t start this hunt</h1>
+        <p className="mb-6 text-base">{message}</p>
+        <div className="flex flex-col gap-2">
+          <Button size="lg" block onClick={onRetry}>
+            <RotateCcw className="h-5 w-5" aria-hidden="true" />
+            Try again
+          </Button>
+          <ButtonLink href="/browse" variant="secondary" size="lg" block>
+            Find another hunt
+          </ButtonLink>
         </div>
       </div>
-    </main>
+    </PlayFrame>
   );
 }
 
+/** The hunt loaded but has no stops (a creator problem, not a player one). */
 export function PlayEmpty() {
   return (
-    <main className="mx-auto max-w-2xl px-4 py-12 text-center text-base text-themed-muted">
-      This hunt has no stops yet.
-    </main>
+    <PlayFrame>
+      <div role="status" className={`${CARD} text-center`}>
+        <span className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-sky-tint text-link">
+          <MapPinOff className="h-7 w-7" aria-hidden="true" />
+        </span>
+        <h1 className="mb-2 font-[family-name:var(--font-display)] text-[26px] font-semibold leading-tight">This hunt has no stops yet</h1>
+        <p className="mb-6 text-base">Its creator hasn&apos;t added any stops, so there&apos;s nothing to play. Try another hunt for now.</p>
+        <ButtonLink href="/browse" size="lg" block>
+          Find another hunt
+        </ButtonLink>
+      </div>
+    </PlayFrame>
   );
 }

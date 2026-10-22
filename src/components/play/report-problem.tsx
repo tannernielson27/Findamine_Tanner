@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { HttpError, safeFetch } from "@/lib/play/play-api";
+import { cn } from "@/lib/utils/cn";
 
 const CATEGORIES = [
   { key: "mean_hurtful", label: "Mean / hurtful" },
@@ -12,20 +13,40 @@ const CATEGORIES = [
   { key: "other", label: "Other" },
 ];
 
+type Tone = "light" | "dark";
+
+const TONES: Record<Tone, { muted: string; panel: string; chip: string; error: string }> = {
+  light: {
+    muted: "text-ink",
+    panel: "border border-themed-border bg-white text-ink",
+    chip: "border border-themed-border bg-themed-bg text-ink hover:bg-white",
+    error: "text-[#B42318]",
+  },
+  dark: {
+    muted: "text-[#D6EFE0]",
+    panel: "bg-white/10 text-white",
+    chip: "border border-white/30 bg-white/10 text-white hover:bg-white/20",
+    error: "text-white",
+  },
+};
+
 interface ReportProblemProps {
   /** The stop being reported, or the hunt when there is no stop. */
   targetId: string;
+  /** "dark" on the juniper results screen. */
+  tone?: Tone;
 }
 
 /**
  * "Report a problem": accessible inline disclosure (no prompt/alert). Key it
  * on the stop so it starts closed at every stop.
  */
-export function ReportProblem({ targetId }: ReportProblemProps) {
+export function ReportProblem({ targetId, tone = "light" }: ReportProblemProps) {
   const [open, setOpen] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const t = TONES[tone];
 
   async function send(category: string) {
     setSending(true);
@@ -48,51 +69,62 @@ export function ReportProblem({ targetId }: ReportProblemProps) {
     }
   }
 
-  return (
-    <div className="mt-4 text-center">
-      {done ? (
-        <p role="status" className="text-sm text-themed-muted">Thanks for reporting. A teacher will review this.</p>
-      ) : !open ? (
+  if (done) {
+    return <p role="status" className={cn("text-center text-base", t.muted)}>Thanks for reporting. A teacher will review this.</p>;
+  }
+
+  if (!open) {
+    return (
+      <div className="text-center">
         <button
+          type="button"
           onClick={() => setOpen(true)}
           aria-expanded={false}
-          className="inline-flex min-h-11 items-center rounded-lg px-3 text-sm text-themed-muted underline underline-offset-2 transition-colors hover:text-themed-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+          className={cn(
+            "inline-flex min-h-12 items-center rounded-xl px-3 text-base underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
+            t.muted
+          )}
         >
           Report a problem
         </button>
-      ) : (
-        <div className="inline-block rounded-xl border border-themed-border bg-surface p-3 text-left">
-          <p className="text-sm font-semibold text-themed-text mb-2" id="report-label">What&apos;s the issue?</p>
-          <div className="flex flex-wrap gap-2" role="group" aria-labelledby="report-label">
-            {CATEGORIES.map((c) => (
-              <button
-                key={c.key}
-                type="button"
-                disabled={sending}
-                onClick={() => void send(c.key)}
-                className="inline-flex min-h-11 items-center rounded-full border border-themed-border bg-themed-bg px-3 text-sm text-themed-text transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-50"
-              >
-                {c.label}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                setError(null);
-              }}
-              className="inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-sm text-themed-muted transition-colors hover:text-themed-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
-            >
-              <X className="h-4 w-4" aria-hidden="true" />
-              Cancel
-            </button>
-          </div>
-          {error && (
-            <p role="alert" className="mt-2 max-w-xs text-sm font-medium text-error">
-              {error}
-            </p>
-          )}
-        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn("rounded-2xl p-3 text-left", t.panel)}>
+      <p className="mb-2 text-base font-bold" id="report-label">What&apos;s the issue?</p>
+      <div className="flex flex-wrap gap-2" role="group" aria-labelledby="report-label">
+        {CATEGORIES.map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            disabled={sending}
+            onClick={() => void send(c.key)}
+            className={cn(
+              "inline-flex min-h-12 items-center rounded-full px-4 text-base transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-wait disabled:opacity-50",
+              t.chip
+            )}
+          >
+            {c.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            setError(null);
+          }}
+          className="inline-flex min-h-12 items-center gap-1 rounded-full px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
+          Cancel
+        </button>
+      </div>
+      {error && (
+        <p role="alert" className={cn("mt-2 text-base font-semibold", t.error)}>
+          {error}
+        </p>
       )}
     </div>
   );

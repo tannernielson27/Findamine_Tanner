@@ -4,7 +4,8 @@
 import { useState } from "react";
 import { Camera, RotateCcw } from "lucide-react";
 import { PhotoPicker } from "@/components/native/photo-picker";
-import type { ChallengeFieldProps } from "./types";
+import { FIELD_CLASS, QuestionText, SubmitButton, TEXT_ACTION_CLASS } from "./parts";
+import { questionOf, type ChallengeFieldProps } from "./types";
 
 export function PhotoObservation({
   content,
@@ -12,8 +13,9 @@ export function PhotoObservation({
   onAnswerChange,
   onSubmit,
   disabled,
+  showQuestion = true,
 }: ChallengeFieldProps) {
-  const question = (content.question as string) || (content.text as string) || "Take a photo and describe what you observe.";
+  const question = questionOf(content, "Take a photo and describe what you observe.");
   const [preview, setPreview] = useState<string | null>(null);
   const [observation, setObservation] = useState(answer);
 
@@ -34,35 +36,34 @@ export function PhotoObservation({
   };
 
   return (
-    <div>
-      <p className="text-base text-themed-text mb-3">{question}</p>
+    <div className="flex flex-col gap-4">
+      <QuestionText show={showQuestion}>{question}</QuestionText>
 
       {/* Photo capture */}
       {preview ? (
-        <div className="mb-3 text-center">
-          <img src={preview} alt="Your observation" className="rounded-xl max-h-48 mx-auto mb-2" />
+        <div className="text-center">
+          <img src={preview} alt="Your observation" className="mx-auto mb-2 max-h-48 rounded-2xl" />
           <button
+            type="button"
             onClick={() => { setPreview(null); onAnswerChange(observation); }}
-            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-link transition-colors hover:text-link-dark hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50"
+            className={TEXT_ACTION_CLASS}
           >
             <RotateCcw className="h-4 w-4" aria-hidden="true" />
             Retake photo
           </button>
         </div>
       ) : (
-        <div className="mb-3">
-          {/* Browser file input on the web; native camera (after the camera primer) in the iOS app. */}
-          <PhotoPicker
-            onFile={handlePhoto}
-            disabled={disabled}
-            className="flex min-h-32 items-center justify-center rounded-xl border-2 border-dashed border-themed-border bg-surface p-6 cursor-pointer transition-colors hover:border-link hover:bg-link/5 focus-within:ring-2 focus-within:ring-brand focus-within:ring-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
-          >
-            <div className="text-center">
-              <Camera className="mx-auto mb-2 h-8 w-8 text-link" aria-hidden="true" />
-              <p className="text-base font-semibold text-themed-text">Tap to take a photo</p>
-            </div>
-          </PhotoPicker>
-        </div>
+        // Browser file input on the web; native camera (after the camera primer) in the iOS app.
+        <PhotoPicker
+          onFile={handlePhoto}
+          disabled={disabled}
+          className="flex min-h-32 cursor-pointer items-center justify-center rounded-2xl border-2 border-dashed border-ink/30 bg-white p-6 transition-colors hover:border-link hover:bg-sky-tint focus-within:ring-2 focus-within:ring-brand focus-within:ring-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+        >
+          <div className="text-center">
+            <Camera className="mx-auto mb-2 h-8 w-8 text-link" aria-hidden="true" />
+            <p className="text-lg font-bold text-ink">Tap to take a photo</p>
+          </div>
+        </PhotoPicker>
       )}
 
       {/* Observation text */}
@@ -73,16 +74,16 @@ export function PhotoObservation({
         rows={3}
         disabled={disabled}
         aria-label="Describe what you observe"
-        className="w-full rounded-lg border border-themed-border bg-surface px-3 py-2 text-base text-themed-text placeholder:text-themed-muted focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand disabled:opacity-50 mb-3 resize-y"
+        className={`${FIELD_CLASS} resize-y py-3`}
       />
 
-      <button
+      <SubmitButton
+        ready={!!observation.trim()}
+        disabled={disabled}
         onClick={onSubmit}
-        disabled={!observation.trim() || disabled}
-        className="flex min-h-12 w-full items-center justify-center rounded-lg bg-brand px-4 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50"
-      >
-        Submit Observation
-      </button>
+        label="Submit observation"
+        waitingLabel="Describe what you see"
+      />
     </div>
   );
 }

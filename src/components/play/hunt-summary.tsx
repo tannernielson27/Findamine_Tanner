@@ -1,13 +1,18 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Trophy } from "lucide-react";
+import { ButtonLink } from "@/components/ui/button";
+import { CountUp } from "@/components/ui/count-up";
 import type { HuntSummaryData } from "@/lib/play/play-types";
 
 interface HuntSummaryProps {
   summary: HuntSummaryData | null;
   totalStops: number;
 }
+
+const TOPO_RINGS =
+  "repeating-radial-gradient(ellipse at 50% 30%, transparent 0 26px, rgba(255,255,255,0.06) 26px 27.5px)";
 
 function elapsedMinutes(summary: HuntSummaryData | null): number | null {
   if (!summary?.startedAt || !summary?.completedAt) return null;
@@ -16,54 +21,58 @@ function elapsedMinutes(summary: HuntSummaryData | null): number | null {
   );
 }
 
-/** End-of-hunt summary: points, stops done, time. */
+/** End-of-hunt summary in the stop-complete language: points, stops done, time. */
 export function HuntSummary({ summary, totalStops }: HuntSummaryProps) {
-  const router = useRouter();
   const elapsed = elapsedMinutes(summary);
+  const stats = summary
+    ? [
+        { label: "Stops done", value: `${summary.findsCompleted}/${summary.totalFinds}` },
+        { label: "Time", value: elapsed !== null ? `${elapsed}m` : "--" },
+      ]
+    : [];
 
   return (
-    <div className="bg-surface rounded-xl border border-themed-border shadow-[var(--shadow-card)] px-5 py-8 text-center sm:px-8">
-      <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-secondary/10 text-secondary">
-        <Trophy className="h-8 w-8" aria-hidden="true" />
-      </div>
-      <h1 className="font-[family-name:var(--font-display)] text-3xl font-bold text-themed-text mb-2 text-balance">Hunt Complete!</h1>
-      <p className="font-[family-name:var(--font-handwritten)] text-xl text-themed-muted mb-8">You finished all {totalStops} stops</p>
+    <section
+      aria-labelledby="hunt-complete-title"
+      className="absolute inset-0 flex flex-col items-center overflow-y-auto bg-juniper-deep px-6 pt-[calc(72px+env(safe-area-inset-top))] pb-[calc(24px+env(safe-area-inset-bottom))] text-white"
+      style={{ backgroundImage: TOPO_RINGS }}
+    >
+      <span className="flex h-28 w-28 shrink-0 items-center justify-center rounded-full bg-juniper-bright text-juniper-deep shadow-[0_0_0_14px_rgba(111,207,151,0.18)]">
+        <Trophy className="h-14 w-14" strokeWidth={2.4} aria-hidden="true" />
+      </span>
+      <p className="mt-7 text-base font-bold tracking-[0.08em] text-[#D6EFE0]">HUNT COMPLETE</p>
+      <h1 id="hunt-complete-title" className="mt-2 text-balance text-center font-[family-name:var(--font-display)] text-[32px] font-semibold leading-tight">
+        You finished all {totalStops} stops
+      </h1>
 
       {summary && (
-        <div className="grid grid-cols-3 gap-2 mb-8 sm:gap-4">
-          <div className="rounded-xl border border-themed-border bg-themed-bg px-2 py-4 sm:p-5">
-            <div className="font-[family-name:var(--font-display)] text-2xl font-bold tabular-nums text-themed-text sm:text-3xl">{summary.totalScore}</div>
-            <div className="text-sm text-themed-muted mt-1">Total Points</div>
-          </div>
-          <div className="rounded-xl border border-themed-border bg-themed-bg px-2 py-4 sm:p-5">
-            <div className="font-[family-name:var(--font-display)] text-2xl font-bold tabular-nums text-secondary sm:text-3xl">
-              {summary.findsCompleted}/{summary.totalFinds}
-            </div>
-            <div className="text-sm text-themed-muted mt-1">Stops Done</div>
-          </div>
-          <div className="rounded-xl border border-themed-border bg-themed-bg px-2 py-4 sm:p-5">
-            <div className="font-[family-name:var(--font-display)] text-2xl font-bold tabular-nums text-themed-text sm:text-3xl">
-              {elapsed !== null ? `${elapsed}m` : "--"}
-            </div>
-            <div className="text-sm text-themed-muted mt-1">Time</div>
-          </div>
-        </div>
+        <>
+          <p className="mt-4 font-[family-name:var(--font-display)] text-[80px] font-bold leading-none tabular-nums">
+            <CountUp value={summary.totalScore} />
+          </p>
+          <p className="mt-1 text-lg text-[#D6EFE0]">total points</p>
+          <dl className="mt-8 grid w-full grid-cols-2 gap-3">
+            {stats.map((s) => (
+              <div key={s.label} className="flex flex-col-reverse items-center rounded-[20px] bg-white/10 px-3 py-4">
+                <dt className="text-[15px] font-semibold">{s.label}</dt>
+                <dd className="m-0 font-[family-name:var(--font-display)] text-[28px] font-bold tabular-nums">{s.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </>
       )}
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
-        <button
-          onClick={() => router.push("/dashboard")}
-          className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand px-5 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50 sm:w-auto"
-        >
-          Back to Dashboard
-        </button>
-        <button
-          onClick={() => router.push("/browse")}
-          className="flex min-h-12 items-center justify-center gap-2 rounded-lg border border-themed-border bg-surface px-4 text-base font-semibold text-themed-text transition-colors hover:bg-themed-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-40 w-full px-5 sm:w-auto"
-        >
-          Find More Hunts
-        </button>
-      </div>
-    </div>
+      <div className="min-h-8 flex-1" />
+
+      <ButtonLink href="/dashboard" variant="light" size="xl" block>
+        Back to Home
+      </ButtonLink>
+      <Link
+        href="/browse"
+        className="mt-2 inline-flex min-h-12 items-center rounded-xl px-3 text-base font-semibold text-[#D6EFE0] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+      >
+        Find another hunt
+      </Link>
+    </section>
   );
 }

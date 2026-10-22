@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { Mic, RotateCcw, Square } from "lucide-react";
 import { PermissionDeniedNotice, PermissionPrimer } from "@/components/permissions/permission-primer";
 import { MAX_AUDIO_SECONDS, audioExtension } from "@/lib/play/audio-answer";
-import type { ChallengeFieldProps } from "./types";
+import { Button } from "@/components/ui/button";
+import { QuestionText, SubmitButton, TEXT_ACTION_CLASS } from "./parts";
+import { questionOf, type ChallengeFieldProps } from "./types";
 
 // ── Audio Response ───────────────────────────────────
 
@@ -63,8 +65,9 @@ export function AudioResponse({
   disabled,
   huntId,
   findId,
+  showQuestion = true,
 }: ChallengeFieldProps & { huntId?: string; findId?: string }) {
-  const question = (content.question as string) || (content.text as string) || "Record your spoken answer.";
+  const question = questionOf(content, "Record your spoken answer.");
   const [recording, setRecording] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [duration, setDuration] = useState(0);
@@ -197,72 +200,57 @@ export function AudioResponse({
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 
   return (
-    <div>
-      <p className="text-base text-themed-text mb-3">{question}</p>
+    <div className="flex flex-col gap-4">
+      <QuestionText show={showQuestion}>{question}</QuestionText>
 
       {micError === "denied" && <PermissionDeniedNotice kind="microphone" />}
       {micError === "failed" && (
-        <div className="rounded-lg bg-error/10 border border-error/30 p-3 mb-3" role="alert">
-          <p className="text-base text-error">
+        <div className="rounded-2xl border border-error/30 bg-error/10 p-3" role="alert">
+          <p className="text-base text-ink">
             We couldn&apos;t start a microphone on this device. Check that one is connected and not in use by another app.
           </p>
         </div>
       )}
 
       {showPrimer ? (
-        <PermissionPrimer
-          kind="microphone"
-          onContinue={startRecording}
-          onDismiss={() => setShowPrimer(false)}
-        />
+        <PermissionPrimer kind="microphone" onContinue={startRecording} />
       ) : (
-        <div className="rounded-xl border border-themed-border bg-themed-bg p-4 mb-3 text-center">
+        <div className="rounded-2xl border border-themed-border bg-white p-4 text-center">
           {recording ? (
             <div>
-              <div className="flex items-center justify-center gap-2 mb-3">
-                <span className="w-3 h-3 rounded-full bg-error animate-pulse" aria-hidden="true" />
-                <span className="text-base font-semibold text-error">Recording</span>
-                <span className="text-base text-themed-muted tabular-nums">
+              <div className="mb-3 flex items-center justify-center gap-2">
+                <span className="h-3 w-3 rounded-full bg-error motion-safe:animate-pulse" aria-hidden="true" />
+                <span className="text-lg font-bold text-ink">Recording</span>
+                <span className="text-lg tabular-nums text-ink">
                   {formatTime(duration)} / {formatTime(MAX_AUDIO_SECONDS)}
                 </span>
               </div>
-              <button
-                ref={stopButtonRef}
-                onClick={stopRecording}
-                className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-error px-6 text-base font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error focus-visible:ring-offset-2 sm:w-auto"
-              >
-                <Square className="h-4 w-4" aria-hidden="true" />
+              <Button ref={stopButtonRef} variant="ink" size="lg" block onClick={stopRecording}>
+                <Square className="h-4 w-4" fill="currentColor" aria-hidden="true" />
                 Stop Recording
-              </button>
+              </Button>
             </div>
           ) : audioUrl ? (
             <div>
               <audio src={audioUrl} controls className="mx-auto mb-3 w-full max-w-xs" />
-              <p className="text-sm text-themed-muted tabular-nums mb-2">Duration: {formatTime(secondsRef.current || duration)}</p>
+              <p className="mb-2 text-base tabular-nums text-ink">Duration: {formatTime(secondsRef.current || duration)}</p>
               {saveState === "saving" && (
-                <p role="status" className="text-sm text-themed-muted mb-2">Saving your recording...</p>
+                <p role="status" className="mb-2 text-base text-ink">Saving your recording...</p>
               )}
               {saveState === "saved" && (
-                <p role="status" className="text-sm text-themed-muted mb-2">
+                <p role="status" className="mb-2 text-base text-ink">
                   {savedOnDevice ? "Kept on this device only, for your privacy." : "Recording saved."}
                 </p>
               )}
               {saveState === "error" && (
-                <div role="alert" className="rounded-lg bg-error/10 border border-error/30 p-3 mb-2 text-left">
-                  <p className="text-base text-error mb-2">{saveError}</p>
-                  <button
-                    onClick={() => void saveRecording()}
-                    disabled={disabled}
-                    className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-link transition-colors hover:text-link-dark hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50"
-                  >
+                <div role="alert" className="mb-2 rounded-2xl border border-error/30 bg-error/10 p-3 text-left">
+                  <p className="mb-2 text-base text-ink">{saveError}</p>
+                  <button type="button" onClick={() => void saveRecording()} disabled={disabled} className={TEXT_ACTION_CLASS}>
                     Try again
                   </button>
                 </div>
               )}
-              <button
-                onClick={resetRecording}
-                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-link transition-colors hover:text-link-dark hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50"
-              >
+              <button type="button" onClick={resetRecording} className={TEXT_ACTION_CLASS}>
                 <RotateCcw className="h-4 w-4" aria-hidden="true" />
                 Record again
               </button>
@@ -270,29 +258,31 @@ export function AudioResponse({
           ) : (
             <div>
               <Mic className="mx-auto mb-2 h-8 w-8 text-link" aria-hidden="true" />
-              <button
+              <Button
+                variant="secondary"
+                size="lg"
+                block
                 onClick={() => {
                   setMicError(null);
                   setShowPrimer(true);
                 }}
                 disabled={disabled || micError === "denied"}
-                className="inline-flex min-h-12 w-full items-center justify-center rounded-lg border-2 border-brand bg-surface px-6 text-base font-semibold text-brand-dark transition-colors hover:bg-brand-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50 sm:w-auto"
               >
                 Start Recording
-              </button>
-              <p className="text-sm text-themed-muted mt-2">Tap to record your spoken answer (up to {MAX_AUDIO_SECONDS / 60} minutes)</p>
+              </Button>
+              <p className="mt-2 text-base text-ink">Tap to record your spoken answer (up to {MAX_AUDIO_SECONDS / 60} minutes)</p>
             </div>
           )}
         </div>
       )}
 
-      <button
+      <SubmitButton
+        ready={!!audioUrl && saveState === "saved" && !!answer}
+        disabled={disabled}
         onClick={onSubmit}
-        disabled={!audioUrl || saveState !== "saved" || !answer || disabled}
-        className="flex min-h-12 w-full items-center justify-center rounded-lg bg-brand px-4 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50"
-      >
-        Submit Recording
-      </button>
+        label="Submit recording"
+        waitingLabel={saveState === "saving" ? "Saving your recording…" : "Record your answer"}
+      />
     </div>
   );
 }

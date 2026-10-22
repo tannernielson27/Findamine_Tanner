@@ -18,6 +18,8 @@ interface ChallengeInputProps {
   /** Needed by audio_response, which uploads the recording for this stop. */
   huntId?: string;
   findId?: string;
+  /** False when the surrounding sheet already shows the question as its heading. */
+  showQuestion?: boolean;
 }
 
 /**
@@ -33,8 +35,9 @@ export default function ChallengeInput({
   disabled,
   huntId,
   findId,
+  showQuestion = true,
 }: ChallengeInputProps) {
-  const field = { content, answer, onAnswerChange, onSubmit, disabled };
+  const field = { content, answer, onAnswerChange, onSubmit, disabled, showQuestion };
   switch (challengeType) {
     case "multiple_choice":
       return <MultipleChoice {...field} />;

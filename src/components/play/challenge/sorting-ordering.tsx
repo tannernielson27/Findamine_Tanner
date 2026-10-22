@@ -2,7 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import type { ChallengeFieldProps } from "./types";
+import { QuestionText, SubmitButton } from "./parts";
+import { questionOf, type ChallengeFieldProps } from "./types";
+
+const MOVE_CLASS =
+  "flex h-12 w-12 items-center justify-center rounded-xl text-ink transition-colors hover:bg-themed-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-30";
 
 export function SortingOrdering({
   content,
@@ -10,9 +14,10 @@ export function SortingOrdering({
   onAnswerChange,
   onSubmit,
   disabled,
+  showQuestion = true,
 }: ChallengeFieldProps) {
   const items = (content.items as string[]) || [];
-  const question = (content.question as string) || (content.text as string) || "Put these in the correct order:";
+  const question = questionOf(content, "Put these in the correct order:");
 
   // Parse current order from answer (comma-separated) or initialize shuffled
   const [order, setOrder] = useState<string[]>(() => {
@@ -37,44 +42,40 @@ export function SortingOrdering({
   };
 
   return (
-    <div>
-      <p className="text-base text-themed-text mb-3">{question}</p>
-      <div className="space-y-2 mb-4">
+    <div className="flex flex-col gap-4">
+      <QuestionText show={showQuestion}>{question}</QuestionText>
+      <ol className="flex flex-col gap-2.5">
         {order.map((item, idx) => (
-          <div
+          <li
             key={item}
-            className="flex items-center gap-2 rounded-lg border border-themed-border bg-surface py-1 pl-4 pr-1 text-base text-themed-text"
+            className="flex min-h-[60px] items-center gap-2 rounded-2xl border border-themed-border bg-white py-1 pl-4 pr-1 text-lg text-ink"
           >
-            <span className="text-themed-muted text-sm font-semibold tabular-nums w-6">{idx + 1}.</span>
+            <span className="w-7 text-base font-bold tabular-nums">{idx + 1}.</span>
             <span className="min-w-0 flex-1">{item}</span>
             <div className="flex shrink-0 gap-1">
               <button
+                type="button"
                 onClick={() => moveItem(idx, idx - 1)}
                 disabled={idx === 0 || disabled}
-                className="flex h-11 w-11 items-center justify-center rounded-lg text-themed-muted transition-colors hover:bg-themed-bg hover:text-themed-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-30"
-                aria-label="Move up"
+                className={MOVE_CLASS}
+                aria-label={`Move ${item} up`}
               >
-                <ChevronUp className="h-5 w-5" aria-hidden="true" />
+                <ChevronUp className="h-6 w-6" aria-hidden="true" />
               </button>
               <button
+                type="button"
                 onClick={() => moveItem(idx, idx + 1)}
                 disabled={idx === order.length - 1 || disabled}
-                className="flex h-11 w-11 items-center justify-center rounded-lg text-themed-muted transition-colors hover:bg-themed-bg hover:text-themed-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-30"
-                aria-label="Move down"
+                className={MOVE_CLASS}
+                aria-label={`Move ${item} down`}
               >
-                <ChevronDown className="h-5 w-5" aria-hidden="true" />
+                <ChevronDown className="h-6 w-6" aria-hidden="true" />
               </button>
             </div>
-          </div>
+          </li>
         ))}
-      </div>
-      <button
-        onClick={onSubmit}
-        disabled={!answer || disabled}
-        className="flex min-h-12 w-full items-center justify-center rounded-lg bg-brand px-4 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50"
-      >
-        Submit Order
-      </button>
+      </ol>
+      <SubmitButton ready={!!answer} disabled={disabled} onClick={onSubmit} label="Submit order" waitingLabel="Put them in order" />
     </div>
   );
 }

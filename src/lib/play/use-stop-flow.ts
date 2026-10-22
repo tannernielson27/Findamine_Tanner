@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { celebrationForResult, arrivalCelebration } from "@/lib/play/celebration";
+import { hapticSuccess } from "@/lib/native/haptics";
 import { errorMessage, postJsonStrict, safeFetch } from "@/lib/play/play-api";
 import { useGeoTracking, type GeoTracking } from "@/lib/play/use-geo-tracking";
 import { useStopHints, type StopHints } from "@/lib/play/use-stop-hints";
@@ -178,6 +179,7 @@ export function useStopFlow(
 
       if (data.is_complete) {
         setCompletedFinds((prev) => new Set([...prev, currentFind.id]));
+        void hapticSuccess();
         // Surface the payoff immediately — points land in the celebration, not
         // buried behind the optional photo step.
         const celeb = celebrationForResult(

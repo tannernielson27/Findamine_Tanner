@@ -7,7 +7,7 @@ import { PrivacyNoticeToast } from "@/components/play/privacy-notice-toast";
 import { SafetyNotice, useSafetyAcknowledgement } from "@/components/play/safety-notice";
 import { CodenameForm, PlayEmpty, PlayLoadError, PlayLoading } from "@/components/play/play-states";
 import { HuntSummary } from "@/components/play/hunt-summary";
-import { ActivePlay } from "@/components/play/active-play";
+import { PlayScreen } from "@/components/play/play-screen";
 import { useCelebrationState } from "@/lib/play/use-celebration-state";
 import { usePlaySession } from "@/lib/play/use-play-session";
 import { useStopFlow } from "@/lib/play/use-stop-flow";
@@ -53,7 +53,7 @@ export default function PlayPage() {
 
   if (session.huntComplete) {
     return (
-      <main className="mx-auto max-w-2xl px-4 py-6">
+      <main className="fixed inset-0 z-[51] overflow-hidden bg-juniper-deep">
         {celebrationOverlay}
         <HuntSummary summary={session.huntSummary} totalStops={session.finds.length} />
       </main>
@@ -61,20 +61,22 @@ export default function PlayPage() {
   }
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-6">
-      {celebrationOverlay}
-
-      {flow.privacyNotice && (
-        <PrivacyNoticeToast
-          key={flow.privacyNotice.id}
-          notice={flow.privacyNotice}
-          onClose={flow.closePrivacyNotice}
-        />
-      )}
-
-      {safetyAck.status === "needed" && <SafetyNotice onAcknowledge={safetyAck.acknowledge} />}
-
-      <ActivePlay huntId={huntIdString} session={session} flow={flow} />
-    </main>
+    <PlayScreen
+      huntId={huntIdString}
+      session={session}
+      flow={flow}
+      overlays={
+        <>
+          {celebrationOverlay}
+          {/* Same trigger, copy and events as before (storyline S6); its
+              bottom position is unchanged, and the results screen keeps its
+              buttons clear of it. */}
+          {flow.privacyNotice && (
+            <PrivacyNoticeToast key={flow.privacyNotice.id} notice={flow.privacyNotice} onClose={flow.closePrivacyNotice} />
+          )}
+          {safetyAck.status === "needed" && <SafetyNotice onAcknowledge={safetyAck.acknowledge} />}
+        </>
+      }
+    />
   );
 }

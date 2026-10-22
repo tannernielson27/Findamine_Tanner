@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ChallengeFieldProps } from "./types";
+import { FIELD_CLASS, QuestionText, SubmitButton, TEXT_ACTION_CLASS } from "./parts";
+import { questionOf, type ChallengeFieldProps } from "./types";
 
 export function SketchDraw({
   content,
@@ -9,8 +10,9 @@ export function SketchDraw({
   onAnswerChange,
   onSubmit,
   disabled,
+  showQuestion = true,
 }: ChallengeFieldProps) {
-  const question = (content.question as string) || (content.text as string) || "Draw your answer below.";
+  const question = questionOf(content, "Draw your answer below.");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasDrawn, setHasDrawn] = useState(false);
@@ -94,10 +96,10 @@ export function SketchDraw({
   }, []);
 
   return (
-    <div>
-      <p className="text-base text-themed-text mb-3">{question}</p>
+    <div className="flex flex-col gap-3">
+      <QuestionText show={showQuestion}>{question}</QuestionText>
 
-      <div className="rounded-xl border-2 border-themed-border overflow-hidden mb-2">
+      <div className="overflow-hidden rounded-2xl border-2 border-themed-border bg-white">
         <canvas
           ref={canvasRef}
           width={400}
@@ -114,30 +116,26 @@ export function SketchDraw({
         />
       </div>
 
-      <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
-        <button
-          onClick={clearCanvas}
-          disabled={disabled}
-          className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-link transition-colors hover:text-link-dark hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50"
-        >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button type="button" onClick={clearCanvas} disabled={disabled} className={TEXT_ACTION_CLASS}>
           Clear drawing
         </button>
-        <span className="text-sm text-themed-muted" aria-live="polite">
-          {hasDrawn ? "Drawing captured" : "Draw with your finger or mouse"}
+        <span className="text-base text-ink" aria-live="polite">
+          {hasDrawn ? "Drawing captured" : "Draw with your finger"}
         </span>
       </div>
 
-      <button
+      <SubmitButton
+        ready={hasDrawn || !!answer}
+        disabled={disabled}
         onClick={onSubmit}
-        disabled={(!hasDrawn && !answer) || disabled}
-        className="flex min-h-12 w-full items-center justify-center rounded-lg bg-brand px-4 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50"
-      >
-        Submit Drawing
-      </button>
+        label="Submit drawing"
+        waitingLabel="Draw your answer"
+      />
 
       {/* Keyboard alternative: text description */}
-      <div className="mt-3 border-t border-themed-border pt-3">
-        <p className="text-sm text-themed-muted mb-1">Can&apos;t draw? Describe your answer instead:</p>
+      <div className="border-t border-themed-border pt-3">
+        <p className="mb-1 text-base text-ink">Can&apos;t draw? Describe your answer instead:</p>
         <textarea
           value={answer.startsWith("[sketch:") ? "" : answer}
           onChange={(e) => onAnswerChange(e.target.value)}
@@ -145,7 +143,7 @@ export function SketchDraw({
           rows={2}
           disabled={disabled}
           aria-label="Text alternative for drawing"
-          className="w-full rounded-lg border border-themed-border bg-surface px-3 py-2 text-base text-themed-text placeholder:text-themed-muted focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand disabled:opacity-50 resize-y"
+          className={`${FIELD_CLASS} resize-y py-3`}
         />
       </div>
     </div>
