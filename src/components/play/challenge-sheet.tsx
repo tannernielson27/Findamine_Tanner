@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { Lightbulb, ThumbsDown, ThumbsUp } from "lucide-react";
 import ChallengeInput from "@/components/play/challenge-input";
-import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { PlaySheet } from "@/components/play/play-sheet";
 import { Button } from "@/components/ui/button";
 import { ReportProblem } from "@/components/play/report-problem";
 import { questionOf } from "@/components/play/challenge/types";
@@ -31,7 +31,7 @@ interface ChallengeSheetProps {
   stopNumber: number;
   find: Find | undefined;
   flow: StopFlow;
-  /** Error banner for this stop, shown inside the sheet so it isn't dimmed. */
+  /** Error banner for this stop, shown inside the sheet, next to the step it is about. */
   errorSlot?: ReactNode;
 }
 
@@ -48,7 +48,7 @@ export function ChallengeSheet({ huntId, stopNumber, find, flow, errorSlot }: Ch
   const showTitleLine = !!question && !!title && title !== question;
 
   return (
-    <BottomSheet label={`Stop ${stopNumber} challenge`} top="max(88px, 24dvh)" className="overflow-y-auto text-ink">
+    <PlaySheet label={`Stop ${stopNumber} challenge`} topDvh={24}>
       {errorSlot}
       <div className="flex items-center justify-between gap-3">
         <span className="text-sm font-bold uppercase tracking-[0.04em] text-juniper-deep">
@@ -116,6 +116,6 @@ export function ChallengeSheet({ huntId, stopNumber, find, flow, errorSlot }: Ch
       </Button>
 
       <ReportProblem key={find?.id} targetId={find?.id || String(huntId)} />
-    </BottomSheet>
+    </PlaySheet>
   );
 }

@@ -5,7 +5,9 @@
  *
  * - `modal`: dims the page, traps nothing but moves focus into the sheet,
  *   closes on Escape or a backdrop tap (when `onClose` is given).
- * - non-modal (`modal={false}`): a resting sheet over a map, no backdrop.
+ * - non-modal (`modal={false}`): a resting sheet over a map, no backdrop, so
+ *   controls outside it (e.g. the play HUD) stay usable. Pass `autoFocus` to
+ *   move focus into it when it opens (a step the player must act on).
  *
  * `top` sets where the sheet's top edge sits (px from the viewport top, or
  * any CSS length); the sheet always reaches the bottom of its container.
@@ -16,6 +18,8 @@ import { cn } from "@/lib/utils/cn";
 interface BottomSheetProps {
   open?: boolean;
   modal?: boolean;
+  /** Non-modal only: focus the sheet when it opens. Modal sheets always do. */
+  autoFocus?: boolean;
   label: string;
   onClose?: () => void;
   top?: number | string;
@@ -23,9 +27,23 @@ interface BottomSheetProps {
   children: ReactNode;
 }
 
-export function BottomSheet({ open = true, modal = true, label, onClose, top = "26%", className, children }: BottomSheetProps) {
+export function BottomSheet({
+  open = true,
+  modal = true,
+  autoFocus = false,
+  label,
+  onClose,
+  top = "26%",
+  className,
+  children,
+}: BottomSheetProps) {
   const ref = useRef<HTMLElement>(null);
   const titleId = useId();
+
+  useEffect(() => {
+    if (!open || modal || !autoFocus) return;
+    ref.current?.focus({ preventScroll: true });
+  }, [open, modal, autoFocus]);
 
   useEffect(() => {
     if (!open || !modal) return;

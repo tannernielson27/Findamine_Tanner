@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { Check } from "lucide-react";
-import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { PlaySheet } from "@/components/play/play-sheet";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
 import { PrimerContent } from "./primer-content";
@@ -15,14 +15,14 @@ interface PrimeStepProps {
   stopNumber: number;
   primer: NonNullable<Find["primers"]>;
   onReady: () => void;
-  /** Error banner for this stop, shown inside the sheet so it isn't dimmed. */
+  /** Error banner for this stop, shown inside the sheet, next to the step it is about. */
   errorSlot?: ReactNode;
 }
 
 /** "Before you start" primer, in a sheet over the map. */
 export function PrimeStep({ stopNumber, primer, onReady, errorSlot }: PrimeStepProps) {
   return (
-    <BottomSheet label={`Stop ${stopNumber}: before you start`} top="max(88px, 20dvh)" className="overflow-y-auto text-ink">
+    <PlaySheet label={`Stop ${stopNumber}: before you start`} topDvh={20}>
       {errorSlot}
       <span className={LABEL}>Stop {stopNumber} · Before you start</span>
       <h2 className={HEADING}>{primer.title}</h2>
@@ -33,7 +33,7 @@ export function PrimeStep({ stopNumber, primer, onReady, errorSlot }: PrimeStepP
       <Button size="xl" block onClick={onReady}>
         I&apos;m ready
       </Button>
-    </BottomSheet>
+    </PlaySheet>
   );
 }
 
@@ -63,7 +63,7 @@ export function ReadingCheckStep({ stopNumber, readingCheck, onPassed, onError, 
   }
 
   return (
-    <BottomSheet label={`Stop ${stopNumber}: comprehension check`} top="max(88px, 16dvh)" className="overflow-y-auto text-ink">
+    <PlaySheet label={`Stop ${stopNumber}: comprehension check`} topDvh={16}>
       {errorSlot}
       <span className={LABEL}>Stop {stopNumber} · Comprehension check</span>
       <p className="text-lg">Answer these questions about the primer before continuing.</p>
@@ -103,6 +103,6 @@ export function ReadingCheckStep({ stopNumber, readingCheck, onPassed, onError, 
       <Button size="xl" block onClick={check} disabled={!allAnswered}>
         {allAnswered ? "Check answers" : "Answer every question"}
       </Button>
-    </BottomSheet>
+    </PlaySheet>
   );
 }

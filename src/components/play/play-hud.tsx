@@ -3,6 +3,7 @@
 import { Lightbulb, Pause } from "lucide-react";
 import { IconButton, IconLink } from "@/components/ui/icon-button";
 import { ProgressSegments } from "@/components/ui/progress";
+import { PlayMoreMenu } from "@/components/play/play-more-menu";
 
 interface PlayHudProps {
   stopNumber: number;
@@ -10,13 +11,16 @@ interface PlayHudProps {
   completedStops: number;
   /** Clue hint: null hides the button (steps without a clue hint). */
   hint: { available: boolean; onRequest: () => void } | null;
+  /** "More" menu: Previous stop (null on the first stop) and Report a problem. */
+  more: { onPrevious: (() => void) | null; reportTargetId: string; resetKey: string };
 }
 
 /**
  * Top bar over the map: pause (back to Home; the session stays active, so
- * this is a pause, not a quit), stop progress, and the clue-hint button.
+ * this is a pause, not a quit), stop progress, the clue-hint button, and the
+ * "More" menu. Stays usable while a step sheet is open.
  */
-export function PlayHud({ stopNumber, totalStops, completedStops, hint }: PlayHudProps) {
+export function PlayHud({ stopNumber, totalStops, completedStops, hint, more }: PlayHudProps) {
   return (
     <div className="flex items-center gap-2.5">
       <IconLink href="/dashboard" label="Pause hunt" tone="floating" size="lg" className="bg-white text-ink">
@@ -52,6 +56,9 @@ export function PlayHud({ stopNumber, totalStops, completedStops, hint }: PlayHu
       ) : (
         <span className="h-[52px] w-[52px] shrink-0" aria-hidden="true" />
       )}
+
+      {/* Keyed on stop + step so the menu starts closed at each step. */}
+      <PlayMoreMenu key={more.resetKey} onPrevious={more.onPrevious} reportTargetId={more.reportTargetId} />
     </div>
   );
 }

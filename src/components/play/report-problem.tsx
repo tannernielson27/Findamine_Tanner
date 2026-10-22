@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { X } from "lucide-react";
 import { HttpError, safeFetch } from "@/lib/play/play-api";
 import { cn } from "@/lib/utils/cn";
@@ -47,6 +47,8 @@ export function ReportProblem({ targetId, tone = "light" }: ReportProblemProps) 
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const t = TONES[tone];
+  // Two can be on screen at once (HUD "More" menu and the challenge sheet).
+  const labelId = useId();
 
   async function send(category: string) {
     setSending(true);
@@ -93,8 +95,8 @@ export function ReportProblem({ targetId, tone = "light" }: ReportProblemProps) 
 
   return (
     <div className={cn("rounded-2xl p-3 text-left", t.panel)}>
-      <p className="mb-2 text-base font-bold" id="report-label">What&apos;s the issue?</p>
-      <div className="flex flex-wrap gap-2" role="group" aria-labelledby="report-label">
+      <p className="mb-2 text-base font-bold" id={labelId}>What&apos;s the issue?</p>
+      <div className="flex flex-wrap gap-2" role="group" aria-labelledby={labelId}>
         {CATEGORIES.map((c) => (
           <button
             key={c.key}

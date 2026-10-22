@@ -14,6 +14,7 @@ import { ProximityPanel } from "@/components/play/proximity-panel";
 import { MultipleChoice } from "@/components/play/challenge/multiple-choice";
 import { ClueCard } from "@/components/play/clue-card";
 import { PlayHud } from "@/components/play/play-hud";
+import { PlaySheet } from "@/components/play/play-sheet";
 import { StopResults } from "@/components/play/stop-results";
 import { HuntSummary } from "@/components/play/hunt-summary";
 import { PlayEmpty, PlayLoadError } from "@/components/play/play-states";
@@ -155,12 +156,33 @@ describe("ClueCard", () => {
 describe("PlayHud", () => {
   it("has a pause link home, the stop count and a costed hint button", () => {
     const html = render(
-      createElement(PlayHud, { stopNumber: 3, totalStops: 7, completedStops: 2, hint: { available: true, onRequest: noop } })
+      createElement(PlayHud, {
+        stopNumber: 3,
+        totalStops: 7,
+        completedStops: 2,
+        hint: { available: true, onRequest: noop },
+        more: { onPrevious: noop, reportTargetId: "f3", resetKey: "f3:clue" },
+      })
     );
     expect(html).toContain('href="/dashboard"');
     expect(html).toContain('aria-label="Pause hunt"');
     expect(html).toContain("Stop 3 of 7");
     expect(html).toContain("costs 2 points");
+    // Previous stop and Report a problem live behind "More" at every step.
+    expect(html).toMatch(/aria-label="More options"[^>]*aria-expanded="false"|aria-expanded="false"[^>]*aria-label="More options"/);
+  });
+});
+
+describe("PlaySheet", () => {
+  it("is non-modal: no backdrop over the HUD, focusable, and clears the HUD", () => {
+    const html = render(createElement(PlaySheet, { label: "Stop 1 challenge", topDvh: 24 }, "Body"));
+    expect(html).toContain('role="region"');
+    expect(html).toContain('aria-label="Stop 1 challenge"');
+    expect(html).not.toContain("aria-modal");
+    expect(html).not.toContain("bg-ink/40");
+    expect(html).not.toContain("fixed inset-0");
+    expect(html).toContain('tabindex="-1"');
+    expect(html).toContain("max(calc(88px + env(safe-area-inset-top)), 24dvh)");
   });
 });
 
