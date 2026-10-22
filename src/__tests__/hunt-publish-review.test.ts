@@ -313,6 +313,31 @@ describe("GET /hunts/review-queue", () => {
     expect(made.hunts[0].eq).toHaveBeenCalledWith("review_status", "pending");
   });
 
+  it("retries once without hunts.cover_image_url when the column doesn't exist yet (42703)", async () => {
+    h.user = { id: "admin-1", role: "admin" };
+    const made = install({
+      hunts: [
+        { data: null, error: { code: "42703", message: "column hunts.cover_image_url does not exist" } },
+        ok([{ id: HUNT_ID, title: "Walk", finds: [{ sort_order: 0, clue_text: "first", deleted_at: null }] }]),
+      ],
+    });
+    const res = await reviewQueue(req("GET", "/api/v1/hunts/review-queue"));
+    expect(res.status).toBe(200);
+    expect((await res.json()).hunts[0].title).toBe("Walk");
+    expect(made.hunts).toHaveLength(2);
+    expect(made.hunts[0].select.mock.calls[0][0]).toContain("cover_image_url");
+    expect(made.hunts[1].select.mock.calls[0][0]).not.toContain("cover_image_url");
+    expect(made.hunts[1].eq).toHaveBeenCalledWith("review_status", "pending");
+  });
+
+  it("does not retry other query errors", async () => {
+    h.user = { id: "admin-1", role: "admin" };
+    const made = install({ hunts: [{ data: null, error: { code: "57014", message: "statement timeout" } }] });
+    const res = await reviewQueue(req("GET", "/api/v1/hunts/review-queue"));
+    expect(res.status).toBe(500);
+    expect(made.hunts).toHaveLength(1);
+  });
+
   it("shows reviewers everything a player of each stop reads", async () => {
     h.user = { id: "admin-1", role: "admin" };
     install({

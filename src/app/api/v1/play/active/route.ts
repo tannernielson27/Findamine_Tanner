@@ -18,6 +18,9 @@ const PLAYABLE_STATUSES = ["published", "enrollment_open", "in_progress"];
 const MAX_SESSIONS = 20;
 
 const NO_STORE = { "Cache-Control": "private, no-store" };
+const HUNT_COLUMNS = "id, title, status, created_by, review_status, deleted_at";
+/** Postgres undefined_column. */
+const UNDEFINED_COLUMN = "42703";
 
 interface HuntRow {
   id: string;
@@ -26,7 +29,8 @@ interface HuntRow {
   created_by: string;
   review_status: string | null;
   deleted_at: string | null;
-  cover_image_url: string | null;
+  /** Absent until migration 079 is applied. */
+  cover_image_url?: string | null;
 }
 
 function none(): Response {
@@ -71,12 +75,17 @@ export async function GET(request: NextRequest) {
     if (completionError) failed("completions", user.id, completionError.message);
     const completions = (completionData || []) as CompletionRow[];
 
-    const { data: huntData, error: huntError } = await supabase
-      .from("hunts")
-      .select("id, title, status, created_by, review_status, deleted_at, cover_image_url")
-      .in("id", [...new Set(sessions.map((s) => s.hunt_id))]);
+    const huntIds = [...new Set(sessions.map((s) => s.hunt_id))];
+    const loadHunts = (columns: string) => supabase.from("hunts").select(columns).in("id", huntIds);
+    let { data: huntData, error: huntError } = await loadHunts(`${HUNT_COLUMNS}, cover_image_url`);
+    // hunts.cover_image_url arrives with migration 079; until it is applied,
+    // retry once without it (covers fall back to null) instead of failing.
+    if (huntError?.code === UNDEFINED_COLUMN) {
+      logger.warn("play.active.cover_column_missing", { userId: user.id });
+      ({ data: huntData, error: huntError } = await loadHunts(HUNT_COLUMNS));
+    }
     if (huntError) failed("hunts", user.id, huntError.message);
-    const hunts = new Map(((huntData || []) as HuntRow[]).map((h) => [h.id, h]));
+    const hunts = new Map(((huntData || []) as unknown as HuntRow[]).map((h) => [h.id, h]));
 
     for (const session of rankSessions(sessions, completions)) {
       const hunt = hunts.get(session.hunt_id);
