@@ -16,7 +16,8 @@ interface AppChromeProps {
 /**
  * Bottom-of-screen shell: the floating tab bar, the active-hunt mini-bar, and
  * the bottom padding (.fm-tab-safe / .fm-tab-safe-mini) every page under them
- * needs, applied once here instead of page by page.
+ * needs, applied once here instead of page by page. Full-bleed views opt out
+ * by carrying `data-fm-full-bleed` (see .fm-chrome-pad in globals.css).
  */
 export default function AppChrome({ user, children }: AppChromeProps) {
   const pathname = usePathname();
@@ -50,7 +51,10 @@ function ChromeBody({
 
   return (
     <>
-      <div className={padding}>{children}</div>
+      {/* fm-chrome-pad: a full-bleed view ([data-fm-full-bleed], the Explore
+          map) opts out of this padding via globals.css, so it can fill the
+          viewport exactly; done in CSS so it is right on the first paint. */}
+      <div className={padding ? `fm-chrome-pad ${padding}` : undefined}>{children}</div>
       {showMini && hunt && <MiniBar hunt={hunt} />}
       {showTabs && <TabBar tabs={tabs} pathname={pathname} />}
     </>

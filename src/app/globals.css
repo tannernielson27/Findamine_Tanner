@@ -227,8 +227,9 @@ html.fm-native img {
   --fm-tabbar-h: 68px;
   --fm-tabbar-gap: 24px;
   --fm-minibar-h: 64px;
-  /* Sticky top bar: 64px row + iPhone status bar. Explore's map fills the rest. */
-  --fm-header-h: calc(64px + env(safe-area-inset-top));
+  /* Sticky top bar: 64px row + 1px bottom border + iPhone status bar.
+     Explore's map fills the rest. */
+  --fm-header-h: calc(65px + env(safe-area-inset-top));
 }
 
 .fm-tab-safe {
@@ -237,6 +238,20 @@ html.fm-native img {
 
 .fm-tab-safe-mini {
   padding-bottom: calc(var(--fm-tabbar-h) + var(--fm-minibar-h) + var(--fm-tabbar-gap) + 36px + env(safe-area-inset-bottom));
+}
+
+/* A full-bleed view (Explore map, [data-fm-full-bleed]) sizes itself to the
+   viewport and lets the tab bar float over it, so the shell wrapper
+   (.fm-chrome-pad, components/layout/app-chrome) drops its bottom padding.
+   Higher specificity than the rules above and the lg+ override below. */
+.fm-chrome-pad:has([data-fm-full-bleed]) {
+  padding-bottom: 0;
+}
+
+/* The full-bleed view runs under the home indicator itself (its own content
+   pads for it), so body's safe-area padding would only add a scroll. */
+body:has([data-fm-full-bleed]) {
+  padding-bottom: 0;
 }
 
 /* Frosted control layer (tab bar, sticky CTA bar). Controls only, never

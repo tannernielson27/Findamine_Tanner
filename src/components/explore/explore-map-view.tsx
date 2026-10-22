@@ -27,6 +27,8 @@ interface ExploreMapViewProps {
   audience: string | null;
   /** The hunts query failed (shown as an alert instead of an empty map). */
   loadError?: boolean;
+  /** Same search + chips for every age, or null when no audience filter is on. */
+  allAgesHref?: string | null;
 }
 
 /** Fewer chips over the map so the map stays visible (mockup: ExploreMap). */
@@ -55,7 +57,7 @@ function hasCoords(h: ExploreHunt): h is ExploreHunt & { latitude: number; longi
   return h.latitude != null && h.longitude != null;
 }
 
-export function ExploreMapView({ hunts, q, filters, audience, loadError = false }: ExploreMapViewProps) {
+export function ExploreMapView({ hunts, q, filters, audience, loadError = false, allAgesHref = null }: ExploreMapViewProps) {
   const { isLoaded, unavailableReason } = useGoogleMaps();
   const origin = useSilentLocation();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -154,9 +156,13 @@ export function ExploreMapView({ hunts, q, filters, audience, loadError = false 
   );
 
   return (
+    // data-fm-full-bleed: the app shell drops its tab-bar padding for this view
+    // (globals.css), so map + sheet exactly fill the viewport under the top
+    // bar and the tab bar floats over the sheet.
     <div
       ref={containerRef}
-      className="relative h-[calc(100dvh-var(--fm-header-h,64px))] min-h-[520px] overflow-hidden bg-map-ground"
+      data-fm-full-bleed=""
+      className="relative h-[calc(100dvh-var(--fm-header-h,65px))] min-h-[520px] overflow-hidden bg-map-ground"
     >
       {unavailableReason ? (
         <div role="alert" className="flex h-full flex-col items-center gap-3 px-8 pt-[180px] text-center">
@@ -216,7 +222,13 @@ export function ExploreMapView({ hunts, q, filters, audience, loadError = false 
           title={`${count} ${count === 1 ? "hunt" : "hunts"} in this area`}
           subtitle={nearOn && origin ? "Sorted by distance" : undefined}
           above={listPill}
-          header={selected ? <HuntCard hunt={selected} variant="row" /> : <NoHuntsHere />}
+          header={
+            selected ? (
+              <HuntCard hunt={selected} variant="row" />
+            ) : (
+              <NoHuntsHere allAgesHref={located.length === 0 ? allAgesHref : null} />
+            )
+          }
         >
           {rest.map((h) => (
             <HuntCard key={h.id} hunt={h} variant="row" />
@@ -227,10 +239,20 @@ export function ExploreMapView({ hunts, q, filters, audience, loadError = false 
   );
 }
 
-function NoHuntsHere() {
+function NoHuntsHere({ allAgesHref }: { allAgesHref: string | null }) {
   return (
-    <p className="rounded-[18px] border border-dashed border-themed-border bg-surface px-4 py-5 text-base text-themed-muted">
-      No hunts match here. Zoom out, or clear a chip.
-    </p>
+    <div className="flex flex-col items-start gap-3 rounded-[18px] border border-dashed border-themed-border bg-surface px-4 py-5">
+      <p className="text-base text-themed-muted">
+        {allAgesHref ? "No hunts for this audience yet." : "No hunts match here. Zoom out, or clear a chip."}
+      </p>
+      {allAgesHref && (
+        <Link
+          href={allAgesHref}
+          className="inline-flex min-h-12 items-center justify-center rounded-[14px] bg-ink px-5 text-base font-bold text-white no-underline transition-colors hover:bg-ink-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+        >
+          Show all ages
+        </Link>
+      )}
+    </div>
   );
 }

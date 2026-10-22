@@ -7,8 +7,10 @@ import { ExploreResults } from "@/components/explore/explore-results";
 import { ExploreMapView } from "@/components/explore/explore-map-view";
 import { AudienceSelect } from "@/components/explore/audience-select";
 import {
+  ANY_AUDIENCE,
   applyFilters,
   audienceOrFilter,
+  audienceSetLabel,
   exploreHref,
   parseFilters,
   popularCampusHunts,
@@ -16,6 +18,7 @@ import {
   toExploreHunt,
   type ExploreRow,
 } from "@/lib/hunts/explore-filters";
+import { withoutMissingColumn } from "@/lib/supabase/without-missing-column";
 import { logger } from "@/lib/utils/logger";
 import { getBrowseViewer } from "./viewer";
 
@@ -23,9 +26,11 @@ import { getBrowseViewer } from "./viewer";
 const CATALOGUE_LIMIT = 200;
 const SEARCH_MAX_LEN = 120;
 
-// cover_image_url arrives with migration 079 (must be applied before deploy).
+// cover_image_url arrives with migration 079; until it is applied the query
+// retries without it (OPTIONAL_COLUMNS).
 const EXPLORE_COLUMNS =
   "id, title, description, cover_image_url, target_audience, play_mode, estimated_duration_min, center_latitude, center_longitude, created_at, subject_domains, finds(deleted_at, tasks(challenge_type)), play_sessions(count)";
+const OPTIONAL_COLUMNS = ["cover_image_url"] as const;
 
 type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>;
 
@@ -41,36 +46,48 @@ export default async function ExplorePage({ searchParams }: { searchParams: Sear
   const view = first(params.view) === "map" ? "map" : "list";
 
   const viewer = await getBrowseViewer();
-  const audience = resolveAudience(rawAudience, viewer?.band);
+  const audience = resolveAudience(rawAudience, viewer);
 
   const supabase = await createSupabaseServiceClient();
-  let query = supabase
-    .from("hunts")
-    .select(EXPLORE_COLUMNS)
-    .is("deleted_at", null)
-    .eq("is_public", true)
-    .in("status", ["published", "enrollment_open"])
-    .order("created_at", { ascending: false })
-    .limit(CATALOGUE_LIMIT);
+  const filterAudience = audienceOrFilter(audience.audiences);
+  const run = (columns: string) => {
+    let query = supabase
+      .from("hunts")
+      .select(columns)
+      .is("deleted_at", null)
+      .eq("is_public", true)
+      .in("status", ["published", "enrollment_open"])
+      .order("created_at", { ascending: false })
+      .limit(CATALOGUE_LIMIT);
+    if (q) query = query.textSearch("search_vector", q, { type: "websearch" });
+    // Built only from whitelisted audience values (explore-filters).
+    if (filterAudience) query = query.or(filterAudience);
+    return query;
+  };
 
-  if (q) query = query.textSearch("search_vector", q, { type: "websearch" });
-  // Built only from whitelisted audience values (explore-filters).
-  const audienceFilter = audienceOrFilter(audience);
-  if (audienceFilter) query = query.or(audienceFilter);
-
-  const { data, error } = await query;
+  // Retries without cover_image_url on a database that doesn't have it yet.
+  const { data, error } = await withoutMissingColumn(run, EXPLORE_COLUMNS, OPTIONAL_COLUMNS);
   if (error) logger.error("explore: hunts query failed", { code: error.code, message: error.message });
-  const all = ((data ?? []) as ExploreRow[]).map(toExploreHunt);
+  const all = ((data ?? []) as unknown as ExploreRow[]).map(toExploreHunt);
   const hunts = applyFilters(all, filters, new Date());
   // Keep the audience the viewer chose (if any) when clearing search + chips.
   const clearHref = exploreHref({ audience: rawAudience });
   const narrowed = !!q || filters.some((f) => f !== "near");
+  // One tap past the audience filter when it hides everything.
+  const allAgesHref = audience.audiences ? exploreHref({ q, filters, audience: ANY_AUDIENCE }) : null;
 
   if (view === "map") {
     return (
       <main>
         <h1 className="sr-only">Explore map</h1>
-        <ExploreMapView hunts={hunts} q={q} filters={filters} audience={rawAudience} loadError={!!error} />
+        <ExploreMapView
+          hunts={hunts}
+          q={q}
+          filters={filters}
+          audience={rawAudience}
+          loadError={!!error}
+          allAgesHref={allAgesHref}
+        />
       </main>
     );
   }
@@ -78,7 +95,7 @@ export default async function ExplorePage({ searchParams }: { searchParams: Sear
   const popular = narrowed ? [] : popularCampusHunts(all);
 
   return (
-    <main className="fm-tab-safe-mini mx-auto w-full max-w-5xl pt-5">
+    <main className="mx-auto w-full max-w-5xl pt-5">
       <header className="flex flex-col gap-3.5 px-5 pb-1.5 sm:px-4">
         <h1 className="font-[family-name:var(--font-display)] text-[32px] font-semibold leading-[1.1] text-themed-text">Explore</h1>
       </header>
@@ -86,7 +103,7 @@ export default async function ExplorePage({ searchParams }: { searchParams: Sear
       <div className="px-4">
         <ExploreControls q={q} filters={filters} audience={rawAudience} view="list" />
         <div className="flex flex-wrap items-center justify-between gap-x-4 px-1">
-          <AudienceSelect q={q} filters={filters} current={audience} />
+          <AudienceSelect q={q} filters={filters} choice={audience} />
           <Link
             href="/browse/standards"
             className="inline-flex min-h-12 items-center gap-1 text-[15px] font-medium text-link no-underline hover:text-link-dark hover:underline"
@@ -119,7 +136,14 @@ export default async function ExplorePage({ searchParams }: { searchParams: Sear
       )}
 
       <div className="mx-4 mt-7">
-        <ExploreResults hunts={hunts} nearOn={filters.includes("near")} clearHref={clearHref} narrowed={narrowed} />
+        <ExploreResults
+          hunts={hunts}
+          nearOn={filters.includes("near")}
+          clearHref={clearHref}
+          narrowed={narrowed}
+          allAgesHref={allAgesHref}
+          audienceLabel={audienceSetLabel(audience.audiences)}
+        />
       </div>
 
       <Link

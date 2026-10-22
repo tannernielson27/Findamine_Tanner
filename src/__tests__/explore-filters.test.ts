@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   applyFilters,
   audienceOrFilter,
-  defaultAudienceForBand,
+  audienceSetLabel,
+  defaultAudiencesFor,
   exploreHref,
   hasPhotoChallenge,
   isCampusHunt,
@@ -190,25 +191,53 @@ describe("popularCampusHunts", () => {
 });
 
 describe("audience", () => {
-  it("defaults from the viewer's band so adults stop seeing kids' hunts", () => {
-    expect(defaultAudienceForBand("adult")).toBe("adults");
-    expect(defaultAudienceForBand("teen")).toBe("teens");
-    expect(defaultAudienceForBand("primary")).toBe("kids");
-    expect(defaultAudienceForBand("intermediate")).toBe("kids");
-    expect(defaultAudienceForBand(null)).toBeNull();
+  it("gives hunt authors and staff every age by default", () => {
+    for (const role of ["teacher", "hunt_creator", "admin", "researcher"]) {
+      expect(defaultAudiencesFor({ role, band: "adult" })).toBeNull();
+    }
   });
 
-  it("lets the URL override the default, including 'any' for every age", () => {
-    expect(resolveAudience(undefined, "adult")).toBe("adults");
-    expect(resolveAudience("family", "adult")).toBe("family");
-    expect(resolveAudience("any", "adult")).toBeNull();
-    expect(resolveAudience("x),or(", "teen")).toBe("teens");
+  it("defaults parents to adults + families, kids and teens to their band + families", () => {
+    expect(defaultAudiencesFor({ role: "parent", band: "adult" })).toEqual(["adults", "family"]);
+    expect(defaultAudiencesFor({ role: "teen", band: "teen" })).toEqual(["teens", "family"]);
+    expect(defaultAudiencesFor({ role: "child", band: "primary" })).toEqual(["kids", "family"]);
+    expect(defaultAudiencesFor({ role: "child", band: "intermediate" })).toEqual(["kids", "family"]);
+    expect(defaultAudiencesFor({ role: "adult", band: "adult" })).toEqual(["adults"]);
   });
 
-  it("builds the PostgREST filter only from whitelisted values", () => {
-    expect(audienceOrFilter("adults")).toBe("target_audience.eq.adults,target_audience.eq.all");
+  it("shows signed-out visitors and unknown bands every age", () => {
+    expect(defaultAudiencesFor(null)).toBeNull();
+    expect(defaultAudiencesFor({ role: "adult", band: null })).toBeNull();
+  });
+
+  it("lets the URL override the default with one value, or 'any' for every age", () => {
+    const adult = { role: "adult", band: "adult" };
+    expect(resolveAudience(undefined, adult)).toEqual({ audiences: ["adults"], explicit: false });
+    expect(resolveAudience("family", adult)).toEqual({ audiences: ["family"], explicit: true });
+    expect(resolveAudience(["kids", "teens"], adult)).toEqual({ audiences: ["kids"], explicit: true });
+    expect(resolveAudience("any", adult)).toEqual({ audiences: null, explicit: true });
+    expect(resolveAudience("x),or(", { role: "teen", band: "teen" })).toEqual({
+      audiences: ["teens", "family"],
+      explicit: false,
+    });
+    expect(resolveAudience(undefined, { role: "teacher", band: "adult" })).toEqual({ audiences: null, explicit: false });
+  });
+
+  it("labels a set of audiences", () => {
+    expect(audienceSetLabel(["adults", "family"])).toBe("Adults & families");
+    expect(audienceSetLabel(["family", "teens"])).toBe("Teens & families");
+    expect(audienceSetLabel(["kids"])).toBe("Kids");
+    expect(audienceSetLabel(null)).toBe("All ages");
+    expect(audienceSetLabel([])).toBe("All ages");
+  });
+
+  it("builds the PostgREST filter only from whitelisted values, always with 'all'", () => {
+    expect(audienceOrFilter(["adults"])).toBe("target_audience.in.(adults,all)");
+    expect(audienceOrFilter(["family", "adults"])).toBe("target_audience.in.(adults,family,all)");
     expect(audienceOrFilter(null)).toBeNull();
-    expect(audienceOrFilter("evil),id.eq.(1" as never)).toBeNull();
+    expect(audienceOrFilter([])).toBeNull();
+    expect(audienceOrFilter(["evil),id.eq.(1" as never])).toBeNull();
+    expect(audienceOrFilter(["kids", "x)" as never])).toBe("target_audience.in.(kids,all)");
   });
 });
 

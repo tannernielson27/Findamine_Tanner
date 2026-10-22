@@ -5,7 +5,7 @@
  * URL shape: `/browse?q=…&f=near,short&audience=adults&view=map`
  * - `f`: comma-separated chip ids, whitelisted and kept in chip order.
  * - `audience`: one of AUDIENCES, or "any" for every age. Absent means "use
- *   the viewer's band" (see defaultAudienceForBand).
+ *   the viewer's default" (see defaultAudiencesFor), which can be a set.
  */
 import type { HuntCardData, HuntListRow } from "@/lib/hunts/card-data";
 import { distanceMeters } from "@/lib/hunts/card-data";
@@ -201,40 +201,84 @@ export const AUDIENCE_OPTIONS: Array<{ value: Audience | typeof ANY_AUDIENCE; la
   { value: ANY_AUDIENCE, label: "All ages" },
 ];
 
+/** hunts.target_audience value for hunts suitable for every age; always included. */
+const ALL_AGES_VALUE = "all";
+
+/** Roles that see every age by default: they build and review hunts for any audience. */
+const ANY_AGE_ROLES: readonly string[] = ["teacher", "hunt_creator", "admin", "researcher"];
+
+function isAudience(value: unknown): value is Audience {
+  return typeof value === "string" && (AUDIENCES as readonly string[]).includes(value);
+}
+
+export interface AudienceViewer {
+  role?: string | null;
+  /** Age band (lib/utils/age-band): primary | intermediate | teen | adult. */
+  band?: string | null;
+}
+
 /**
- * The audience a viewer sees by default, from their age band
- * (lib/utils/age-band). Signed-out visitors (null) see every age.
+ * The audiences a viewer sees by default (null = every age). Hunt authors
+ * and staff see everything; parents see adult and family hunts; kids and
+ * teens see their own band plus family hunts; other adults see adult hunts.
+ * Signed-out visitors (null) see every age. "All ages" hunts are always
+ * included on top (see audienceOrFilter).
  */
-export function defaultAudienceForBand(band: string | null | undefined): Audience | null {
-  switch (band) {
+export function defaultAudiencesFor(viewer: AudienceViewer | null | undefined): Audience[] | null {
+  if (!viewer) return null;
+  if (viewer.role && ANY_AGE_ROLES.includes(viewer.role)) return null;
+  if (viewer.role === "parent") return ["adults", "family"];
+  switch (viewer.band) {
     case "primary":
     case "intermediate":
-      return "kids";
+      return ["kids", "family"];
     case "teen":
-      return "teens";
+      return ["teens", "family"];
     case "adult":
-      return "adults";
+      return ["adults"];
     default:
       return null;
   }
 }
 
-/** `?audience=` → the audience to filter by (null = every age). Absent or unknown → band default. */
-export function resolveAudience(param: string | string[] | null | undefined, band: string | null | undefined): Audience | null {
+/** The audience filter in effect, and whether the viewer picked it. */
+export interface AudienceChoice {
+  /** Audiences to show (plus "all"-ages hunts), or null for every age. */
+  audiences: Audience[] | null;
+  /** True when it came from `?audience=` (one value or "any"); false for the viewer default. */
+  explicit: boolean;
+}
+
+/** `?audience=` → the audience filter. Absent or unknown → the viewer's default. Pure. */
+export function resolveAudience(
+  param: string | string[] | null | undefined,
+  viewer: AudienceViewer | null | undefined
+): AudienceChoice {
   const value = Array.isArray(param) ? param[0] : param;
-  if (value === ANY_AUDIENCE) return null;
-  if (value && (AUDIENCES as readonly string[]).includes(value)) return value as Audience;
-  return defaultAudienceForBand(band);
+  if (value === ANY_AUDIENCE) return { audiences: null, explicit: true };
+  if (isAudience(value)) return { audiences: [value], explicit: true };
+  return { audiences: defaultAudiencesFor(viewer), explicit: false };
+}
+
+/** "Adults", "Adults & families", "All ages". Pure. */
+export function audienceSetLabel(audiences: readonly Audience[] | null): string {
+  if (!audiences) return "All ages";
+  const picked = AUDIENCE_OPTIONS.filter((o) => isAudience(o.value) && audiences.includes(o.value));
+  if (picked.length === 0) return "All ages";
+  return picked.map((o, i) => (i === 0 ? o.label : o.label.toLowerCase())).join(" & ");
 }
 
 /**
- * PostgREST `or` filter for an audience, built only from the whitelist above
- * (anything else would be parsed as filter syntax). Hunts for "all" ages are
- * always included.
+ * PostgREST `or` filter for a set of audiences, e.g.
+ * `target_audience.in.(adults,family,all)`. Built only from the whitelist
+ * above (anything else would be parsed as filter syntax). Hunts for "all"
+ * ages are always included. Null means no audience filter.
  */
-export function audienceOrFilter(audience: Audience | null): string | null {
-  if (!audience || !(AUDIENCES as readonly string[]).includes(audience)) return null;
-  return `target_audience.eq.${audience},target_audience.eq.all`;
+export function audienceOrFilter(audiences: readonly Audience[] | null): string | null {
+  if (!audiences) return null;
+  const safe = AUDIENCES.filter((a) => audiences.includes(a));
+  if (safe.length === 0) return null;
+  return `target_audience.in.(${[...safe, ALL_AGES_VALUE].join(",")})`;
 }
 
 /* ─── Links ─────────────────────────────────────────────────── */
@@ -242,7 +286,7 @@ export function audienceOrFilter(audience: Audience | null): string | null {
 export interface ExploreState {
   q?: string | null;
   filters?: readonly FilterId[];
-  /** Explicit URL value: an Audience, "any", or null/undefined to fall back to the band default. */
+  /** Explicit URL value: an Audience, "any", or null/undefined to fall back to the viewer default. */
   audience?: string | null;
   view?: "list" | "map";
 }
