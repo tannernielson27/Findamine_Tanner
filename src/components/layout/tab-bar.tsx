@@ -4,6 +4,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils/cn";
 import { activeTabHref, type TabLink } from "./nav-links";
 import { TAB_ICONS } from "./tab-icons";
+import { tabAnchor } from "@/lib/onboarding/steps";
 
 /**
  * Floating capsule tab bar (Main.dc.html). Phones and tablets only; lg+ shows
@@ -27,6 +28,7 @@ export default function TabBar({ tabs, pathname }: { tabs: readonly TabLink[]; p
             key={tab.href}
             href={tab.href}
             aria-current={current ? "page" : undefined}
+            data-tour-anchor={tabAnchor(tab.icon)}
             className={cn(
               "flex flex-col items-center justify-center gap-0.5 rounded-[28px] text-xs no-underline transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
               current ? "bg-brand-light font-bold text-brand-dark" : "font-semibold text-themed-muted hover:text-themed-text"

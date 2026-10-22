@@ -22,11 +22,16 @@ import {
   savePrivacyDraft, takePrivacyDraft, PRIVACY_PAGE_PATH,
   type NormLineData, type OverridePerson, type PrivacyDraft,
 } from "./privacy-page-data";
+import { PRIVACY_TOUR_ANCHOR } from "@/lib/onboarding/steps";
+import { isPrivacyTourVisit } from "@/lib/onboarding/tour-mode";
 
 const VISIBILITY_LEVELS: VisibilityLevel[] = ["nobody", "team", "class", "everyone"];
 
 /** How the participant arrived: an S4 check-in or an S6 score notice (`?from=`). */
 const ENTRY_SOURCES = ["checkin", "notice"] as const;
+
+/** Marks the first block of whichever controls are on screen, for the welcome tour. */
+const TOUR_ANCHOR = { "data-tour-anchor": PRIVACY_TOUR_ANCHOR };
 
 type OverrideChoice = "inherit" | "see" | "hidden";
 const OVERRIDE_CHOICES: { value: OverrideChoice; label: string }[] = [
@@ -94,6 +99,12 @@ export default function PrivacySettingsPage() {
   const [normLine, setNormLine] = useState<NormLineData | null>(null);
   const [userId, setUserId] = useState("");
 
+  // Welcome-tour stop (tour-mode.ts): the page is shown read-only, the T1
+  // trigger is not fired, and the view is logged as view_reason "tour" so it
+  // never counts as the participant opening their settings.
+  const [tourMode, setTourMode] = useState(false);
+  const tourModeRef = useRef(false);
+
   // Per-person overrides (migration 057) — the 2014 "High" tier layer. Only
   // rendered under the `complex` scheme; `people` are the accepted friends and
   // crew members a rule can apply to.
@@ -146,11 +157,11 @@ export default function PrivacySettingsPage() {
           options_shown: countOptionsShown(scheme, peopleListed), // objective option count (B4 + C1)
           people_listed: peopleListed,
           override_count: countOverrides(overridesRef.current),
-          view_reason: reason,
+          view_reason: tourModeRef.current ? "tour" : reason,
           entry_source: entrySourceRef.current,
         },
       });
-      if (reason === "after_switch") return;
+      if (reason === "after_switch" || tourModeRef.current) return;
       const gate = await fetchSurveyGate(GATE_TIMEPOINTS);
       if (gate) {
         gateTimepointRef.current = gate.timepoint;
@@ -176,6 +187,7 @@ export default function PrivacySettingsPage() {
     }
     const from = new URLSearchParams(window.location.search).get("from");
     entrySourceRef.current = from && (ENTRY_SOURCES as readonly string[]).includes(from) ? from : null;
+    tourModeRef.current = isPrivacyTourVisit(window.location.search);
 
     let shown = false; // once the controls are up, a later failure must not replace them
     fetch("/api/v1/auth/me")
@@ -185,6 +197,8 @@ export default function PrivacySettingsPage() {
       })
       .then(async (data) => {
         if (!data.user) throw new Error("Could not load privacy settings");
+
+        setTourMode(tourModeRef.current); // before anything interactive renders
 
         // Get treatment from metadata
         const t = data.user.metadata?.privacy_treatment || "moderate";
@@ -634,6 +648,8 @@ export default function PrivacySettingsPage() {
         </div>
       )}
 
+      {/* Everything interactive. Inert while the welcome tour is showing this page. */}
+      <div inert={tourMode}>
       {/* Survey gate (B2): non-dismissable until the T1 or T3 check-in is submitted. */}
       {surveyGated && (
         <div
@@ -678,7 +694,7 @@ export default function PrivacySettingsPage() {
 
       {/* HIGH-friction gate: controls stay collapsed behind one more step. */}
       {ready && !controlsRevealed && (
-        <div className="rounded-lg border border-gray-200 bg-white p-4 mb-6">
+        <div {...TOUR_ANCHOR} className="rounded-lg border border-gray-200 bg-white p-4 mb-6">
           <p className="text-sm text-gray-700 mb-1">
             Your profile is currently using your saved sharing preferences.
           </p>
@@ -697,7 +713,7 @@ export default function PrivacySettingsPage() {
 
       {/* SIMPLE treatment: one master toggle */}
       {showControls && treatment === "simple" && (
-        <div className="space-y-3 mb-6">
+        <div {...TOUR_ANCHOR} className="space-y-3 mb-6">
           <p className="text-sm font-medium text-gray-700">Who can see your profile?</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {VISIBILITY_LEVELS.map((level) => {
@@ -724,7 +740,7 @@ export default function PrivacySettingsPage() {
       {/* MODERATE treatment: 3 categories × 3 levels */}
       {showControls && treatment === "moderate" && (
         <div className="space-y-4 mb-6">
-          {CATEGORIES.map((cat) => {
+          {CATEGORIES.map((cat, catIndex) => {
             // Highlight a level only when every field in the category shares it;
             // if the fields disagree (mixed), highlight nothing rather than
             // misrepresenting the state with the first field's value.
@@ -733,7 +749,7 @@ export default function PrivacySettingsPage() {
             const currentLevel = allSame ? fieldLevels[0] : null;
 
             return (
-              <div key={cat.key} className="rounded-lg border border-gray-200 p-3">
+              <div key={cat.key} {...(catIndex === 0 ? TOUR_ANCHOR : {})} className="rounded-lg border border-gray-200 p-3">
                 <p className="text-sm font-medium text-gray-900 mb-1">{cat.label}</p>
                 <p className="text-xs text-gray-600 mb-2">
                   {cat.fields.map((f) => f.label).join(", ")}
@@ -766,8 +782,8 @@ export default function PrivacySettingsPage() {
       {/* COMPLEX treatment: per-field × 4 levels */}
       {showControls && treatment === "complex" && (
         <div className="space-y-2 mb-6">
-          {PROFILE_FIELDS.map((field) => (
-            <div key={field.key} className="rounded-lg border border-gray-200 p-3">
+          {PROFILE_FIELDS.map((field, fieldIndex) => (
+            <div key={field.key} {...(fieldIndex === 0 ? TOUR_ANCHOR : {})} className="rounded-lg border border-gray-200 p-3">
               <div className="flex items-start justify-between mb-1">
                 <div>
                   <p className="text-sm font-medium text-gray-900">{field.label}</p>
@@ -909,6 +925,7 @@ export default function PrivacySettingsPage() {
           )}
         </>
       )}
+      </div>
 
       <p className="text-xs text-gray-500 mt-3">
         You can change these settings anytime from Settings → Privacy.

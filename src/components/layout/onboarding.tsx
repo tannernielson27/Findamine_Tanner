@@ -1,16 +1,20 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { motion, AnimatePresence } from "framer-motion";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import {
   ONBOARDING_MILESTONE,
-  stepsForRole,
+  stepsForUser,
   onboardingDestination,
   finalCtaLabel,
+  clampStep,
 } from "@/lib/onboarding/steps";
+import { clearTourActive, hasPrivacyTourParam, markTourActive } from "@/lib/onboarding/tour-mode";
+import { tabsFor } from "./nav-links";
+import { TourCard, TourSpotlight } from "./tour-card";
+import { useTourAnchor } from "./use-tour-anchor";
 
 interface OnboardingProps {
   role?: string;
@@ -22,6 +26,8 @@ interface OnboardingProps {
 const LEGACY_STORAGE_KEY = "onboarding_complete";
 /** Any other open modal (consent gate, first-choice gate, feature dialogs). */
 const OTHER_MODAL_SELECTOR = '[role="dialog"][aria-modal="true"]:not([data-onboarding-tour])';
+/** Where the tour is, so a reload mid-tour resumes on the same step. Per tab. */
+const STEP_STORAGE_KEY = "findamine:tour-step";
 
 function storageKeyFor(userId: string): string {
   return `${LEGACY_STORAGE_KEY}:${userId}`;
@@ -42,6 +48,23 @@ function writeFlag(key: string): void {
     localStorage.removeItem(LEGACY_STORAGE_KEY);
   } catch {
     // Non-fatal: the tour is re-checked against the API next load.
+  }
+}
+
+function readSavedStep(): number {
+  try {
+    return Number(sessionStorage.getItem(STEP_STORAGE_KEY) ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
+function saveStep(step: number | null): void {
+  try {
+    if (step === null) sessionStorage.removeItem(STEP_STORAGE_KEY);
+    else sessionStorage.setItem(STEP_STORAGE_KEY, String(step));
+  } catch {
+    // Non-fatal: a reload restarts the tour from the top.
   }
 }
 
@@ -80,6 +103,7 @@ export function restartOnboardingTour(): void {
   } catch {
     // The event below still opens the tour in this page.
   }
+  saveStep(0);
   window.dispatchEvent(new Event(REPLAY_EVENT));
 }
 
@@ -93,12 +117,24 @@ const noopSubscribe = () => () => {};
 const isOtherModalOpen = () => document.querySelector(OTHER_MODAL_SELECTOR) !== null;
 const noModalOnServer = () => false;
 
+/** Path + query of the current page, compared against a step's route. */
+function currentLocation(pathname: string): string {
+  return typeof window === "undefined" ? pathname : `${pathname}${window.location.search}`;
+}
+
+/**
+ * First-login walkthrough: steps through Home, Explore, Ranks / My Hunts,
+ * Profile and the privacy settings screen, opening each page and spotlighting
+ * the part being described. Shown once per user (server milestone), replayable
+ * from Settings.
+ */
 export default function Onboarding({ role, userId }: OnboardingProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const reducedMotion = useReducedMotion();
   const [show, setShow] = useState(false);
   const [step, setStep] = useState(0);
-  const modalRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   const storageKeyRef = useRef<string | null>(null);
 
   // The consent / first-choice gates render above the tour. While one of them
@@ -113,9 +149,18 @@ export default function Onboarding({ role, userId }: OnboardingProps) {
   );
   const visible = show && !blocked;
 
-  const steps = stepsForRole(role);
+  const steps = stepsForUser(role, tabsFor(role ? { role } : null).map((t) => t.icon));
+  const index = clampStep(step, steps.length);
+  const current = steps[index];
   const destination = onboardingDestination(role);
   const finalCta = finalCtaLabel(role);
+  const { rect, settled } = useTourAnchor(current?.anchor, `${index}:${current?.id}`, visible);
+
+  const open = useCallback((at: number) => {
+    markTourActive();
+    setStep(at);
+    setShow(true);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -134,7 +179,7 @@ export default function Onboarding({ role, userId }: OnboardingProps) {
 
         // An explicit "run the tour again" beats both completion records.
         if (replayRequested()) {
-          setShow(true);
+          open(readSavedStep());
           return;
         }
 
@@ -154,7 +199,7 @@ export default function Onboarding({ role, userId }: OnboardingProps) {
         if (done) {
           if (key) writeFlag(key);
         } else {
-          setShow(true);
+          open(readSavedStep());
         }
       } catch {
         // If the session or API lookup fails, don't block the UI with a tutorial.
@@ -164,20 +209,31 @@ export default function Onboarding({ role, userId }: OnboardingProps) {
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [userId, open]);
 
   // Settings asked for the tour again while this page is open.
   useEffect(() => {
-    const reopen = () => {
-      setStep(0);
-      setShow(true);
-    };
+    const reopen = () => open(0);
     window.addEventListener(REPLAY_EVENT, reopen);
     return () => window.removeEventListener(REPLAY_EVENT, reopen);
-  }, []);
+  }, [open]);
 
-  const recordComplete = useCallback(async () => {
+  // Each step opens its page. Waits while a gate is up so the tour never
+  // navigates out from under the consent or first-choice dialog.
+  useEffect(() => {
+    if (!visible || !current?.route) return;
+    if (currentLocation(pathname) !== current.route) router.push(current.route);
+  }, [visible, current, pathname, router]);
+
+  useEffect(() => {
+    if (show) saveStep(index);
+  }, [show, index]);
+
+  const end = useCallback(async () => {
+    setShow(false);
     clearReplayRequest();
+    clearTourActive();
+    saveStep(null);
     if (storageKeyRef.current) writeFlag(storageKeyRef.current);
     try {
       await fetch("/api/v1/onboarding", {
@@ -190,18 +246,23 @@ export default function Onboarding({ role, userId }: OnboardingProps) {
     }
   }, []);
 
-  // Skip / Escape: dismiss without routing the user away.
+  // Skip / Escape: dismiss and stay put — unless the tour left the user on the
+  // read-only privacy view, which only exists for the tour.
   const handleSkip = useCallback(() => {
-    setShow(false);
-    recordComplete();
-  }, [recordComplete]);
+    void end();
+    if (hasPrivacyTourParam(window.location.search)) router.replace("/dashboard");
+  }, [end, router]);
 
   // Finish: dismiss AND propel the user into their first fun moment.
   const handleFinish = useCallback(() => {
-    setShow(false);
-    recordComplete();
+    void end();
     router.push(destination);
-  }, [recordComplete, router, destination]);
+  }, [end, router, destination]);
+
+  const handleNext = useCallback(() => {
+    if (index < steps.length - 1) setStep(index + 1);
+    else handleFinish();
+  }, [index, steps.length, handleFinish]);
 
   // Escape key + focus trap
   useEffect(() => {
@@ -211,8 +272,8 @@ export default function Onboarding({ role, userId }: OnboardingProps) {
         handleSkip();
         return;
       }
-      if (e.key === "Tab" && modalRef.current) {
-        const focusable = modalRef.current.querySelectorAll<HTMLElement>(
+      if (e.key === "Tab" && cardRef.current) {
+        const focusable = cardRef.current.querySelectorAll<HTMLElement>(
           'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
         );
         if (focusable.length === 0) return;
@@ -228,99 +289,41 @@ export default function Onboarding({ role, userId }: OnboardingProps) {
       }
     };
     document.addEventListener("keydown", handleKeyDown);
-    modalRef.current?.querySelector<HTMLElement>("button")?.focus();
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [visible, handleSkip]);
 
-  const handleNext = () => {
-    if (step < steps.length - 1) {
-      setStep(step + 1);
-    } else {
-      handleFinish();
-    }
-  };
+  // Focus the primary action on every step.
+  useEffect(() => {
+    if (!visible || !settled) return;
+    const buttons = cardRef.current?.querySelectorAll<HTMLElement>("button");
+    buttons?.[index > 0 ? 1 : 0]?.focus();
+  }, [visible, settled, index]);
 
-  if (!visible) return null;
-
-  const current = steps[step];
-  const isLast = step === steps.length - 1;
+  if (!visible || !current) return null;
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--color-text,#111827)]/50 px-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[60]"
       role="dialog"
       aria-modal="true"
-      aria-label="Welcome tour"
+      aria-labelledby="tour-step-title"
       data-onboarding-tour=""
     >
-      <AnimatePresence mode="wait">
-        <motion.div
-          ref={modalRef}
-          key={step}
-          initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 16, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
-          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-          className="w-full max-w-md overflow-hidden rounded-3xl bg-[var(--color-surface,#fff)] shadow-2xl ring-1 ring-themed-border"
-        >
-          {/* Banner: brand wash with the step icon */}
-          <div className="relative bg-gradient-to-br from-brand-light via-brand to-brand-dark px-6 pt-8 pb-10 text-center">
-            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-white/90 text-5xl shadow-lg">
-              <span aria-hidden="true">{current.icon}</span>
-            </div>
-            <p className="mt-3 font-[family-name:var(--font-handwritten)] text-2xl text-white/90">
-              {isLast ? "last one!" : `step ${step + 1} of ${steps.length}`}
-            </p>
-          </div>
-
-          <div className="px-7 pb-7 pt-6">
-            <h2 className="font-[family-name:var(--font-display)] text-2xl font-bold text-themed-text">
-              {current.title}
-            </h2>
-            <p className="mt-2 text-[15px] leading-relaxed text-themed-muted">{current.body}</p>
-
-            {/* Step indicator */}
-            <div className="mt-6 mb-5 flex justify-center gap-1.5" aria-hidden="true">
-              {steps.map((_, i) => (
-                <div
-                  key={i}
-                  className={`h-1.5 rounded-full transition-[width,background-color] duration-300 ${
-                    i === step
-                      ? "w-7 bg-brand"
-                      : i < step
-                      ? "w-2 bg-brand/60"
-                      : "w-2 bg-themed-border"
-                  }`}
-                />
-              ))}
-            </div>
-
-            <div className="flex gap-3">
-              {step > 0 && (
-                <button
-                  onClick={() => setStep(step - 1)}
-                  className="flex-1 rounded-xl border border-themed-border px-4 py-2.5 text-sm font-medium text-themed-muted transition-colors hover:bg-themed-bg"
-                >
-                  Back
-                </button>
-              )}
-              <button
-                onClick={handleNext}
-                className="flex-1 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark active:scale-[0.98]"
-              >
-                {isLast ? finalCta : "Next"}
-              </button>
-            </div>
-
-            <button
-              onClick={handleSkip}
-              className="mt-3 block w-full text-center text-xs text-themed-muted hover:text-themed-text"
-            >
-              Skip the tour
-            </button>
-          </div>
-        </motion.div>
-      </AnimatePresence>
+      <TourSpotlight rect={rect} reducedMotion={reducedMotion} />
+      {settled && (
+        <TourCard
+          ref={cardRef}
+          step={current}
+          index={index}
+          total={steps.length}
+          finalCta={finalCta}
+          rect={rect}
+          reducedMotion={reducedMotion}
+          onBack={() => setStep(index - 1)}
+          onNext={handleNext}
+          onSkip={handleSkip}
+        />
+      )}
     </div>
   );
 }

@@ -80,6 +80,7 @@ function seed(): SupabaseDouble {
       { user_id: "u2", index_value: 1, source: "enrollment", created_at: t0, visibility: { ...ALL_NOBODY }, conditions: { privacy_control_complexity: "simple", privacy_default: "private" } },
     ],
     privacy_events: [
+      { user_id: "u1", event_type: "privacy_view", created_at: daysAgo(10), metadata: { view_reason: "tour" }, conditions: {} },
       { user_id: "u1", event_type: "privacy_view", created_at: daysAgo(9), metadata: {}, conditions: {} },
       { user_id: "u1", event_type: "privacy_field_touch", created_at: daysAgo(9), metadata: {}, conditions: {} },
       { user_id: "u1", event_type: "privacy_field_touch", created_at: daysAgo(9), metadata: {}, conditions: {} },
@@ -148,11 +149,12 @@ describe("research exports against the Supabase double", () => {
     expect(u1.loosen_count).toBe("1");
     expect(u1.abandon_count).toBe("1");
     expect(u1.reversal_count).toBe("1"); // nobody → everyone reversed everyone → nobody
-    expect(u1.view_count).toBe("1");
+    expect(u1.view_count).toBe("1"); // the tour stop is not a visit
+    expect(u1.tour_view_count).toBe("1");
     expect(u1.field_touch_count).toBe("2");
     expect(u1.successful_change_rate).toBe("0.667"); // 2 saves / (2 saves + 1 abandon)
     expect(Number(u1.time_to_first_change_hours)).toBeCloseTo(48, 0);
-    expect(u1.total_privacy_events).toBe("6");
+    expect(u1.total_privacy_events).toBe("7");
 
     expect(u1.survey_T1_status).toBe("submitted");
     expect(u1.survey_T1_privacy_fatigue).toBe("6.00"); // (6 + reverse(2)=6) / 2
@@ -187,11 +189,11 @@ describe("research exports against the Supabase double", () => {
 
   it("events: excludes withdrawn participants and carries direction and deltas", async () => {
     const rows = JSON.parse(await generateEventsExport({ studyId: STUDY, format: "json" })) as Record<string, string>[];
-    expect(rows).toHaveLength(6);
+    expect(rows).toHaveLength(7); // the raw log keeps the tour view
     expect(rows.every((r) => r.participant_id === "P0001")).toBe(true);
     const changes = rows.filter((r) => r.event_type === "privacy_change");
     expect(changes.map((r) => r.direction)).toEqual(["tighten", "loosen"]);
     expect(changes[0].treatment_privacy_control_complexity).toBe("complex");
-    expect(db.table("privacy_events")).toHaveLength(7); // read-only
+    expect(db.table("privacy_events")).toHaveLength(8); // read-only
   });
 });

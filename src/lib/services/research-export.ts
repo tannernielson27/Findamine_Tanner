@@ -337,6 +337,7 @@ export async function generateResearchExport(config: ExportConfig): Promise<stri
   const loosenCount = new Map<string, number>();
   const abandonCount = new Map<string, number>();
   const viewCount = new Map<string, number>();
+  const tourViewCount = new Map<string, number>(); // welcome-tour stops, not real visits
   const fieldTouchCount = new Map<string, number>();
   const firstChangeAt = new Map<string, string>();
   const totalEvents = new Map<string, number>();
@@ -369,7 +370,10 @@ export async function generateResearchExport(config: ExportConfig): Promise<stri
     } else if (e.event_type === "privacy_abandon") {
       inc(abandonCount, e.user_id);
     } else if (e.event_type === "privacy_view") {
-      inc(viewCount, e.user_id);
+      // The welcome tour shows the page read-only once (view_reason "tour");
+      // that exposure is reported separately, never as the participant opening it.
+      const reason = (e.metadata as { view_reason?: unknown } | null)?.view_reason;
+      inc(reason === "tour" ? tourViewCount : viewCount, e.user_id);
     } else if (e.event_type === "privacy_field_touch") {
       inc(fieldTouchCount, e.user_id);
     }
@@ -546,6 +550,7 @@ export async function generateResearchExport(config: ExportConfig): Promise<stri
     "abandon_count",
     "reversal_count",
     "view_count",
+    "tour_view_count",
     "field_touch_count",
     "successful_change_rate",
     "time_to_first_change_hours",
@@ -619,6 +624,7 @@ export async function generateResearchExport(config: ExportConfig): Promise<stri
       num(abandonCount.get(userId) || 0),
       num(countReversals(changeDeltasByUser.get(userId) || [])),
       num(viewCount.get(userId) || 0),
+      num(tourViewCount.get(userId) || 0),
       num(fieldTouchCount.get(userId) || 0),
       // Completed saves over initiated flows (completed + abandoned). Blank when
       // the participant never initiated a change flow at all.
