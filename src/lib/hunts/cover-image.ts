@@ -11,7 +11,7 @@
  */
 
 export const COVER_BUCKET = "hunt-covers";
-export const COVER_MAX_BYTES = 5 * 1024 * 1024;
+export const COVER_MAX_BYTES = 4 * 1024 * 1024;
 
 /** Roles that may set a cover (matches PUT /api/v1/hunts/[id]). */
 export const COVER_EDITOR_ROLES = ["teacher", "hunt_creator", "admin", "researcher"] as const;
@@ -62,7 +62,7 @@ const ACCEPTED_LABEL = "JPEG, PNG, WebP or HEIC";
 export function checkCoverFile(size: number, head: Uint8Array): CoverCheck {
   if (!Number.isFinite(size) || size <= 0) return { ok: false, status: 400, message: "The file is empty." };
   if (size > COVER_MAX_BYTES) {
-    return { ok: false, status: 413, message: "That photo is too large. The limit is 5 MB." };
+    return { ok: false, status: 413, message: "That photo is too large. The limit is 4 MB." };
   }
   const mime = sniffCoverType(head);
   if (!mime) {

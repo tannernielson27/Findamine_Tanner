@@ -95,7 +95,7 @@ async function respond(
 
 /**
  * POST /api/v1/hunts/[id]/cover (multipart, field `file`): set the hunt's
- * cover photo. JPEG, PNG, WebP or HEIC, identified by content, up to 5 MB.
+ * cover photo. JPEG, PNG, WebP or HEIC, identified by content, up to 4 MB.
  * Owner (teacher/hunt_creator) or admin/researcher only.
  *
  * Response 201: { data: { cover_image_url, review_status?, message? } }.
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const declared = Number(request.headers.get("content-length"));
     if (Number.isFinite(declared) && declared > COVER_MAX_BYTES + MULTIPART_OVERHEAD_BYTES) {
-      throw new ApiError(413, "That photo is too large. The limit is 5 MB.");
+      throw new ApiError(413, "That photo is too large. The limit is 4 MB.");
     }
 
     const form = await request.formData().catch(() => null);
@@ -116,7 +116,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (file.type && !file.type.startsWith("image/") && file.type !== "application/octet-stream") {
       throw new ApiError(415, "That file isn't a supported image. Use a JPEG, PNG, WebP or HEIC photo.");
     }
-    if (file.size > COVER_MAX_BYTES) throw new ApiError(413, "That photo is too large. The limit is 5 MB.");
+    if (file.size > COVER_MAX_BYTES) throw new ApiError(413, "That photo is too large. The limit is 4 MB.");
 
     const bytes = new Uint8Array(await file.arrayBuffer());
     const check = checkCoverFile(bytes.byteLength, bytes.subarray(0, SNIFF_BYTES));

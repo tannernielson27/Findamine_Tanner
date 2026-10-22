@@ -11,17 +11,14 @@
 --      shown to every player, so a URL on some other host would let a
 --      creator make players' browsers load a third-party image.
 --   2. hunt-covers bucket: public read (covers appear on public catalogue
---      cards), 5 MB, JPEG/PNG/WebP/HEIC(HEIF) only. Public buckets serve
+--      cards), 4 MB (under Vercel's ~4.5 MB request limit), JPEG/PNG/WebP/HEIC(HEIF) only. Public buckets serve
 --      objects by URL without any storage.objects SELECT policy, so none is
 --      added (one would also let clients list every object).
---   3. storage.objects write policies for direct (JWT) access. The route
---      uses the service role and is not affected. A hunt's creator, or an
---      admin/researcher, may add objects under that hunt's folder. Replacing
---      or deleting an existing object is admin/researcher only: an approved
---      cover's URL stays the same if its bytes are swapped, so letting a
---      creator overwrite one would change a reviewed image without review.
---      Creators replace a cover by uploading a new object and pointing
---      cover_image_url at it, which the trigger below sends to review.
+--   3. The cover route (service role) is the only writer: no storage write
+--      policies for the bucket, and a trigger refuses cover_image_url
+--      changes from user JWTs and URLs outside the hunt's own folder.
+--      (Security review 2026-10-21: a creator could otherwise set the
+--      column directly via hunts_update_own and point it at any host.)
 --   4. Publish review: cover_image_url joins the columns whose change takes
 --      an approved hunt back to 'pending' (requeue_hunt_on_content_change,
 --      073). The function is restated from 073 with that one column added.
@@ -56,55 +53,64 @@ values (
   'hunt-covers',
   'hunt-covers',
   true,
-  5242880,
+  4194304,
   array['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']
 )
 on conflict (id) do nothing;
 
--- ── 3. Storage policies ───────────────────────────────────
-
--- True when the caller may manage covers for the hunt whose id is the first
--- path segment of an object name. SECURITY DEFINER so it can read hunts
--- regardless of the caller's hunts RLS; it only answers yes/no.
-create or replace function private.can_write_hunt_cover(p_object_name text)
-returns boolean
-language sql
-stable
-security definer
-set search_path = ''
-as $$
-  select coalesce(private.user_role(), '') in ('admin', 'researcher')
-    or exists (
-      select 1
-      from public.hunts h
-      where h.id::text = (storage.foldername(p_object_name))[1]
-        and h.deleted_at is null
-        and h.created_by = private.user_id()
-    );
-$$;
-
-revoke all on function private.can_write_hunt_cover(text) from public;
-grant execute on function private.can_write_hunt_cover(text) to authenticated, service_role;
+-- ── 3. Writes go through the cover route only ─────────────
+-- No storage.objects write policies for this bucket: the cover route
+-- (service role) is the only writer, so every stored file has passed its
+-- byte check and size limit. Drop any policies an earlier draft created.
 
 drop policy if exists "hunt_covers_insert_owner" on storage.objects;
-create policy "hunt_covers_insert_owner" on storage.objects
-  for insert to authenticated
-  with check (
-    bucket_id = 'hunt-covers'
-    and array_length(storage.foldername(name), 1) = 1
-    and private.can_write_hunt_cover(name)
-  );
-
 drop policy if exists "hunt_covers_update_staff" on storage.objects;
-create policy "hunt_covers_update_staff" on storage.objects
-  for update to authenticated
-  using (bucket_id = 'hunt-covers' and coalesce(private.user_role(), '') in ('admin', 'researcher'))
-  with check (bucket_id = 'hunt-covers' and coalesce(private.user_role(), '') in ('admin', 'researcher'));
-
 drop policy if exists "hunt_covers_delete_staff" on storage.objects;
-create policy "hunt_covers_delete_staff" on storage.objects
-  for delete to authenticated
-  using (bucket_id = 'hunt-covers' and coalesce(private.user_role(), '') in ('admin', 'researcher'));
+drop function if exists private.can_write_hunt_cover(text);
+
+-- hunts.cover_image_url may change only through that route. hunts_update_own
+-- lets a creator update their own row with their JWT, so without this guard
+-- they could point the cover at any host (players' browsers would load it)
+-- or at another hunt's file. Callers with a user JWT (authenticated / anon)
+-- are refused; the service role and direct SQL (migrations, dashboard) pass.
+-- Whoever sets it, the URL must point into this hunt's own folder.
+create or replace function private.guard_hunt_cover_image()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_role text := coalesce(nullif(current_setting('request.jwt.claims', true), '')::json ->> 'role', '');
+begin
+  if tg_op = 'UPDATE' and new.cover_image_url is not distinct from old.cover_image_url then
+    return new;
+  end if;
+  if new.cover_image_url is null then
+    if tg_op = 'UPDATE' and v_role in ('authenticated', 'anon') then
+      raise exception 'cover_image_url can only be changed through the cover upload'
+        using errcode = '42501';
+    end if;
+    return new;
+  end if;
+  if v_role in ('authenticated', 'anon') then
+    raise exception 'cover_image_url can only be changed through the cover upload'
+      using errcode = '42501';
+  end if;
+  if position('/storage/v1/object/public/hunt-covers/' || new.id::text || '/' in new.cover_image_url) = 0 then
+    raise exception 'cover_image_url must point into this hunt''s folder of the hunt-covers bucket'
+      using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function private.guard_hunt_cover_image() from public;
+
+drop trigger if exists guard_hunt_cover_image on public.hunts;
+create trigger guard_hunt_cover_image
+  before insert or update of cover_image_url on public.hunts
+  for each row execute function private.guard_hunt_cover_image();
 
 -- ── 4. Publish review ─────────────────────────────────────
 -- Identical to 073 except for the cover_image_url line.

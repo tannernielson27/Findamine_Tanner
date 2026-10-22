@@ -6,6 +6,7 @@
 /* eslint-disable @next/next/no-img-element -- covers come from Supabase storage with arbitrary sizes */
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils/cn";
+import { safeCoverUrl } from "@/lib/hunts/card-data";
 
 export type CoverTone = "blaze" | "juniper" | "sky";
 
@@ -39,7 +40,8 @@ interface TopoCoverProps {
   children?: ReactNode;
 }
 
-export function TopoCover({ tone, imageUrl, alt = "", className, children }: TopoCoverProps) {
+export function TopoCover({ tone, imageUrl: rawUrl, alt = "", className, children }: TopoCoverProps) {
+  const imageUrl = safeCoverUrl(rawUrl);
   return (
     <div className={cn("relative overflow-hidden", !imageUrl && `fm-cover-${tone}`, className)}>
       {imageUrl && (

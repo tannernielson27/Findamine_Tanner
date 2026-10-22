@@ -13,7 +13,7 @@ import { REQUEUED_MESSAGE } from "@/lib/hunts/review";
 
 /**
  * POST/DELETE /api/v1/hunts/[id]/cover: owner/staff only, type from magic
- * bytes, 5 MB cap, public URL saved on the hunt, and a cover change on a
+ * bytes, 4 MB cap, public URL saved on the hunt, and a cover change on a
  * listed hunt goes back through publish review.
  */
 
@@ -226,7 +226,7 @@ describe("POST /api/v1/hunts/[id]/cover", () => {
     expect((await POST(post(file(JPEG, "text/html")), params())).status).toBe(415);
   });
 
-  it("413s a file over 5 MB", async () => {
+  it("413s a file over 4 MB", async () => {
     seed();
     const res = await POST(post(file(JPEG, "image/jpeg", COVER_MAX_BYTES + 1)), params());
     expect(res.status).toBe(413);

@@ -73,7 +73,7 @@ export function CoverImagePicker({ huntId, huntTitle, coverImageUrl, disabled, o
   const handleFile = (file: File | undefined) => {
     if (!file) return;
     if (file.size > COVER_MAX_BYTES) {
-      setError("That photo is too large. The limit is 5 MB.");
+      setError("That photo is too large. The limit is 4 MB.");
       return;
     }
     const form = new FormData();
@@ -131,7 +131,7 @@ export function CoverImagePicker({ huntId, huntTitle, coverImageUrl, disabled, o
           </Button>
         )}
       </div>
-      <p className="mt-1 text-xs text-gray-500">JPEG, PNG or WebP, up to 5 MB. A wide (16:9) photo works best.</p>
+      <p className="mt-1 text-xs text-gray-500">JPEG, PNG or WebP, up to 4 MB. A wide (16:9) photo works best.</p>
       {error && (
         <p id={errorId} role="alert" className="mt-1 text-sm text-red-700">
           {error}

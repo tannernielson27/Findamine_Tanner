@@ -106,3 +106,27 @@ export function audienceLabel(audience: string | null | undefined): string | nul
     default: return null;
   }
 }
+
+const COVER_PATH_PREFIX = "/storage/v1/object/public/hunt-covers/";
+
+/**
+ * The cover URL if it points into this project's hunt-covers bucket, else
+ * null (the card then shows generated art). Defence in depth behind the
+ * database guard in migration 079: covers are shown to every player, so an
+ * outside host must never reach an <img src>. Pure.
+ */
+export function safeCoverUrl(
+  url: string | null | undefined,
+  supabaseUrl: string | undefined = process.env.NEXT_PUBLIC_SUPABASE_URL
+): string | null {
+  if (!url || !supabaseUrl) return null;
+  try {
+    const parsed = new URL(url);
+    const origin = new URL(supabaseUrl).origin;
+    if (parsed.origin !== origin || parsed.username || parsed.password) return null;
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+    return parsed.pathname.startsWith(COVER_PATH_PREFIX) ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}

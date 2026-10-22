@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { audienceLabel, cardStats, distanceMeters, formatDistance, shortPlayMode, toHuntCardData } from "@/lib/hunts/card-data";
+import { audienceLabel, cardStats, safeCoverUrl, distanceMeters, formatDistance, shortPlayMode, toHuntCardData } from "@/lib/hunts/card-data";
 import { toneForHunt } from "@/components/ui/topo-cover";
 import { parseActiveHunt } from "@/lib/play/active-hunt";
 
@@ -96,5 +96,22 @@ describe("parseActiveHunt", () => {
       coverImageUrl: null,
       lastActiveAt: null,
     });
+  });
+});
+
+describe("safeCoverUrl", () => {
+  const base = "https://abc.supabase.co";
+  it("keeps covers in this project's hunt-covers bucket", () => {
+    const url = `${base}/storage/v1/object/public/hunt-covers/6e0e8fd8-83dd-4d14-a86b-14ef2286656b/x.jpg`;
+    expect(safeCoverUrl(url, base)).toBe(url);
+  });
+  it("drops other hosts, other buckets, credentials and junk", () => {
+    expect(safeCoverUrl("https://evil.example/storage/v1/object/public/hunt-covers/a/x.jpg", base)).toBeNull();
+    expect(safeCoverUrl(`${base}/storage/v1/object/public/avatars/a/x.jpg`, base)).toBeNull();
+    expect(safeCoverUrl(`https://u:p@abc.supabase.co/storage/v1/object/public/hunt-covers/a/x.jpg`, base)).toBeNull();
+    expect(safeCoverUrl("javascript:alert(1)", base)).toBeNull();
+    expect(safeCoverUrl("not a url", base)).toBeNull();
+    expect(safeCoverUrl(null, base)).toBeNull();
+    expect(safeCoverUrl(`${base}/storage/v1/object/public/hunt-covers/a/x.jpg`, undefined)).toBeNull();
   });
 });
