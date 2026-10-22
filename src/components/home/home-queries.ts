@@ -11,6 +11,13 @@ type Db = Awaited<ReturnType<typeof createSupabaseServiceClient>>;
 const NEAR_LIMIT = 24;
 const CARD_COLUMNS =
   "id, title, description, target_audience, play_mode, estimated_duration_min, center_latitude, center_longitude, created_at, finds(count)";
+/**
+ * Filter on the embedded `finds` resource so `finds(count)` counts only live
+ * (not soft-deleted) stops. PostgREST applies a filter on an embedded resource
+ * inside the embed, before the count aggregate; without `!inner` it never
+ * removes parent hunt rows.
+ */
+const LIVE_STOPS_ONLY = "finds.deleted_at";
 
 /**
  * Published public hunts for the player's audience band, newest first. The
@@ -27,6 +34,7 @@ export async function loadNearHunts(db: Db, band: AgeBand, role: string): Promis
       .from("hunts")
       .select(columns)
       .is("deleted_at", null)
+      .is(LIVE_STOPS_ONLY, null)
       .eq("is_public", true)
       .in("status", ["published", "enrollment_open"])
       .in("target_audience", audiences)
@@ -49,6 +57,7 @@ export async function loadCreatorHunts(db: Db, userId: string): Promise<{ hunts:
     .select("id, title, status, finds(count)", { count: "exact" })
     .eq("created_by", userId)
     .is("deleted_at", null)
+    .is(LIVE_STOPS_ONLY, null)
     .order("updated_at", { ascending: false })
     .limit(3);
   if (error) {
