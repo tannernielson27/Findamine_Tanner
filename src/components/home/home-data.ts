@@ -23,13 +23,12 @@ export function audiencesForBand(band: AgeBand, role?: string | null): string[] 
   }
 }
 
-/** Weekly ring headline: "One more hunt this week", "Goal met this week", ... */
+/** Weekly ring headline: what's left ("3 hunts to go this week", "One more hunt this week") or "Goal met. Nice work!". */
 export function weeklyHeadline(p: WeeklyProgress): string {
   const left = p.goal - p.completedThisWeek;
-  if (left <= 0) return "Weekly goal done";
+  if (left <= 0) return "Goal met. Nice work!";
   if (left === 1) return "One more hunt this week";
-  if (p.completedThisWeek === 0) return `${p.goal} hunts this week`;
-  return `${left} more hunts this week`;
+  return `${left} hunts to go this week`;
 }
 
 /** Streak line under the headline. */

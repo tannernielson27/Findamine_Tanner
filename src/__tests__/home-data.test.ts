@@ -62,11 +62,12 @@ describe("audiencesForBand", () => {
 
 describe("weekly ring copy", () => {
   it("counts down to the goal", () => {
-    expect(weeklyHeadline({ completedThisWeek: 0, goal: 3, streakWeeks: 0 })).toBe("3 hunts this week");
-    expect(weeklyHeadline({ completedThisWeek: 1, goal: 3, streakWeeks: 0 })).toBe("2 more hunts this week");
+    expect(weeklyHeadline({ completedThisWeek: 0, goal: 3, streakWeeks: 0 })).toBe("3 hunts to go this week");
+    expect(weeklyHeadline({ completedThisWeek: 1, goal: 3, streakWeeks: 0 })).toBe("2 hunts to go this week");
     expect(weeklyHeadline({ completedThisWeek: 2, goal: 3, streakWeeks: 0 })).toBe("One more hunt this week");
-    expect(weeklyHeadline({ completedThisWeek: 3, goal: 3, streakWeeks: 0 })).toBe("Weekly goal done");
-    expect(weeklyHeadline({ completedThisWeek: 5, goal: 3, streakWeeks: 0 })).toBe("Weekly goal done");
+    expect(weeklyHeadline({ completedThisWeek: 3, goal: 3, streakWeeks: 0 })).toBe("Goal met. Nice work!");
+    expect(weeklyHeadline({ completedThisWeek: 5, goal: 3, streakWeeks: 0 })).toBe("Goal met. Nice work!");
+    expect(weeklyHeadline({ completedThisWeek: 0, goal: 1, streakWeeks: 0 })).toBe("One more hunt this week");
   });
 
   it("describes the streak", () => {

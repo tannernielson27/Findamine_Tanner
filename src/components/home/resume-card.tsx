@@ -4,7 +4,7 @@ import { Compass, Navigation2 } from "lucide-react";
 import { ButtonLink } from "@/components/ui/button";
 import { ProgressSegments } from "@/components/ui/progress";
 import { useShellActiveHunt } from "@/components/layout/active-hunt-context";
-import { stopLine } from "@/components/layout/mini-bar";
+import { activeHuntLabels } from "@/lib/play/active-hunt-labels";
 import { timeAgo } from "./home-data";
 
 /**
@@ -39,6 +39,7 @@ export function ResumeCard() {
   }
 
   const last = timeAgo(hunt.lastActiveAt);
+  const labels = activeHuntLabels(hunt);
   const detail = last ? `last played ${last}` : "pick up where you left off";
 
   return (
@@ -53,7 +54,7 @@ export function ResumeCard() {
         <div className="flex flex-col gap-1">
           <h2 className="m-0 font-[family-name:var(--font-display)] text-2xl font-semibold">{hunt.title}</h2>
           <span className="text-base text-on-ink-muted">
-            {stopLine(hunt)} · {detail}
+            {labels.stopLabel} · {detail}
           </span>
         </div>
         {hunt.totalStops > 0 && (
@@ -61,7 +62,7 @@ export function ResumeCard() {
         )}
         <ButtonLink href={hunt.href} size="lg" block className="rounded-[14px]">
           <Navigation2 className="h-5 w-5" strokeWidth={2.2} aria-hidden="true" />
-          Resume hunt
+          {labels.actionLabel}
         </ButtonLink>
       </div>
     </section>
