@@ -9,11 +9,43 @@ import { buildActiveHunt, lastActivity, rankSessions } from "@/lib/play/active-h
  * activity, with stop counts from their real completions.
  */
 
-const h = vi.hoisted(() => ({ user: null as null | { id: string; role: string } }));
+const h = vi.hoisted(() => ({
+  user: null as null | { id: string; role: string },
+  /** Simulate a database without migration 079 (no hunts.cover_image_url). */
+  noCoverColumn: false,
+  huntSelects: [] as string[],
+}));
 
 vi.mock("@/lib/supabase/server", async () => {
   const m = await import("@/__tests__/support/supabase-double");
-  const client = async () => m.current().client;
+  const missingColumn = { data: null, error: { code: "42703", message: "column hunts.cover_image_url does not exist" } };
+  // A chain that accepts any filter and resolves to the 42703 error.
+  const failing: Record<string, unknown> = new Proxy(
+    {},
+    {
+      get: (_t, prop) =>
+        prop === "then"
+          ? (resolve: (r: unknown) => unknown) => Promise.resolve(missingColumn).then(resolve)
+          : () => failing,
+    }
+  );
+  const client = async () => {
+    const real = m.current().client;
+    return {
+      ...real,
+      from: (table: string) => {
+        const q = real.from(table);
+        if (table !== "hunts") return q;
+        const select = q.select.bind(q);
+        return Object.assign(q, {
+          select: (cols?: string, opts?: { count?: "exact"; head?: boolean }) => {
+            h.huntSelects.push(cols ?? "*");
+            return h.noCoverColumn && cols?.includes("cover_image_url") ? failing : select(cols, opts);
+          },
+        });
+      },
+    };
+  };
   return { createSupabaseServiceClient: client, createSupabaseServerClient: client };
 });
 vi.mock("@/lib/utils/api-auth", async (importOriginal) => ({
@@ -49,6 +81,8 @@ const embeds = { roster_entries: { "rosters!inner": { table: "rosters", localKey
 
 beforeEach(() => {
   h.user = { id: "u1", role: "adult" };
+  h.noCoverColumn = false;
+  h.huntSelects = [];
 });
 
 describe("active hunt builder (pure)", () => {
@@ -183,6 +217,21 @@ describe("GET /api/v1/play/active", () => {
     );
     const body = await (await GET(request())).json();
     expect(body.data).toMatchObject({ huntId: "ok", currentStop: 1, totalStops: 2, completedStops: 0 });
+  });
+
+  it("retries without hunts.cover_image_url when the column doesn't exist yet (42703)", async () => {
+    h.noCoverColumn = true;
+    installDouble({
+      hunts: [hunt("h1")],
+      finds: finds("h1", 2),
+      play_sessions: [{ id: "s1", hunt_id: "h1", user_id: "u1", status: "active", started_at: "2026-10-21T10:00:00Z", updated_at: null }],
+    });
+    const res = await GET(request());
+    expect(res.status).toBe(200);
+    expect((await res.json()).data).toMatchObject({ huntId: "h1", totalStops: 2, coverImageUrl: null });
+    expect(h.huntSelects).toHaveLength(2);
+    expect(h.huntSelects[0]).toContain("cover_image_url");
+    expect(h.huntSelects[1]).not.toContain("cover_image_url");
   });
 
   it("still resumes the creator's own unlisted hunt", async () => {

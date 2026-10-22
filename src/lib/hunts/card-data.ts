@@ -37,7 +37,7 @@ export interface HuntListRow {
   center_latitude?: number | null;
   center_longitude?: number | null;
   created_at?: string | null;
-  /** PostgREST embedded count: `finds(count)`. */
+  /** PostgREST embedded count: `finds(count)`, filtered with `.is("finds.deleted_at", null)` so it counts live stops only. */
   finds?: Array<{ count: number }> | null;
 }
 

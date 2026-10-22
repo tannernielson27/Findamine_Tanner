@@ -49,6 +49,13 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
   useHeatHaptics(navigating ? hotCold?.zone : null);
 
   const errorBanner = error ? <ErrorBanner message={error} onDismiss={() => setError(null)} /> : null;
+  // In a step sheet the banners go inside it, so they never cover the sheet's top.
+  const sheetBanners = (
+    <>
+      {!online && <OfflineBanner />}
+      {errorBanner}
+    </>
+  );
   const hudHint =
     step === "clue" || navigating ? { available: hints.canRequestClueHint, onRequest: hints.requestClueHint } : null;
 
@@ -57,12 +64,22 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
       <PlayMap location={currentFind?.locations ?? null} userPos={userPos} zone={navigating ? hotCold?.zone ?? null : null} />
 
       <div className="absolute inset-x-4 top-[calc(12px+env(safe-area-inset-top))] z-10 flex flex-col gap-2.5">
-        <PlayHud stopNumber={stopNumber} totalStops={finds.length} completedStops={completedFinds.size} hint={hudHint} />
+        <PlayHud
+          stopNumber={stopNumber}
+          totalStops={finds.length}
+          completedStops={completedFinds.size}
+          hint={hudHint}
+          more={{
+            onPrevious: currentIndex > 0 ? flow.handlePreviousFind : null,
+            reportTargetId: currentFind?.id || String(huntId),
+            resetKey: `${currentFind?.id ?? currentIndex}:${step}`,
+          }}
+        />
         {navigating && granted && gpsOk && (
           <ProximityPanel hotCold={hotCold} gpsStatus={gpsStatus} userPos={userPos} target={target} />
         )}
         {!sheetOpen && !resultsOpen && errorBanner}
-        {!online && !resultsOpen && <OfflineBanner />}
+        {!online && !sheetOpen && !resultsOpen && <OfflineBanner />}
         {navigating && granted && (
           <GpsBanners gpsStatus={gpsStatus} accuracy={userPos?.accuracy ?? null} onRetry={() => flow.setGpsStatus("waiting")} />
         )}
@@ -76,7 +93,7 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
       {(step === "clue" || navigating) && <ThumbZone find={currentFind} flow={flow} />}
 
       {step === "prime" && currentFind?.primers && (
-        <PrimeStep stopNumber={stopNumber} primer={currentFind.primers} onReady={flow.handlePrimeViewed} errorSlot={errorBanner} />
+        <PrimeStep stopNumber={stopNumber} primer={currentFind.primers} onReady={flow.handlePrimeViewed} errorSlot={sheetBanners} />
       )}
       {step === "reading_check" && currentFind?.reading_check && (
         <ReadingCheckStep
@@ -84,11 +101,11 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
           readingCheck={currentFind.reading_check}
           onPassed={flow.handleReadingCheckPassed}
           onError={setError}
-          errorSlot={errorBanner}
+          errorSlot={sheetBanners}
         />
       )}
       {step === "challenge" && (
-        <ChallengeSheet huntId={huntId} stopNumber={stopNumber} find={currentFind} flow={flow} errorSlot={errorBanner} />
+        <ChallengeSheet huntId={huntId} stopNumber={stopNumber} find={currentFind} flow={flow} errorSlot={sheetBanners} />
       )}
 
       {resultsOpen && (
