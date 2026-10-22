@@ -3,14 +3,13 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { ShieldCheck } from "lucide-react";
-import { IconLink } from "@/components/ui/icon-button";
 import { HomeGreeting } from "@/components/home/home-greeting";
 import { cn } from "@/lib/utils/cn";
 import NotificationBell from "./notification-bell";
 import SurveyNudge from "./survey-nudge";
-import { activeTabHref, shellChromeFor, showPrivacyShield, tabsFor, type NavUser } from "./nav-links";
+import { activeTabHref, shellChromeFor, tabsFor, type NavUser } from "./nav-links";
 import { TAB_ICONS } from "./tab-icons";
+import { tabAnchor } from "@/lib/onboarding/steps";
 
 export interface ShellUser extends NavUser {
   id: string;
@@ -40,21 +39,13 @@ function Logo({ href }: { href: string }) {
 
 /**
  * Top-right controls on every tab screen: survey nudge (only when a survey is
- * due), the Privacy shield (study rule below), and the notification bell.
+ * due) and the notification bell. Privacy settings live in the Profile tab
+ * (see showPrivacyProfileRow).
  */
-function HeaderActions({ user }: { user: ShellUser }) {
+function HeaderActions() {
   return (
     <div className="flex shrink-0 items-center gap-2">
       <SurveyNudge />
-      {/* privacy_friction manipulation: the shield follows showPrivacyNavLink
-          exactly (hidden only for explicit high friction; those participants
-          reach privacy via Profile → Settings → More → Privacy).
-          Needs Dr. Keith's sign-off before a cohort sees this placement. */}
-      {showPrivacyShield(user) && (
-        <IconLink href="/settings/privacy" label="Privacy" title="Privacy" data-shell="privacy-shield">
-          <ShieldCheck className="h-[22px] w-[22px]" aria-hidden="true" />
-        </IconLink>
-      )}
       <NotificationBell />
     </div>
   );
@@ -74,6 +65,7 @@ function DesktopNav({ user, pathname }: { user: ShellUser; pathname: string }) {
             key={tab.href}
             href={tab.href}
             aria-current={current ? "page" : undefined}
+            data-tour-anchor={tabAnchor(tab.icon)}
             className={cn(
               "flex h-12 items-center gap-2 whitespace-nowrap rounded-full px-4 text-base transition-colors duration-150",
               current ? "bg-brand-light font-bold text-brand-dark" : "font-semibold text-themed-muted hover:bg-themed-text/5 hover:text-themed-text"
@@ -135,7 +127,7 @@ export default function TopBar({ user }: TopBarProps) {
               <Logo href="/dashboard" />
               <DesktopNav user={user} pathname={pathname} />
             </div>
-            <HeaderActions user={user} />
+            <HeaderActions />
           </div>
         </header>
         <div className="mx-auto hidden max-w-6xl px-4 pb-5 pt-8 lg:block">
@@ -152,7 +144,7 @@ export default function TopBar({ user }: TopBarProps) {
           <Logo href="/dashboard" />
           <DesktopNav user={user} pathname={pathname} />
         </div>
-        <HeaderActions user={user} />
+        <HeaderActions />
       </div>
     </header>
   );

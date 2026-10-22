@@ -6,7 +6,7 @@ import {
   profileLinksFor,
   shellChromeFor,
   showPrivacyNavLink,
-  showPrivacyShield,
+  showPrivacyProfileRow,
   tabsFor,
   type PrivacyFriction,
 } from "@/components/layout/nav-links";
@@ -201,7 +201,7 @@ describe("shellChromeFor", () => {
   });
 });
 
-describe("showPrivacyShield (privacy_friction manipulation in the new top bar)", () => {
+describe("showPrivacyProfileRow (privacy_friction manipulation in the Profile tab)", () => {
   const withdrawn = { [WITHDRAWN_META_KEY]: "2026-10-01T00:00:00Z", privacy_friction: "high" };
   const cases: Array<[PrivacyFriction | string, Record<string, unknown> | null | undefined]> = [
     ["high", undefined],
@@ -219,44 +219,59 @@ describe("showPrivacyShield (privacy_friction manipulation in the new top bar)",
 
   it("follows showPrivacyNavLink exactly, for every friction/metadata combination", () => {
     for (const [friction, metadata] of cases) {
-      expect(showPrivacyShield({ privacy_friction: friction as PrivacyFriction, metadata })).toBe(
+      expect(showPrivacyProfileRow({ privacy_friction: friction as PrivacyFriction, metadata })).toBe(
         showPrivacyNavLink(friction, metadata)
       );
     }
   });
 
-  it("hides the shield only for explicit high friction", () => {
-    expect(showPrivacyShield({ privacy_friction: "high" })).toBe(false);
-    expect(showPrivacyShield({ privacy_friction: "low" })).toBe(true);
-    expect(showPrivacyShield({ privacy_friction: null })).toBe(true);
-    expect(showPrivacyShield({})).toBe(true);
+  it("hides the row only for explicit high friction", () => {
+    expect(showPrivacyProfileRow({ privacy_friction: "high" })).toBe(false);
+    expect(showPrivacyProfileRow({ privacy_friction: "low" })).toBe(true);
+    expect(showPrivacyProfileRow({ privacy_friction: null })).toBe(true);
+    expect(showPrivacyProfileRow({})).toBe(true);
   });
 
-  it("shows the shield to a withdrawn participant even with high on record", () => {
-    expect(showPrivacyShield({ privacy_friction: "high", metadata: withdrawn })).toBe(true);
+  it("shows the row to a withdrawn participant even with high on record", () => {
+    expect(showPrivacyProfileRow({ privacy_friction: "high", metadata: withdrawn })).toBe(true);
   });
 
   it("matches whether the old navbar put Privacy in the main nav, for every role", () => {
     for (const role of ALL_ROLES) {
       for (const friction of ["low", "high", null, undefined] as const) {
-        expect(showPrivacyShield({ privacy_friction: friction })).toBe(hrefs(role, friction).includes("/settings/privacy"));
+        expect(showPrivacyProfileRow({ privacy_friction: friction })).toBe(hrefs(role, friction).includes("/settings/privacy"));
       }
     }
   });
 
   it("is off for a signed-out visitor", () => {
-    expect(showPrivacyShield(null)).toBe(false);
+    expect(showPrivacyProfileRow(null)).toBe(false);
   });
 });
 
 describe("profileLinksFor (Profile tab settings list)", () => {
   const links = (role: string) => profileLinksFor(role).map((l) => l.href);
 
-  it("never adds a direct Privacy row: high friction keeps Settings → More → Privacy", () => {
+  it("lists Privacy settings for everyone except high friction, who keep Settings → More", () => {
+    const privacyFor = (role: string, user: Parameters<typeof profileLinksFor>[1]) =>
+      profileLinksFor(role, user).map((l) => l.href).includes("/settings/privacy");
     for (const role of [...ALL_ROLES, "mystery"]) {
-      expect(links(role)).not.toContain("/settings/privacy");
       expect(links(role)).toContain("/settings");
+      expect(privacyFor(role, { privacy_friction: "low" })).toBe(true);
+      expect(privacyFor(role, { privacy_friction: null })).toBe(true);
+      expect(privacyFor(role, {})).toBe(true);
+      expect(privacyFor(role, { privacy_friction: "high" })).toBe(false);
+      expect(privacyFor(role, { privacy_friction: "high", metadata: { [WITHDRAWN_META_KEY]: "2026-10-01T00:00:00Z" } })).toBe(true);
     }
+  });
+
+  it("puts Privacy settings right after Settings", () => {
+    const hrefList = profileLinksFor("adult", { privacy_friction: "low" }).map((l) => l.href);
+    expect(hrefList.indexOf("/settings/privacy")).toBe(hrefList.indexOf("/settings") + 1);
+  });
+
+  it("omits the Privacy row when no user context is given", () => {
+    expect(links("adult")).not.toContain("/settings/privacy");
   });
 
   it("keeps every old hamburger destination reachable", () => {

@@ -113,8 +113,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <AgeBandProvider initialBand={ageBand}>
-      {/* Top bar: logo/greeting, bell, and the Privacy shield, which follows
-          the same privacy_friction rule the old navbar link did. */}
+      {/* Top bar: logo/greeting, survey nudge and bell. Privacy settings
+          live in the Profile tab (showPrivacyProfileRow). */}
       <TopBar user={profile ? { ...profile, privacy_friction: privacyFriction } : null} />
       {profile && <Onboarding role={profile.role} />}
       {/* Research-consent gate: adults only. Children, teens, under-18s by date

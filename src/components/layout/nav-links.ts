@@ -175,19 +175,7 @@ export function shellChromeFor(pathname: string): ShellChrome {
   return { topBar: true, tabBar: true, miniBar: pathname !== "/dashboard" };
 }
 
-/**
- * Whether the top bar shows the Privacy shield (one tap to /settings/privacy
- * from every tab screen). This replaces the old "Privacy" main-nav link and is
- * driven by exactly the same rule, `showPrivacyNavLink`: hidden only for an
- * explicit high-friction assignment (who keep reaching privacy via
- * Profile → Settings → More → Privacy), shown for low / unassigned /
- * withdrawn / non-participants.
- *
- * STUDY NOTE: moving the low-friction entry point from a text link in the nav
- * to a shield icon in the top bar changes what "low friction" looks like. It
- * needs Dr. Keith's sign-off before any cohort uses it (OVERHAUL_PLAN.md §5).
- */
-export type ProfileLinkIcon = "settings" | "social" | "teams" | "rosters" | "admin" | "policy" | "terms";
+export type ProfileLinkIcon = "settings" | "privacy" | "social" | "teams" | "rosters" | "admin" | "policy" | "terms";
 
 export interface ProfileLink {
   href: string;
@@ -197,17 +185,37 @@ export interface ProfileLink {
 }
 
 /**
- * The Profile tab's settings list: everything that used to sit in the
- * hamburger menu or the old Home shortcut rows. Pure.
+ * Whether the Profile tab lists "Privacy settings" directly. This is the
+ * low-friction entry point (it replaced the top-bar shield, which replaced the
+ * old "Privacy" main-nav link) and follows exactly the same rule,
+ * `showPrivacyNavLink`: hidden only for an explicit high-friction assignment,
+ * who keep reaching privacy via Profile → Settings → More → Privacy settings.
  *
- * Deliberately has NO direct /settings/privacy row: for high-friction
- * participants privacy must stay at Settings → More → Privacy, and a Profile
- * row would make it two taps from anywhere. Low-friction users already get
- * the one-tap shield in the top bar.
+ * STUDY NOTE: the low-friction path is now two taps (Profile → Privacy
+ * settings) instead of one from every screen. That changes what "low
+ * friction" looks like and needs Dr. Keith's sign-off before a cohort with
+ * friction linked uses it.
  */
-export function profileLinksFor(role: string): ProfileLink[] {
+export function showPrivacyProfileRow(user: Pick<NavUser, "privacy_friction" | "metadata"> | null | undefined): boolean {
+  if (!user) return false;
+  return showPrivacyNavLink(user.privacy_friction, user.metadata);
+}
+
+/**
+ * The Profile tab's settings list: everything that used to sit in the
+ * hamburger menu or the old Home shortcut rows, plus the Privacy settings row
+ * for everyone except high-friction participants (`showPrivacyProfileRow`).
+ * Pure.
+ */
+export function profileLinksFor(
+  role: string,
+  user?: Pick<NavUser, "privacy_friction" | "metadata"> | null
+): ProfileLink[] {
   return [
     { href: "/settings", label: "Settings", description: "Name, email, password", icon: "settings" },
+    ...(showPrivacyProfileRow(user)
+      ? [{ href: "/settings/privacy", label: "Privacy settings", description: "Who can see parts of your profile", icon: "privacy" as const }]
+      : []),
     { href: "/dashboard/social", label: "Social & friends", description: "Friends, crew and kudos", icon: "social" },
     { href: "/dashboard/teams", label: "Teams", description: "Your hunt teams", icon: "teams" },
     ...(ROSTER_ROLES.includes(role)
@@ -219,9 +227,4 @@ export function profileLinksFor(role: string): ProfileLink[] {
     { href: "/privacy", label: "Privacy Policy", icon: "policy" },
     { href: "/terms", label: "Terms of Use", icon: "terms" },
   ];
-}
-
-export function showPrivacyShield(user: Pick<NavUser, "privacy_friction" | "metadata"> | null | undefined): boolean {
-  if (!user) return false;
-  return showPrivacyNavLink(user.privacy_friction, user.metadata);
 }

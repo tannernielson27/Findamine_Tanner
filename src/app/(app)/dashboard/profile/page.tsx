@@ -8,6 +8,7 @@ import { StatRow } from "@/components/ui/progress";
 import { initialsOf } from "@/components/home/home-data";
 import { BadgeShelf } from "./badge-shelf";
 import { SettingsList } from "./settings-list";
+import type { PrivacyFriction } from "@/components/layout/nav-links";
 
 interface ProfileData {
   id: string;
@@ -17,7 +18,13 @@ interface ProfileData {
   avatar_url: string | null;
   created_at: string;
   profile_visibility: Record<string, string>;
-  metadata?: { real_name?: string | null };
+  metadata?: { real_name?: string | null; privacy_friction?: string | null } & Record<string, unknown>;
+}
+
+/** The assigned friction level, if it is one the nav rules know. */
+function frictionOf(metadata: ProfileData["metadata"]): PrivacyFriction {
+  const f = metadata?.privacy_friction;
+  return f === "low" || f === "high" ? f : null;
 }
 
 /** The fields of GET /api/v1/gamification/me this page shows. */
@@ -118,9 +125,9 @@ export default function ProfilePage() {
 
       <BadgeShelf />
 
-      {/* Real name (optional). Who can see it is set in privacy settings,
-          which stay at Settings → More → Privacy (no direct link here: see
-          profileLinksFor in components/layout/nav-links.ts). */}
+      {/* Real name (optional). Who can see it is set in privacy settings
+          (the Privacy settings row below, or Settings → More for high
+          friction: see showPrivacyProfileRow in components/layout/nav-links.ts). */}
       <section className="mt-7 rounded-card border border-themed-border bg-surface p-4">
         <label htmlFor="realName" className="mb-1 block font-[family-name:var(--font-display)] text-lg font-semibold text-themed-text">
           Real name <span className="font-[family-name:var(--font-body)] text-sm font-normal text-themed-muted">(optional)</span>
@@ -157,7 +164,10 @@ export default function ProfilePage() {
         </ul>
       </nav>
 
-      <SettingsList role={profile.role} />
+      <SettingsList
+        role={profile.role}
+        user={{ privacy_friction: frictionOf(profile.metadata), metadata: profile.metadata ?? null }}
+      />
     </main>
   );
 }

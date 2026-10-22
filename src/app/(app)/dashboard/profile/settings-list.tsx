@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronRight, FileText, Heart, LogOut, ScrollText, Settings, ShieldCheck, Users, UsersRound, type LucideIcon } from "lucide-react";
-import { profileLinksFor, type ProfileLinkIcon } from "@/components/layout/nav-links";
+import { ChevronRight, FileText, Heart, Lock, LogOut, ScrollText, Settings, ShieldCheck, Users, UsersRound, type LucideIcon } from "lucide-react";
+import { profileLinksFor, type NavUser, type ProfileLinkIcon } from "@/components/layout/nav-links";
 import { useSignOut } from "@/components/layout/sign-out";
 import { cn } from "@/lib/utils/cn";
 
 const ICONS: Record<ProfileLinkIcon, LucideIcon> = {
   settings: Settings,
+  privacy: Lock,
   social: Heart,
   teams: UsersRound,
   rosters: Users,
@@ -21,11 +22,12 @@ const ROW = "flex min-h-14 w-full items-center gap-3.5 px-4 py-3 text-left text-
 /**
  * Profile's settings list: what used to be in the hamburger menu (Settings,
  * Rosters, Admin, legal links, sign out) plus Social and Teams from the old
- * Home shortcuts. No direct Privacy row: see profileLinksFor.
+ * Home shortcuts, and Privacy settings (hidden for high friction: see
+ * showPrivacyProfileRow).
  */
-export function SettingsList({ role }: { role: string }) {
+export function SettingsList({ role, user }: { role: string; user?: Pick<NavUser, "privacy_friction" | "metadata"> | null }) {
   const { signOut, signingOut, error } = useSignOut();
-  const links = profileLinksFor(role);
+  const links = profileLinksFor(role, user);
 
   return (
     <nav aria-label="Profile and settings" className="mt-7">
