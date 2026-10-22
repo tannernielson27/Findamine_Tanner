@@ -2,7 +2,8 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient, createSupabaseServiceClient } from "@/lib/supabase/server";
 import { safeNextPath } from "@/lib/services/auth-emails";
-import Navbar from "@/components/layout/navbar";
+import TopBar from "@/components/layout/top-bar";
+import AppChrome from "@/components/layout/app-chrome";
 import Onboarding from "@/components/layout/onboarding";
 import ConsentGate from "@/components/layout/consent-gate";
 import PrivacyFirstChoiceGate from "@/components/layout/privacy-first-choice-gate";
@@ -112,14 +113,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <AgeBandProvider initialBand={ageBand}>
-      <Navbar user={profile ? { ...profile, privacy_friction: privacyFriction } : null} />
+      {/* Top bar: logo/greeting, bell, and the Privacy shield, which follows
+          the same privacy_friction rule the old navbar link did. */}
+      <TopBar user={profile ? { ...profile, privacy_friction: privacyFriction } : null} />
       {profile && <Onboarding role={profile.role} />}
       {/* Research-consent gate: adults only. Children, teens, under-18s by date
           of birth, and staff never see it (researchEligibility). */}
       {profile && researchEligible && <ConsentGate needsDateOfBirth={needsDateOfBirth} />}
       {/* Neutral-default participants must make an explicit first privacy choice. */}
       {profile && researchEligible && <PrivacyFirstChoiceGate />}
-      {children}
+      {/* Tab bar, active-hunt mini-bar, and the bottom padding they need. */}
+      <AppChrome user={profile ? { role: profile.role } : null}>{children}</AppChrome>
     </AgeBandProvider>
   );
 }

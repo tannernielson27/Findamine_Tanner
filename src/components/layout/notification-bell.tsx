@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { popover, SPRING_SNAPPY } from "@/lib/motion";
+import { Bell } from "lucide-react";
 import {
   PRIVACY_CHECKIN_TYPE,
   CHECKIN_TARGET_PATH,
@@ -184,22 +185,20 @@ export default function NotificationBell() {
             void fetchNotifications();
           }
         }}
-        className="relative flex h-10 w-10 items-center justify-center rounded-lg text-themed-muted hover:bg-themed-bg hover:text-themed-text"
+        className="relative flex h-12 w-12 items-center justify-center rounded-full border border-themed-border bg-surface text-themed-text transition-colors duration-150 hover:bg-themed-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
         aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
         aria-expanded={open}
         aria-haspopup="true"
       >
         {/* Bell icon */}
-        <svg className="h-5 w-5" aria-hidden="true" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
-        </svg>
+        <Bell className="h-[22px] w-[22px]" strokeWidth={2} aria-hidden="true" />
         {unreadCount > 0 && (
           <motion.span
             key={badge.bumps}
             initial={badge.bumps > 0 ? { scale: 0.6 } : false}
             animate={{ scale: 1 }}
             transition={SPRING_SNAPPY}
-            className="absolute top-1 right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-error px-1 text-[10px] font-bold leading-none text-white"
+            className="absolute -top-0.5 -right-0.5 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-brand px-1 text-xs font-bold leading-none text-white tabular-nums"
           >
             {unreadCount > 9 ? "9+" : unreadCount}
           </motion.span>

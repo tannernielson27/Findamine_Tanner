@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient, createSupabaseServiceClient } from "@/lib/supabase/server";
 import Link from "next/link";
-import { Map, PlusCircle } from "lucide-react";
+import { Map, Plus, PlusCircle } from "lucide-react";
+import { ButtonLink } from "@/components/ui/button";
 
 export default async function MyHuntsPage() {
   const supabase = await createSupabaseServerClient();
@@ -31,27 +32,25 @@ export default async function MyHuntsPage() {
           <Map className="w-6 h-6 text-brand" />
           My Hunts
         </h1>
-        <Link
-          href="/dashboard/hunts/new"
-          className="inline-flex items-center gap-1.5 rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark hover:-translate-y-0.5 transition"
-        >
-          <PlusCircle className="w-4 h-4" />
-          Create Hunt
-        </Link>
+        {/* "Create" is not a tab (tabs are places): it lives here, in My Hunts. */}
+        <ButtonLink href="/dashboard/hunts/new" aria-label="Create a hunt" className="rounded-full pl-4">
+          <Plus className="h-5 w-5" strokeWidth={2.4} aria-hidden="true" />
+          Create
+        </ButtonLink>
       </div>
 
       {!hunts || hunts.length === 0 ? (
         <div className="text-center py-16">
-          <div className="text-4xl mb-3">🗺️</div>
+          <Map className="mx-auto mb-3 h-10 w-10 text-themed-muted" aria-hidden="true" />
           <p className="font-[family-name:var(--font-display)] font-semibold text-gray-500 mb-2">No hunts yet</p>
           <p className="font-[family-name:var(--font-handwritten)] text-lg text-gray-400 mb-4">
             Create your first adventure!
           </p>
           <Link
             href="/dashboard/hunts/new"
-            className="inline-flex items-center gap-1.5 rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white"
+            className="inline-flex min-h-12 items-center gap-1.5 rounded-full border border-themed-border bg-surface px-5 text-base font-semibold text-themed-text hover:bg-themed-bg"
           >
-            <PlusCircle className="w-4 h-4" />
+            <PlusCircle className="h-5 w-5" aria-hidden="true" />
             Create Hunt
           </Link>
         </div>
