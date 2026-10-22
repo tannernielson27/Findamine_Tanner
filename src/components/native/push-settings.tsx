@@ -73,7 +73,7 @@ export function PushSettings({ role }: { role: string }) {
       {state === "denied" ? (
         <PermissionDeniedNotice kind="notifications" />
       ) : priming ? (
-        <PermissionPrimer kind="notifications" onContinue={() => void turnOn()} onDismiss={() => setPriming(false)} />
+        <PermissionPrimer kind="notifications" onContinue={() => void turnOn()} />
       ) : state === "on" ? (
         <button type="button" onClick={() => void turnOff()} disabled={busy} className={BUTTON}>
           <BellOff className="h-4 w-4" aria-hidden="true" />

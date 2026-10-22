@@ -1,76 +1,57 @@
 "use client";
 
+import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
+import { cn } from "@/lib/utils/cn";
+
 interface HotColdMeterProps {
-  zone: string;
-  color: string;
-  label: string;
-  emoji: string;
-  distance: string;
+  /** 1 (icy) … 5 (burning). */
+  level: number;
+  /** Marker position, % from the cold end. */
+  markerPercent: number;
 }
 
-const ZONE_POSITIONS: Record<string, number> = {
-  icy: 10,
-  cold: 30,
-  warm: 50,
-  hot: 70,
-  burning: 90,
-};
+const STEPS = [
+  "bg-proximity-1 rounded-l-md rounded-r-[2px]",
+  "bg-proximity-2 rounded-[2px]",
+  "bg-proximity-3 rounded-[2px]",
+  "bg-proximity-4 rounded-[2px]",
+  "bg-proximity-5 rounded-r-md rounded-l-[2px]",
+];
 
 /**
- * Darker text tones on the same cold→hot scale as the zone `color`, so the
- * label reads at ≥4.5:1 on the white meter card in direct sunlight. The raw
- * zone color still drives the indicator border.
+ * One glanceable 5-step cold → hot scale with a ringed marker on the current
+ * step. Steps differ in lightness as well as hue (proximity tokens), so the
+ * scale still reads for colour-blind players. The distance card around it
+ * carries the words; this is decoration for sighted players (aria-hidden).
  */
-const ZONE_TEXT: Record<string, string> = {
-  icy: "#1E40AF",
-  cold: "#1D4ED8",
-  warm: "#15803D",
-  hot: "#C2410C",
-  burning: "#B91C1C",
-};
-
-export default function HotColdMeter({ zone, color, label, emoji, distance }: HotColdMeterProps) {
-  const position = ZONE_POSITIONS[zone] || 50;
+export default function HotColdMeter({ level, markerPercent }: HotColdMeterProps) {
+  const reducedMotion = useReducedMotion();
   // "Burning" is the climax — you're right on top of it. Give it a heartbeat.
-  const isBurning = zone === "burning";
-  const textColor = ZONE_TEXT[zone] ?? "var(--color-text, #1C2430)";
+  const isBurning = level === 5;
 
   return (
-    <div
-      className={`flex flex-col items-center gap-2 rounded-xl border border-themed-border bg-surface/95 backdrop-blur p-4 transition-shadow duration-500 ${
-        isBurning ? "shadow-[0_0_28px_-4px_rgba(239,68,68,0.7)] ring-2 ring-red-400/60" : "shadow-[var(--shadow-card)]"
-      }`}
-      role="meter"
-      aria-valuenow={position}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-label={`Hot cold meter: ${label}, ${distance}`}
-    >
-      <div className={`text-3xl ${isBurning ? "fm-burning-pulse" : ""}`} aria-hidden="true">{emoji}</div>
-
-      {/* Meter bar */}
-      <div className="relative w-8 h-48 rounded-full overflow-hidden bg-gradient-to-t from-blue-500 via-green-400 via-orange-400 to-red-500" aria-hidden="true">
-        {/* Indicator: a full-height layer slid up by `position`% of the track,
-            so the move is a compositor transform rather than a layout change. */}
-        <div
-          className="absolute inset-0 transition-transform duration-700 ease-out"
-          style={{ transform: `translateY(-${position}%)` }}
-        >
-          <div
-            className="absolute bottom-0 left-0 right-0 h-3 rounded-full bg-white shadow-md border-2"
-            style={{ borderColor: color }}
-          />
-        </div>
+    <div className="relative pt-1.5" aria-hidden="true">
+      <div className="grid grid-cols-5 gap-1">
+        {STEPS.map((cls) => (
+          <span key={cls} className={cn("h-3", cls)} />
+        ))}
       </div>
-
-      <div className="text-center">
-        <p
-          className={`font-[family-name:var(--font-display)] text-base font-semibold ${isBurning ? "fm-burning-pulse" : ""}`}
-          style={{ color: textColor }}
-        >
-          {label}
-        </p>
-        <p className="text-sm font-semibold tabular-nums text-themed-muted">{distance}</p>
+      {/* The marker slides with a compositor transform: a full-width layer
+          translated by the position, with the dot pinned to its left edge. */}
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 transition-transform duration-700 ease-out motion-reduce:transition-none"
+        style={{ transform: `translateX(${markerPercent}%)` }}
+      >
+        <span
+          className={cn(
+            "absolute -ml-3 block h-6 w-6 rounded-full border-4 border-ink bg-white",
+            isBurning && !reducedMotion && "fm-burning-pulse"
+          )}
+        />
+      </div>
+      <div className="mt-2 flex justify-between text-[13px] font-semibold text-ink">
+        <span>Cold</span>
+        <span>Hot</span>
       </div>
     </div>
   );

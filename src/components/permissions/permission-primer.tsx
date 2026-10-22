@@ -16,6 +16,7 @@ import {
   type PermissionKind,
 } from "@/lib/permissions/primer";
 import { queryPlatformPermission } from "@/lib/native/permissions";
+import { Button } from "@/components/ui/button";
 
 const ICONS: Record<PermissionKind, LucideIcon> = {
   location: MapPin,
@@ -23,11 +24,6 @@ const ICONS: Record<PermissionKind, LucideIcon> = {
   camera: Camera,
   notifications: Bell,
 };
-
-const PRIMARY_BUTTON =
-  "flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand px-5 text-base font-semibold text-white transition-colors hover:bg-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 disabled:opacity-50";
-const SECONDARY_BUTTON =
-  "flex min-h-12 w-full items-center justify-center gap-2 rounded-lg border border-themed-border bg-surface px-4 text-base font-semibold text-themed-text transition-colors hover:bg-themed-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2";
 
 const noopSubscribe = () => () => {};
 const serverPlatform = (): AppPlatform => "web";
@@ -71,8 +67,6 @@ interface PermissionPrimerProps {
    * permission is already granted.
    */
   onContinue: () => void;
-  /** The player chose "Not now". */
-  onDismiss: () => void;
   /** Fallback actions shown if the permission is already denied. */
   deniedActions?: ReactNode;
 }
@@ -81,11 +75,17 @@ type PrimerView = "checking" | "show" | "denied";
 
 /**
  * Explains why Findamine needs a permission before the system prompt appears
- * (App Store guideline 5.1.1 / HIG). Skips itself when the permission is
- * already granted, and goes straight to the "turn it on in Settings" notice
- * when it's already denied, since the OS won't ask again.
+ * (App Store guideline 5.1.1 / HIG). One action only: Continue always leads
+ * to the real OS prompt. A "Not now" that skips the prompt is what App Review
+ * rejects under 5.1.1(iv) ("the user should always proceed to the permission
+ * request after the message"); the player says no in the OS prompt, and the
+ * denied notice then offers the fallbacks.
+ *
+ * Skips itself when the permission is already granted, and goes straight to
+ * the "turn it on in Settings" notice when it's already denied, since the OS
+ * won't ask again.
  */
-export function PermissionPrimer({ kind, onContinue, onDismiss, deniedActions }: PermissionPrimerProps) {
+export function PermissionPrimer({ kind, onContinue, deniedActions }: PermissionPrimerProps) {
   const [view, setView] = useState<PrimerView>("checking");
   const headingRef = useRef<HTMLHeadingElement>(null);
   const onContinueRef = useRef(onContinue);
@@ -135,30 +135,25 @@ export function PermissionPrimer({ kind, onContinue, onDismiss, deniedActions }:
       animate="visible"
       aria-labelledby={titleId}
       aria-describedby={reasonId}
-      className="rounded-xl border border-themed-border bg-surface p-5 mb-4 text-center shadow-sm"
+      className="mb-4 rounded-[20px] border border-themed-border bg-surface p-5 text-center shadow-raised"
     >
-      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-link/10">
+      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-sky-tint">
         <Icon className="h-6 w-6 text-link" aria-hidden="true" />
       </div>
       <h3
         id={titleId}
         ref={headingRef}
         tabIndex={-1}
-        className="font-[family-name:var(--font-display)] text-lg font-semibold text-themed-text mb-2 focus:outline-none"
+        className="mb-2 font-[family-name:var(--font-display)] text-xl font-semibold text-themed-text focus:outline-none"
       >
         {copy.title}
       </h3>
-      <p id={reasonId} className="text-base text-themed-muted mb-4">
+      <p id={reasonId} className="mb-4 text-base text-themed-text">
         {copy.reason}
       </p>
-      <div className="flex flex-col gap-2">
-        <button type="button" onClick={handleContinue} className={PRIMARY_BUTTON}>
-          {copy.continueLabel}
-        </button>
-        <button type="button" onClick={onDismiss} className={SECONDARY_BUTTON}>
-          {copy.dismissLabel}
-        </button>
-      </div>
+      <Button size="lg" block onClick={handleContinue}>
+        {copy.continueLabel}
+      </Button>
     </motion.section>
   );
 }

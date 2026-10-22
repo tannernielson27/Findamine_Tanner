@@ -135,11 +135,13 @@ describe("primer memory", () => {
 });
 
 describe("primer copy", () => {
-  it("gives every permission a plain reason and both choices", () => {
+  it("gives every permission a plain reason and a single Continue action", () => {
     for (const copy of Object.values(PRIMER_COPY)) {
       expect(copy.reason.startsWith("Findamine uses your")).toBe(true);
       expect(copy.continueLabel).toBe("Continue");
-      expect(copy.dismissLabel).toBe("Not now");
+      // App Review 5.1.1(iv): nothing in the primer may skip the system prompt.
+      expect(Object.keys(copy)).not.toContain("dismissLabel");
+      expect(JSON.stringify(copy)).not.toMatch(/not now/i);
     }
   });
 
@@ -151,7 +153,7 @@ describe("primer copy", () => {
 describe("components", () => {
   it("renders nothing while checking, so the primer never flashes for granted users", () => {
     const html = renderToStaticMarkup(
-      createElement(PermissionPrimer, { kind: "location", onContinue: () => {}, onDismiss: () => {} })
+      createElement(PermissionPrimer, { kind: "location", onContinue: () => {} })
     );
     expect(html).toBe("");
   });
