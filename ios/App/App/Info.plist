@@ -70,7 +70,7 @@
 	     PRIMER_COPY in src/lib/permissions/primer.ts (App Review reads both).
 	     No background location: no NSLocationAlways* keys, no UIBackgroundModes. -->
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Findamine uses your location while you play a hunt to show you on the map and tell you when you've reached a stop. It saves where you checked in at each stop and never tracks you in the background.</string>
+	<string>Findamine uses your location while the app is open to sort hunts by distance, show you on the map and tell you when you've reached a stop. It saves where you checked in at each stop and never tracks you in the background.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Findamine uses your camera when you tap Take Photo, so you can take a geo-selfie at a stop or photograph something for a challenge. Geo-selfies are stored privately with your hunt.</string>
 	<key>NSMicrophoneUsageDescription</key>

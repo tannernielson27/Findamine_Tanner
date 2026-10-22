@@ -4,7 +4,7 @@ These are in `ios/App/App/Info.plist` (Capacitor iOS project; `src/__tests__/nat
 
 ```xml
 <key>NSLocationWhenInUseUsageDescription</key>
-<string>Findamine uses your location while you play a hunt to show you on the map and tell you when you've reached a stop. It saves where you checked in at each stop and never tracks you in the background.</string>
+<string>Findamine uses your location while the app is open to sort hunts by distance, show you on the map and tell you when you've reached a stop. It saves where you checked in at each stop and never tracks you in the background.</string>
 
 <key>NSCameraUsageDescription</key>
 <string>Findamine uses your camera when you tap Take Photo, so you can take a geo-selfie at a stop or photograph something for a challenge. Geo-selfies are stored privately with your hunt.</string>
@@ -20,7 +20,7 @@ These are in `ios/App/App/Info.plist` (Capacitor iOS project; `src/__tests__/nat
 
 | Key | Where it's used | When the OS prompt can appear |
 | --- | --- | --- |
-| `NSLocationWhenInUseUsageDescription` | `watchLocation` / `getCurrentLocation` in `src/lib/native/geolocation.ts` (`navigator.geolocation` on the web, `@capacitor/geolocation` in the iOS app), called from `src/app/(app)/play/[huntId]/page.tsx` (navigate step) and `src/components/hunts/find-editor.tsx` ("Use my current location" for creators) | Play: only after the player taps Continue on the location primer. Creator: only after tapping "Use my current location". |
+| `NSLocationWhenInUseUsageDescription` | `watchLocation` / `getCurrentLocation` in `src/lib/native/geolocation.ts` (`navigator.geolocation` on the web, `@capacitor/geolocation` in the iOS app), called from `src/lib/play/use-geo-tracking.ts` (Play navigate step) `src/components/explore/explore-controls.tsx` (Explore "Near me" chip) and `src/components/hunts/find-editor.tsx` ("Use my current location" for creators) | Play and Explore "Near me": only after the player taps Continue on the location primer. Explore also reads the position silently if permission was already granted. Creator: only after tapping "Use my current location". |
 | `NSCameraUsageDescription` | `PhotoPicker` (`src/components/native/photo-picker.tsx`) on the play page's Geo-Selfie step and in the photo challenge (`src/components/play/challenge-input.tsx`): `<input type="file" accept="image/*" capture="environment">` on the web, `@capacitor/camera` `takePhoto` in the iOS app | iOS app: only after the player taps Take Photo / "Tap to take a photo" and then Continue on the camera primer. Web: when the browser's picker opens the camera. |
 | `NSMicrophoneUsageDescription` | `navigator.mediaDevices.getUserMedia({ audio: true })` in the audio-response challenge (`challenge-input.tsx`) | Only after the player taps Start Recording and then Continue on the microphone primer. |
 | `NSPhotoLibraryUsageDescription` | Same file inputs as the camera on the web; "Choose from library" (`@capacitor/camera` `chooseFromGallery`) in the iOS app | iOS's picker can offer the photo library. The modern picker doesn't strictly need this key, but declaring it avoids a crash or rejection if a library-access path is ever hit. |

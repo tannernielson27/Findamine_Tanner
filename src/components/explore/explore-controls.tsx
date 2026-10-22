@@ -142,7 +142,6 @@ export function ExploreControls({ q, filters, audience, view, floating = false, 
             <PermissionPrimer
               kind="location"
               onContinue={locate}
-              onDismiss={() => setNear("idle")}
               deniedActions={
                 <Button variant="secondary" onClick={() => setNear("idle")}>
                   Show hunts without distance

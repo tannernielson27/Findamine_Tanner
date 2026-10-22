@@ -227,6 +227,8 @@ html.fm-native img {
   --fm-tabbar-h: 68px;
   --fm-tabbar-gap: 24px;
   --fm-minibar-h: 64px;
+  /* Sticky top bar: 64px row + iPhone status bar. Explore's map fills the rest. */
+  --fm-header-h: calc(64px + env(safe-area-inset-top));
 }
 
 .fm-tab-safe {

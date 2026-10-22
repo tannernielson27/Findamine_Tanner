@@ -28,9 +28,9 @@ export interface PrimerCopy {
 
 export const PRIMER_COPY: Record<PermissionKind, PrimerCopy> = {
   location: {
-    title: "Use your location for this hunt?",
+    title: "Use your location?",
     reason:
-      "Findamine uses your location only while you're playing a hunt, to show you on the map and tell you when you've reached a stop. We save where you checked in at each stop, and never track you in the background.",
+      "Findamine uses your location only while the app is open: to sort hunts by distance, show you on the map, and tell you when you've reached a stop. We save where you checked in at each stop, and never track you in the background.",
     continueLabel: "Continue",
   },
   microphone: {
