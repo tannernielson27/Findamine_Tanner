@@ -18,17 +18,31 @@ interface DetailCtaBarProps {
  * team), so the bar scrolls to it instead of offering a second Start.
  */
 export function DetailCtaBar({ huntId, status, playable, teamHunt, signedIn }: DetailCtaBarProps) {
+  const loginHref = `/login?next=${encodeURIComponent(`/browse/${huntId}`)}`;
+  const closedNote =
+    status === "draft"
+      ? "This hunt is still a draft. Publish it before anyone can play."
+      : "This hunt has ended and can no longer be played.";
+
   return (
     <div className="fm-glass fixed inset-x-0 bottom-0 z-40 border-t border-themed-border px-4 pt-3.5 pb-[calc(14px+env(safe-area-inset-bottom))]">
-      <div className="mx-auto flex max-w-3xl gap-3">
-        {!playable ? (
-          <p className="flex min-h-14 flex-1 items-center justify-center rounded-2xl bg-divider px-4 text-center text-base text-themed-text">
-            {status === "draft"
-              ? "This hunt is still a draft. Publish it before anyone can play."
-              : "This hunt has ended and can no longer be played."}
+      <div className="mx-auto flex max-w-3xl flex-col gap-3">
+        {!playable && !signedIn ? (
+          // Signed-out visitors always get a way in, even on a closed hunt
+          // (the top bar is hidden on this page).
+          <>
+            <p className="text-center text-base text-themed-muted">{closedNote}</p>
+            <ButtonLink href={loginHref} variant="primary" size="lg" block>
+              <LogIn className="h-5 w-5" aria-hidden="true" />
+              Sign in
+            </ButtonLink>
+          </>
+        ) : !playable ? (
+          <p className="flex min-h-14 items-center justify-center rounded-2xl bg-divider px-4 text-center text-base text-themed-text">
+            {closedNote}
           </p>
         ) : !signedIn ? (
-          <ButtonLink href={`/login?next=${encodeURIComponent(`/browse/${huntId}`)}`} variant="primary" size="lg" block>
+          <ButtonLink href={loginHref} variant="primary" size="lg" block>
             <LogIn className="h-5 w-5" aria-hidden="true" />
             Sign in to play
           </ButtonLink>

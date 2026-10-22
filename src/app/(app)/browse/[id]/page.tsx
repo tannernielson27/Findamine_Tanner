@@ -69,7 +69,14 @@ export default async function HuntDetailPage({ params }: { params: Promise<{ id:
   ].filter(Boolean);
 
   return (
-    <main className="pb-[calc(104px+env(safe-area-inset-bottom))]">
+    // Clears the CTA bar, which is taller when it shows a note and a Sign in button.
+    <main
+      className={
+        !viewer && !isPlayable
+          ? "pb-[calc(156px+env(safe-area-inset-bottom))]"
+          : "pb-[calc(104px+env(safe-area-inset-bottom))]"
+      }
+    >
       <TopoCover
         tone={toneForHunt(hunt.id, hunt.title)}
         imageUrl={hunt.cover_image_url ?? null}
