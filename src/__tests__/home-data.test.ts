@@ -12,7 +12,7 @@ import {
   type KudosLite,
 } from "@/components/home/home-data";
 import { dayPart, greetingFor, timeOfDayLine } from "@/components/home/greeting";
-import { stopLine } from "@/components/layout/mini-bar";
+import { activeHuntStopLabel } from "@/lib/play/active-hunt-labels";
 import type { HuntCardData } from "@/lib/hunts/card-data";
 
 const NOW = Date.parse("2026-10-21T18:00:00Z");
@@ -76,7 +76,7 @@ describe("weekly ring copy", () => {
   });
 });
 
-describe("timeAgo / initialsOf / stopLine", () => {
+describe("timeAgo / initialsOf / activeHuntStopLabel", () => {
   it("formats relative times", () => {
     expect(timeAgo(new Date(NOW - 10_000).toISOString(), NOW)).toBe("just now");
     expect(timeAgo(new Date(NOW - 5 * 60_000).toISOString(), NOW)).toBe("5m ago");
@@ -96,9 +96,9 @@ describe("timeAgo / initialsOf / stopLine", () => {
   });
 
   it("describes the current stop", () => {
-    expect(stopLine({ currentStop: 3, totalStops: 7 })).toBe("Stop 3 of 7");
-    expect(stopLine({ currentStop: 9, totalStops: 7 })).toBe("Stop 7 of 7");
-    expect(stopLine({ currentStop: 2, totalStops: 0 })).toBe("Stop 2");
+    expect(activeHuntStopLabel({ currentStop: 3, totalStops: 7, completedStops: 2 })).toBe("Stop 3 of 7");
+    expect(activeHuntStopLabel({ currentStop: 9, totalStops: 7, completedStops: 6 })).toBe("Stop 7 of 7");
+    expect(activeHuntStopLabel({ currentStop: 2, totalStops: 0, completedStops: 0 })).toBe("Stop 2");
   });
 });
 
