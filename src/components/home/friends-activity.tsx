@@ -41,12 +41,16 @@ export function FriendsActivity({ canKudos }: { canKudos: boolean }) {
     let cancelled = false;
     Promise.all([
       fetch("/api/v1/social/friends").then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status))))),
-      fetch("/api/v1/social/kudos?type=all").then((r) => (r.ok ? r.json() : { kudos: [] })),
+      // Separate queries: each is capped at 50 server-side, so a mixed
+      // ?type=all list could push recent sent kudos out of the window.
+      fetch("/api/v1/social/kudos?type=received").then((r) => (r.ok ? r.json() : { kudos: [] })),
+      fetch("/api/v1/social/kudos?type=sent").then((r) => (r.ok ? r.json() : { kudos: [] })),
     ])
-      .then(([friendsJson, kudosJson]) => {
+      .then(([friendsJson, receivedJson, sentJson]) => {
         if (cancelled) return;
         const friends: FriendRowLite[] = Array.isArray(friendsJson?.friends) ? friendsJson.friends : [];
-        const kudos: KudosLite[] = Array.isArray(kudosJson?.kudos) ? kudosJson.kudos : [];
+        const list = (json: { kudos?: unknown }): KudosLite[] => (Array.isArray(json?.kudos) ? (json.kudos as KudosLite[]) : []);
+        const kudos = [...list(receivedJson), ...list(sentJson)];
         setState({ items: buildFriendActivity(friends, kudos), given: recentlyKudosed(kudos) });
       })
       .catch(() => {

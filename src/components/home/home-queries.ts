@@ -20,8 +20,8 @@ const CARD_COLUMNS =
  * migration is applied the query retries without it, so Home never breaks on
  * a database that doesn't have the column yet.
  */
-export async function loadNearHunts(db: Db, band: AgeBand): Promise<HuntCardData[]> {
-  const audiences = audiencesForBand(band);
+export async function loadNearHunts(db: Db, band: AgeBand, role: string): Promise<HuntCardData[]> {
+  const audiences = audiencesForBand(band, role);
   const run = (columns: string) =>
     db
       .from("hunts")

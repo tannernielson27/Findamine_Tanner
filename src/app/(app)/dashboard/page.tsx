@@ -49,7 +49,7 @@ export default async function HomePage() {
       <ResumeCard />
       <WeeklyCard />
       <Suspense fallback={<NearYouSkeleton />}>
-        <NearYouSection band={band} />
+        <NearYouSection band={band} role={profile.role} />
       </Suspense>
       <FriendsActivity canKudos={profile.role !== "child"} />
       {isCreator && (
@@ -61,9 +61,9 @@ export default async function HomePage() {
   );
 }
 
-async function NearYouSection({ band }: { band: AgeBand }) {
+async function NearYouSection({ band, role }: { band: AgeBand; role: string }) {
   const db = await createSupabaseServiceClient();
-  const hunts = await loadNearHunts(db, band);
+  const hunts = await loadNearHunts(db, band, role);
   return <NearYou hunts={hunts} />;
 }
 

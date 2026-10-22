@@ -10,22 +10,28 @@ import { forgetPushDevice } from "@/lib/native/push";
  * session is still valid (iOS app), end the Supabase session, go to the
  * landing page. Returns the action plus a pending flag for the button.
  */
-export function useSignOut(): { signOut: () => Promise<void>; signingOut: boolean } {
+export function useSignOut(): { signOut: () => Promise<void>; signingOut: boolean; error: string } {
   const router = useRouter();
   const [signingOut, setSigningOut] = useState(false);
+  const [error, setError] = useState("");
 
   const signOut = useCallback(async () => {
     setSigningOut(true);
+    setError("");
     try {
-      await forgetPushDevice();
+      // A push-token failure must never block signing out.
+      await forgetPushDevice().catch(() => {});
       const supabase = createSupabaseBrowserClient();
-      await supabase.auth.signOut();
+      const { error: authError } = await supabase.auth.signOut();
+      if (authError) throw authError;
       router.push("/");
       router.refresh();
+    } catch {
+      setError("Couldn't sign you out. Check your connection and try again.");
     } finally {
       setSigningOut(false);
     }
   }, [router]);
 
-  return { signOut, signingOut };
+  return { signOut, signingOut, error };
 }

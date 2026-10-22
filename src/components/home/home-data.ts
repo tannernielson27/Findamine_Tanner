@@ -10,10 +10,12 @@ import { distanceMeters, type HuntCardData } from "@/lib/hunts/card-data";
  * hunts.target_audience values a band sees by default on Home, so adults stop
  * seeing kids' hunts (BRIEF.md open finding). "all" is always included.
  */
-export function audiencesForBand(band: AgeBand): string[] {
+export function audiencesForBand(band: AgeBand, role?: string | null): string[] {
   switch (band) {
     case "adult":
-      return ["adults", "all"];
+      // Parents play with their kids, so they also get family hunts; other
+      // adults (the study's undergrads) see adult + all-ages hunts only.
+      return role === "parent" ? ["adults", "family", "all"] : ["adults", "all"];
     case "teen":
       return ["teens", "family", "all"];
     default:

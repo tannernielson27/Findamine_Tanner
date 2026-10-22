@@ -45,6 +45,12 @@ describe("audiencesForBand", () => {
   it("keeps kids' hunts away from adults", () => {
     expect(audiencesForBand("adult")).toEqual(["adults", "all"]);
     expect(audiencesForBand("adult")).not.toContain("kids");
+    expect(audiencesForBand("adult", "adult")).toEqual(["adults", "all"]);
+  });
+
+  it("adds family hunts for parents only", () => {
+    expect(audiencesForBand("adult", "parent")).toEqual(["adults", "family", "all"]);
+    expect(audiencesForBand("adult", "teacher")).not.toContain("family");
   });
 
   it("gives teens and kids their own hunts plus family and all", () => {

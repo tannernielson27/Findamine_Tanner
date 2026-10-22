@@ -24,7 +24,7 @@ const ROW = "flex min-h-14 w-full items-center gap-3.5 px-4 py-3 text-left text-
  * Home shortcuts. No direct Privacy row: see profileLinksFor.
  */
 export function SettingsList({ role }: { role: string }) {
-  const { signOut, signingOut } = useSignOut();
+  const { signOut, signingOut, error } = useSignOut();
   const links = profileLinksFor(role);
 
   return (
@@ -52,6 +52,11 @@ export function SettingsList({ role }: { role: string }) {
           </button>
         </li>
       </ul>
+      {error && (
+        <p role="alert" className="mt-2 px-1 text-sm font-medium text-error">
+          {error}
+        </p>
+      )}
     </nav>
   );
 }
