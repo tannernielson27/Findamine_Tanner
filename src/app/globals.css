@@ -204,6 +204,26 @@ html.fm-native img {
 .fm-stagger > :nth-child(6) { --fm-i: 5; }
 .fm-stagger > :nth-child(7) { --fm-i: 6; }
 
+/* ─── Launch / welcome screen (app/page.tsx) ────────────────────
+   Exactly one screen tall: body already pads the safe areas, so subtract
+   them instead of letting the page scroll by the notch height. The scene
+   art fades in like an app splash handing off (static with reduced motion). */
+.fm-launch {
+  min-height: 100vh;
+  min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+}
+
+@keyframes findamine-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .fm-launch-art {
+    animation: findamine-fade-in 500ms ease-out both;
+  }
+}
+
 /* ─── Reduced motion ────────────────────────────────────────────
    Honor the OS setting globally. Confetti is already gated in JS via
    useReducedMotion; this neutralizes CSS-driven motion as a backstop. */

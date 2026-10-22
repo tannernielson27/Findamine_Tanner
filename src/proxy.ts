@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isTrustedOrigin } from "@/lib/utils/trusted-origins";
+import { authCookieOptions, isHttpsRequest, launchRedirect } from "@/lib/auth/session";
 
 // Pages that pending_consent users CAN access
 const CONSENT_ALLOWED_PATHS = [
@@ -93,6 +94,11 @@ export default async function proxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      // Refreshed tokens are written back with a long Max-Age (persistent),
+      // so iOS keeps the session when it kills the app's web view.
+      cookieOptions: authCookieOptions(
+        isHttpsRequest(request.headers.get("x-forwarded-proto"), request.nextUrl.protocol)
+      ),
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -123,6 +129,14 @@ export default async function proxy(request: NextRequest) {
 
   // Refresh the session
   const { data: { user: authUser } } = await supabase.auth.getUser();
+
+  // Launch: `/` is the iOS app's start URL and the PWA's start_url. A
+  // signed-in person goes straight into the app instead of the welcome
+  // screen (whose "Sign in" button made a live session look signed out).
+  const launchTo = launchRedirect(pathname, Boolean(authUser));
+  if (launchTo) {
+    return redirectTo(launchTo);
+  }
 
   // Route guard: signed-out visitors never get an app shell. The page they
   // wanted is kept in ?next= so login can send them back to it.
