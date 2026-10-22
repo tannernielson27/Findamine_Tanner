@@ -63,7 +63,7 @@ export default function HuntRating({ huntId }: HuntRatingProps) {
   const displayRating = hoverRating || userRating;
 
   return (
-    <section className="mt-4 rounded-xl border border-themed-border bg-surface p-4 shadow-[var(--shadow-card)]">
+    <section aria-label="Ratings" className="rounded-[18px] border border-themed-border bg-surface p-4">
       {/* Average rating display */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="flex" aria-hidden="true">
