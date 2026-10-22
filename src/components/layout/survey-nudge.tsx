@@ -34,10 +34,10 @@ export default function SurveyNudge() {
       href="/surveys"
       title={`${count} survey${count === 1 ? "" : "s"} to complete`}
       aria-label={`${count} survey${count === 1 ? "" : "s"} to complete`}
-      className="relative flex h-10 w-10 items-center justify-center rounded-lg text-themed-muted hover:bg-themed-bg transition-colors"
+      className="relative flex h-12 w-12 items-center justify-center rounded-full border border-themed-border bg-surface text-themed-text transition-colors duration-150 hover:bg-themed-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
     >
-      <ClipboardList className="w-5 h-5" aria-hidden="true" />
-      <span className="absolute top-1 right-1 min-w-4 h-4 px-1 rounded-full bg-brand text-white text-[10px] font-bold flex items-center justify-center">
+      <ClipboardList className="h-[22px] w-[22px]" aria-hidden="true" />
+      <span className="absolute -top-0.5 -right-0.5 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-brand px-1 text-xs font-bold leading-none text-white tabular-nums">
         {count}
       </span>
     </Link>

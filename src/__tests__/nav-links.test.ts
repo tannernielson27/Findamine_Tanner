@@ -1,5 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { navLinksFor, showPrivacyNavLink } from "@/components/layout/nav-links";
+import {
+  activeTabHref,
+  navLinksFor,
+  PLAYER_ROLES,
+  profileLinksFor,
+  shellChromeFor,
+  showPrivacyNavLink,
+  showPrivacyShield,
+  tabsFor,
+  type PrivacyFriction,
+} from "@/components/layout/nav-links";
 import { WITHDRAWN_META_KEY } from "@/lib/utils/conditions";
 
 const hrefs = (role: string, friction?: "low" | "high" | null) =>
@@ -87,5 +97,196 @@ describe("navLinksFor", () => {
 
   it("gives an unknown role only the universal links", () => {
     expect(hrefs("mystery")).toEqual(["/dashboard", "/browse", "/settings/privacy"]);
+  });
+});
+
+const tabHrefs = (role: string) => tabsFor({ role }).map((t) => t.href);
+const ALL_ROLES = ["child", "teen", "adult", "parent", "teacher", "hunt_creator", "admin", "researcher"];
+
+describe("tabsFor (bottom tab bar)", () => {
+  it("returns nothing when signed out", () => {
+    expect(tabsFor(null)).toEqual([]);
+    expect(tabsFor(undefined)).toEqual([]);
+  });
+
+  it("gives players Home · Explore · Ranks · Profile", () => {
+    for (const role of ["child", "teen", "adult", "parent"]) {
+      expect(tabHrefs(role)).toEqual(["/dashboard", "/browse", "/leaderboard", "/dashboard/profile"]);
+      expect(tabsFor({ role }).map((t) => t.label)).toEqual(["Home", "Explore", "Ranks", "Profile"]);
+    }
+  });
+
+  it("gives creators, teachers, admins and researchers My Hunts instead of Ranks", () => {
+    for (const role of ["teacher", "hunt_creator", "admin", "researcher"]) {
+      expect(tabHrefs(role)).toEqual(["/dashboard", "/browse", "/dashboard/hunts", "/dashboard/profile"]);
+    }
+  });
+
+  it("never makes Create, Rosters, Admin or Privacy a tab", () => {
+    for (const role of ALL_ROLES) {
+      const tabs = tabHrefs(role);
+      expect(tabs).not.toContain("/dashboard/hunts/new");
+      expect(tabs).not.toContain("/dashboard/rosters");
+      expect(tabs).not.toContain("/admin");
+      expect(tabs).not.toContain("/settings/privacy");
+      expect(tabs.length).toBeLessThanOrEqual(5);
+    }
+  });
+
+  it("gives an unknown role the universal tabs only", () => {
+    expect(tabHrefs("mystery")).toEqual(["/dashboard", "/browse", "/dashboard/profile"]);
+  });
+});
+
+describe("activeTabHref", () => {
+  const player = tabsFor({ role: "adult" });
+  const creator = tabsFor({ role: "teacher" });
+
+  it("lights Home only on /dashboard itself", () => {
+    expect(activeTabHref(player, "/dashboard")).toBe("/dashboard");
+    expect(activeTabHref(player, "/dashboard/whatever")).toBeNull();
+  });
+
+  it("lights Explore on the catalogue and its sub-pages", () => {
+    expect(activeTabHref(player, "/browse")).toBe("/browse");
+    expect(activeTabHref(player, "/browse/standards")).toBe("/browse");
+  });
+
+  it("lights Ranks for players and nothing for creators on /leaderboard", () => {
+    expect(activeTabHref(player, "/leaderboard")).toBe("/leaderboard");
+    expect(activeTabHref(creator, "/leaderboard")).toBeNull();
+  });
+
+  it("lights My Hunts on the creator pages, including create", () => {
+    expect(activeTabHref(creator, "/dashboard/hunts")).toBe("/dashboard/hunts");
+    expect(activeTabHref(creator, "/dashboard/hunts/new")).toBe("/dashboard/hunts");
+    expect(activeTabHref(player, "/dashboard/hunts")).toBeNull();
+  });
+
+  it("lights Profile on everything reached from Profile", () => {
+    for (const path of ["/dashboard/profile", "/settings", "/settings/privacy", "/dashboard/badges", "/dashboard/social", "/dashboard/teams", "/admin/research", "/profile/abc"]) {
+      expect(activeTabHref(player, path)).toBe("/dashboard/profile");
+    }
+  });
+
+  it("does not match lookalike prefixes", () => {
+    expect(activeTabHref(player, "/browser")).toBeNull();
+    expect(activeTabHref(player, "/settingsx")).toBeNull();
+  });
+});
+
+describe("shellChromeFor", () => {
+  it("hides all chrome during play and on hunt detail", () => {
+    for (const path of ["/play/123", "/play", "/browse/8f2c"]) {
+      expect(shellChromeFor(path)).toEqual({ topBar: false, tabBar: false, miniBar: false });
+    }
+  });
+
+  it("keeps the tab bar on the catalogue and the standards listing", () => {
+    expect(shellChromeFor("/browse").tabBar).toBe(true);
+    expect(shellChromeFor("/browse/standards").tabBar).toBe(true);
+  });
+
+  it("allows the mini-bar on tab screens except Home", () => {
+    expect(shellChromeFor("/dashboard")).toEqual({ topBar: true, tabBar: true, miniBar: false });
+    for (const path of ["/browse", "/leaderboard", "/dashboard/profile", "/dashboard/hunts", "/settings"]) {
+      expect(shellChromeFor(path)).toEqual({ topBar: true, tabBar: true, miniBar: true });
+    }
+  });
+
+  it("keeps only the top bar on admin, surveys and the debrief", () => {
+    for (const path of ["/admin", "/admin/surveys/1", "/surveys", "/surveys/abc", "/debrief"]) {
+      expect(shellChromeFor(path)).toEqual({ topBar: true, tabBar: false, miniBar: false });
+    }
+  });
+});
+
+describe("showPrivacyShield (privacy_friction manipulation in the new top bar)", () => {
+  const withdrawn = { [WITHDRAWN_META_KEY]: "2026-10-01T00:00:00Z", privacy_friction: "high" };
+  const cases: Array<[PrivacyFriction | string, Record<string, unknown> | null | undefined]> = [
+    ["high", undefined],
+    ["high", null],
+    ["high", { privacy_friction: "high" }],
+    ["high", withdrawn],
+    ["low", undefined],
+    ["low", withdrawn],
+    [null, undefined],
+    [undefined, undefined],
+    ["", undefined],
+    ["HIGH", undefined],
+    ["medium", null],
+  ];
+
+  it("follows showPrivacyNavLink exactly, for every friction/metadata combination", () => {
+    for (const [friction, metadata] of cases) {
+      expect(showPrivacyShield({ privacy_friction: friction as PrivacyFriction, metadata })).toBe(
+        showPrivacyNavLink(friction, metadata)
+      );
+    }
+  });
+
+  it("hides the shield only for explicit high friction", () => {
+    expect(showPrivacyShield({ privacy_friction: "high" })).toBe(false);
+    expect(showPrivacyShield({ privacy_friction: "low" })).toBe(true);
+    expect(showPrivacyShield({ privacy_friction: null })).toBe(true);
+    expect(showPrivacyShield({})).toBe(true);
+  });
+
+  it("shows the shield to a withdrawn participant even with high on record", () => {
+    expect(showPrivacyShield({ privacy_friction: "high", metadata: withdrawn })).toBe(true);
+  });
+
+  it("matches whether the old navbar put Privacy in the main nav, for every role", () => {
+    for (const role of ALL_ROLES) {
+      for (const friction of ["low", "high", null, undefined] as const) {
+        expect(showPrivacyShield({ privacy_friction: friction })).toBe(hrefs(role, friction).includes("/settings/privacy"));
+      }
+    }
+  });
+
+  it("is off for a signed-out visitor", () => {
+    expect(showPrivacyShield(null)).toBe(false);
+  });
+});
+
+describe("profileLinksFor (Profile tab settings list)", () => {
+  const links = (role: string) => profileLinksFor(role).map((l) => l.href);
+
+  it("never adds a direct Privacy row: high friction keeps Settings → More → Privacy", () => {
+    for (const role of [...ALL_ROLES, "mystery"]) {
+      expect(links(role)).not.toContain("/settings/privacy");
+      expect(links(role)).toContain("/settings");
+    }
+  });
+
+  it("keeps every old hamburger destination reachable", () => {
+    for (const role of ALL_ROLES) {
+      expect(links(role)).toEqual(expect.arrayContaining(["/settings", "/privacy", "/terms", "/dashboard/social", "/dashboard/teams"]));
+    }
+  });
+
+  it("shows Rosters to roster roles and Admin to admin roles only", () => {
+    expect(links("teacher")).toContain("/dashboard/rosters");
+    expect(links("admin")).toContain("/dashboard/rosters");
+    expect(links("hunt_creator")).not.toContain("/dashboard/rosters");
+    expect(links("adult")).not.toContain("/dashboard/rosters");
+    expect(links("admin")).toContain("/admin");
+    expect(links("researcher")).toContain("/admin");
+    expect(links("teacher")).not.toContain("/admin");
+    expect(links("adult")).not.toContain("/admin");
+  });
+
+  it("covers every non-privacy link the old navbar offered, via tabs, Profile or the + in My Hunts", () => {
+    for (const role of ALL_ROLES) {
+      const createInMyHunts = tabHrefs(role).includes("/dashboard/hunts") ? ["/dashboard/hunts/new"] : [];
+      const reachable = new Set([...tabHrefs(role), ...links(role), ...createInMyHunts]);
+      for (const old of hrefs(role, "high")) {
+        expect(reachable.has(old)).toBe(true);
+      }
+    }
+  });
+
+  it("keeps the leaderboard a tab for players", () => {
+    for (const role of PLAYER_ROLES) expect(tabHrefs(role)).toContain("/leaderboard");
   });
 });
