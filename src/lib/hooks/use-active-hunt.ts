@@ -14,6 +14,14 @@ export interface ActiveHuntState {
  */
 export function useActiveHunt(enabled = true): ActiveHuntState {
   const [state, setState] = useState<ActiveHuntState>({ hunt: null, loading: enabled });
+  const [prevEnabled, setPrevEnabled] = useState(enabled);
+
+  // Re-enabling (e.g. leaving /play) refetches: drop the old hunt right away
+  // so a just-finished hunt never flashes in the mini-bar.
+  if (enabled !== prevEnabled) {
+    setPrevEnabled(enabled);
+    if (enabled) setState({ hunt: null, loading: true });
+  }
 
   useEffect(() => {
     if (!enabled) return;

@@ -293,3 +293,11 @@ html.fm-native img {
 @media (prefers-reduced-motion: reduce) {
   .fm-sheet-in { animation: none; }
 }
+
+/* The floating tab bar is replaced by a top nav on lg+ screens. */
+@media (min-width: 1024px) {
+  .fm-tab-safe,
+  .fm-tab-safe-mini {
+    padding-bottom: calc(32px + env(safe-area-inset-bottom));
+  }
+}
