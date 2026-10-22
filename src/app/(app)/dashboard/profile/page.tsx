@@ -2,7 +2,12 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ChevronRight, Flame } from "lucide-react";
+import { ChevronRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { StatRow } from "@/components/ui/progress";
+import { initialsOf } from "@/components/home/home-data";
+import { BadgeShelf } from "./badge-shelf";
+import { SettingsList } from "./settings-list";
 
 interface ProfileData {
   id: string;
@@ -23,6 +28,11 @@ interface Stats {
   streak: { current_streak: number } | null;
 }
 
+/**
+ * Profile tab: stats header, badge shelf, real-name editing (unchanged
+ * behaviour), "you" links, then the settings list that replaced the old
+ * hamburger menu.
+ */
 export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -30,6 +40,7 @@ export default function ProfilePage() {
   const [realName, setRealName] = useState("");
   const [savedRealName, setSavedRealName] = useState("");
   const [savingName, setSavingName] = useState(false);
+  const [nameError, setNameError] = useState("");
 
   useEffect(() => {
     fetch("/api/v1/auth/me")
@@ -43,7 +54,6 @@ export default function ProfilePage() {
       })
       .catch(() => setLoading(false));
 
-    // Fetch stats
     fetch("/api/v1/gamification/me")
       .then((r) => { if (r.ok) return r.json(); throw new Error(); })
       .then((d) => setStats(d))
@@ -52,61 +62,70 @@ export default function ProfilePage() {
 
   async function handleSaveRealName() {
     setSavingName(true);
-    const res = await fetch("/api/v1/auth/profile", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ real_name: realName }),
-    });
-    if (res.ok) setSavedRealName(realName.trim());
+    setNameError("");
+    try {
+      const res = await fetch("/api/v1/auth/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ real_name: realName }),
+      });
+      if (res.ok) setSavedRealName(realName.trim());
+      else setNameError("Couldn't save your name. Try again.");
+    } catch {
+      setNameError("Couldn't save your name. Try again.");
+    }
     setSavingName(false);
   }
 
-  if (loading) return <main className="mx-auto max-w-2xl px-4 py-6"><p className="text-base text-themed-muted">Loading...</p></main>;
-  if (!profile) return <main className="mx-auto max-w-2xl px-4 py-6"><p className="text-base text-themed-muted">Not found</p></main>;
+  if (loading) return <ProfileSkeleton />;
+  if (!profile) {
+    return (
+      <main className="mx-auto max-w-2xl px-4 py-6">
+        <p className="text-base text-themed-muted">We couldn&apos;t load your profile. Try again in a moment.</p>
+      </main>
+    );
+  }
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-6">
-      {/* Profile header */}
-      <header className="flex items-center gap-4 mb-6">
+    <main className="mx-auto max-w-2xl px-4 pb-4 pt-6">
+      {/* Stats header */}
+      <header className="flex items-center gap-4">
         <div
-          className="w-16 h-16 shrink-0 rounded-full bg-secondary/10 flex items-center justify-center font-[family-name:var(--font-display)] text-2xl text-secondary font-bold"
+          className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-full bg-juniper-tint font-[family-name:var(--font-display)] text-[26px] font-semibold text-juniper"
           aria-hidden="true"
         >
-          {profile.display_name?.[0]?.toUpperCase() || "?"}
+          {initialsOf(profile.display_name)}
         </div>
         <div className="min-w-0">
-          <h1 className="truncate font-[family-name:var(--font-display)] text-3xl font-bold text-themed-text">{profile.display_name || "Explorer"}</h1>
-          <p className="text-sm text-themed-muted">{profile.role} · joined {new Date(profile.created_at).toLocaleDateString()}</p>
-          <Link href="/settings/privacy" className="inline-flex min-h-11 items-center text-sm font-medium text-link hover:text-link-dark hover:underline">
-            Privacy settings →
-          </Link>
+          <h1 className="m-0 truncate font-[family-name:var(--font-display)] text-[30px] font-semibold leading-tight text-themed-text">
+            {profile.display_name || "Explorer"}
+          </h1>
+          <p className="m-0 text-[15px] text-themed-muted">
+            {profile.role} · joined {new Date(profile.created_at).toLocaleDateString()}
+          </p>
         </div>
       </header>
 
-      {/* Stats grid */}
-      <dl className="grid grid-cols-2 gap-2 mb-6 sm:grid-cols-4">
-        <StatTile label="Hunts finished" value={stats?.hunts_completed || 0} />
-        <StatTile label="Total points" value={stats?.total_points || 0} />
-        <StatTile label="Badges" value={stats?.badges_earned || 0} />
-        <StatTile
-          label="Streak"
-          value={stats?.streak?.current_streak || 0}
-          icon={<Flame className="w-5 h-5 text-brand-dark" aria-hidden="true" />}
-        />
-      </dl>
+      <StatRow
+        className="mt-5"
+        items={[
+          { value: String(stats?.total_points ?? 0), label: "Points" },
+          { value: String(stats?.badges_earned ?? 0), label: "Badges" },
+          { value: String(stats?.hunts_completed ?? 0), label: "Hunts" },
+          { value: String(stats?.streak?.current_streak ?? 0), label: "Streak" },
+        ]}
+      />
 
-      {/* Real name (optional — who can see it is controlled in Privacy Settings) */}
-      <section className="rounded-xl border border-themed-border bg-surface p-4 mb-6 shadow-[var(--shadow-card)]">
-        <label htmlFor="realName" className="block font-[family-name:var(--font-display)] text-base font-semibold text-themed-text mb-1">
+      <BadgeShelf />
+
+      {/* Real name (optional). Who can see it is set in privacy settings,
+          which stay at Settings → More → Privacy (no direct link here: see
+          profileLinksFor in components/layout/nav-links.ts). */}
+      <section className="mt-7 rounded-card border border-themed-border bg-surface p-4">
+        <label htmlFor="realName" className="mb-1 block font-[family-name:var(--font-display)] text-lg font-semibold text-themed-text">
           Real name <span className="font-[family-name:var(--font-body)] text-sm font-normal text-themed-muted">(optional)</span>
         </label>
-        <p className="text-sm text-themed-muted mb-3">
-          Shown to others only if you allow it in{" "}
-          <Link href="/settings/privacy" className="font-medium text-link hover:text-link-dark underline">
-            privacy settings
-          </Link>
-          .
-        </p>
+        <p className="mb-3 text-sm text-themed-muted">Shown to others only if you allow it in your privacy settings.</p>
         <div className="flex flex-wrap gap-2">
           <input
             id="realName"
@@ -115,54 +134,71 @@ export default function ProfilePage() {
             onChange={(e) => setRealName(e.target.value)}
             maxLength={120}
             placeholder="First and last name"
-            className="min-h-11 min-w-0 flex-1 basis-48 rounded-lg border border-themed-border bg-themed-bg px-3 py-2 text-base text-themed-text focus:bg-surface focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            className="min-h-12 min-w-0 flex-1 basis-48 rounded-[14px] border border-themed-border bg-themed-bg px-3 py-2 text-base text-themed-text focus:border-brand focus:bg-surface focus:outline-none focus:ring-1 focus:ring-brand"
           />
-          <button
-            onClick={handleSaveRealName}
-            disabled={savingName || realName.trim() === savedRealName}
-            className="min-h-11 shrink-0 rounded-lg bg-brand px-5 text-base font-semibold text-white transition-colors hover:bg-brand-dark disabled:opacity-40"
-          >
-            {savingName ? "Saving..." : "Save"}
-          </button>
+          <Button onClick={handleSaveRealName} disabled={savingName || realName.trim() === savedRealName}>
+            {savingName ? "Saving…" : "Save"}
+          </Button>
         </div>
+        {nameError && (
+          <p role="alert" className="mt-2 text-sm font-medium text-error">
+            {nameError}
+          </p>
+        )}
       </section>
 
-      {/* Quick links */}
-      <nav aria-label="Profile shortcuts" className="space-y-2">
-        <QuickLink href={`/profile/${profile.id}`} title="Your player page" description="The page other players open, limited by your privacy settings" />
-        <QuickLink href="/leaderboard" title="Leaderboard" description="Ranked by hunt score from finished hunts" />
-        <QuickLink href="/dashboard/assessment" title="Personality Assessment" description="Big 5 + Growth Mindset" />
-        <QuickLink href="/dashboard/badges" title="My Badges" description="View achievements" />
-        <QuickLink href="/settings" title="Account Settings" description="Name, email, password" />
-        <QuickLink href="/settings/privacy" title="Privacy Settings" description="Control who sees your information" />
+      {/* You */}
+      <nav aria-label="Your pages" className="mt-7">
+        <ul className="m-0 list-none overflow-hidden rounded-card border border-themed-border bg-surface p-0">
+          <YouLink href={`/profile/${profile.id}`} title="Your player page" description="What other players see, limited by your privacy settings" first />
+          <YouLink href="/dashboard/badges" title="Badges" description="Everything you've earned and what's next" />
+          <YouLink href="/leaderboard" title="Leaderboard" description="Ranked by hunt score from finished hunts" />
+          <YouLink href="/dashboard/assessment" title="Personality Assessment" description="Big 5 + Growth Mindset" />
+        </ul>
       </nav>
+
+      <SettingsList role={profile.role} />
     </main>
   );
 }
 
-function StatTile({ label, value, icon }: { label: string; value: number; icon?: React.ReactNode }) {
+function YouLink({ href, title, description, first = false }: { href: string; title: string; description: string; first?: boolean }) {
   return (
-    <div className="flex flex-col-reverse rounded-xl border border-themed-border bg-surface px-3 py-2.5 text-center">
-      <dt className="text-sm text-themed-muted">{label}</dt>
-      <dd className="flex items-center justify-center gap-1 font-[family-name:var(--font-display)] text-2xl font-bold tabular-nums text-themed-text">
-        {value}
-        {icon}
-      </dd>
-    </div>
+    <li className={first ? undefined : "border-t border-divider"}>
+      <Link
+        href={href}
+        className="flex min-h-14 items-center justify-between gap-3 px-4 py-3 text-themed-text no-underline transition-colors duration-150 hover:bg-themed-bg"
+      >
+        <span className="min-w-0">
+          <span className="block text-base font-semibold">{title}</span>
+          <span className="block text-sm text-themed-muted">{description}</span>
+        </span>
+        <ChevronRight className="h-5 w-5 shrink-0 text-themed-muted" aria-hidden="true" />
+      </Link>
+    </li>
   );
 }
 
-function QuickLink({ href, title, description }: { href: string; title: string; description: string }) {
+function ProfileSkeleton() {
   return (
-    <Link
-      href={href}
-      className="group flex min-h-14 items-center justify-between gap-3 rounded-xl border border-themed-border bg-surface px-4 py-3 transition-colors hover:border-secondary/40 hover:bg-themed-bg"
-    >
-      <span className="min-w-0">
-        <span className="block font-[family-name:var(--font-display)] text-base font-semibold text-themed-text">{title}</span>
-        <span className="block text-sm text-themed-muted">{description}</span>
-      </span>
-      <ChevronRight className="w-5 h-5 shrink-0 text-themed-muted transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
-    </Link>
+    <main className="mx-auto max-w-2xl px-4 pb-4 pt-6" aria-busy="true" aria-label="Loading profile">
+      <div className="fm-shimmer" aria-hidden="true">
+        <div className="flex items-center gap-4">
+          <div className="h-[72px] w-[72px] shrink-0 rounded-full bg-divider" />
+          <div className="flex flex-1 flex-col gap-2">
+            <div className="h-8 w-1/2 rounded-md bg-divider" />
+            <div className="h-4 w-1/3 rounded-md bg-divider" />
+          </div>
+        </div>
+        <div className="mt-5 h-[76px] rounded-[18px] bg-divider" />
+        <div className="mt-7 h-7 w-28 rounded-md bg-divider" />
+        <div className="mt-3 flex gap-3">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="h-16 w-16 rounded-full bg-divider" />
+          ))}
+        </div>
+        <div className="mt-7 h-64 rounded-card bg-divider" />
+      </div>
+    </main>
   );
 }
