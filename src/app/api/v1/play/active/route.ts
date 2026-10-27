@@ -68,49 +68,65 @@ export async function GET(request: NextRequest) {
     const sessions = (sessionData || []) as SessionRow[];
     if (sessions.length === 0) return none();
 
-    const { data: completionData, error: completionError } = await supabase
-      .from("find_completions")
-      .select("play_session_id, find_id, arrived_at, completed_at, created_at")
-      .in("play_session_id", sessions.map((s) => s.id));
-    if (completionError) failed("completions", user.id, completionError.message);
-    const completions = (completionData || []) as CompletionRow[];
-
     const huntIds = [...new Set(sessions.map((s) => s.hunt_id))];
     const loadHunts = (columns: string) => supabase.from("hunts").select(columns).in("id", huntIds);
-    let { data: huntData, error: huntError } = await loadHunts(`${HUNT_COLUMNS}, cover_image_url`);
-    // hunts.cover_image_url arrives with migration 079; until it is applied,
-    // retry once without it (covers fall back to null) instead of failing.
-    if (huntError?.code === UNDEFINED_COLUMN) {
-      logger.warn("play.active.cover_column_missing", { userId: user.id });
-      ({ data: huntData, error: huntError } = await loadHunts(HUNT_COLUMNS));
-    }
+    const loadHuntsWithFallback = async () => {
+      let result = await loadHunts(`${HUNT_COLUMNS}, cover_image_url`);
+      // hunts.cover_image_url arrives with migration 079; until it is applied,
+      // retry once without it (covers fall back to null) instead of failing.
+      if (result.error?.code === UNDEFINED_COLUMN) {
+        logger.warn("play.active.cover_column_missing", { userId: user.id });
+        result = await loadHunts(HUNT_COLUMNS);
+      }
+      return result;
+    };
+
+    // Completions and hunts only depend on the sessions: load them together.
+    const [
+      { data: completionData, error: completionError },
+      { data: huntData, error: huntError },
+    ] = await Promise.all([
+      supabase
+        .from("find_completions")
+        .select("play_session_id, find_id, arrived_at, completed_at, created_at")
+        .in("play_session_id", sessions.map((s) => s.id)),
+      loadHuntsWithFallback(),
+    ]);
+    if (completionError) failed("completions", user.id, completionError.message);
     if (huntError) failed("hunts", user.id, huntError.message);
+    const completions = (completionData || []) as CompletionRow[];
     const hunts = new Map(((huntData || []) as unknown as HuntRow[]).map((h) => [h.id, h]));
 
-    for (const session of rankSessions(sessions, completions)) {
+    const candidates = rankSessions(sessions, completions).flatMap((session) => {
       const hunt = hunts.get(session.hunt_id);
-      if (!hunt || hunt.deleted_at || !PLAYABLE_STATUSES.includes(hunt.status)) continue;
-      if (!(await canAccessHunt(supabase, hunt, user))) continue;
+      return hunt && !hunt.deleted_at && PLAYABLE_STATUSES.includes(hunt.status)
+        ? [{ session, hunt }]
+        : [];
+    });
+    if (candidates.length === 0) return none();
 
-      const { data: findData, error: findError } = await supabase
+    // Access checks (a roster lookup for non-public hunts) and one batched
+    // finds query for every candidate hunt, instead of a pair per hunt.
+    const [accessible, { data: findData, error: findError }] = await Promise.all([
+      Promise.all(candidates.map((c) => canAccessHunt(supabase, c.hunt, user))),
+      supabase
         .from("finds")
-        .select("id, sort_order")
-        .eq("hunt_id", hunt.id)
+        .select("id, sort_order, hunt_id")
+        .in("hunt_id", [...new Set(candidates.map((c) => c.hunt.id))])
         .is("deleted_at", null)
-        .order("sort_order", { ascending: true });
-      if (findError) failed("finds", user.id, findError.message);
+        .order("sort_order", { ascending: true }),
+    ]);
+    if (findError) failed("finds", user.id, findError.message);
 
-      const active: ActiveHunt = buildActiveHunt(
-        hunt,
-        session.id,
-        (findData || []) as FindRow[],
-        completions,
-        session.lastActiveAt
-      );
-      return Response.json({ data: active }, { headers: NO_STORE });
-    }
+    const winnerIndex = accessible.findIndex(Boolean);
+    if (winnerIndex === -1) return none();
+    const { session, hunt } = candidates[winnerIndex];
 
-    return none();
+    const finds = ((findData || []) as (FindRow & { hunt_id: string })[]).filter(
+      (f) => f.hunt_id === hunt.id
+    );
+    const active: ActiveHunt = buildActiveHunt(hunt, session.id, finds, completions, session.lastActiveAt);
+    return Response.json({ data: active }, { headers: NO_STORE });
   } catch (error) {
     return errorResponse(error);
   }

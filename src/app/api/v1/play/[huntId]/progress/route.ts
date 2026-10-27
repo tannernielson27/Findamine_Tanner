@@ -13,25 +13,26 @@ export async function GET(
 
     const supabase = await createSupabaseServiceClient();
 
-    const { data: session } = await supabase
-      .from("play_sessions")
-      .select("*, find_completions(*)")
-      .eq("hunt_id", huntId)
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    // The session and the hunt's find count are independent reads.
+    const [{ data: session }, { count }] = await Promise.all([
+      supabase
+        .from("play_sessions")
+        .select("*, find_completions(*)")
+        .eq("hunt_id", huntId)
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("finds")
+        .select("id", { count: "exact", head: true })
+        .eq("hunt_id", huntId)
+        .is("deleted_at", null),
+    ]);
 
     if (!session) {
       return Response.json({ session: null, completions: [], total_finds: 0 });
     }
-
-    // Get total finds in hunt
-    const { count } = await supabase
-      .from("finds")
-      .select("*", { count: "exact", head: true })
-      .eq("hunt_id", huntId)
-      .is("deleted_at", null);
 
     return Response.json({
       session,

@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { Flag } from "lucide-react";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { backdrop, dialog } from "@/lib/motion";
 import { socialErrorMessage } from "@/lib/social/friends";
 
@@ -94,7 +94,7 @@ export default function ReportDialog({
   };
 
   return (
-    <motion.div
+    <m.div
       variants={backdrop}
       initial="hidden"
       animate="visible"
@@ -106,7 +106,7 @@ export default function ReportDialog({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <motion.div
+      <m.div
         variants={dialog}
         className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-themed-border bg-surface p-5 shadow-xl"
       >
@@ -183,7 +183,7 @@ export default function ReportDialog({
             {sending ? "Sending…" : "Send report"}
           </button>
         </div>
-      </motion.div>
-    </motion.div>
+      </m.div>
+    </m.div>
   );
 }

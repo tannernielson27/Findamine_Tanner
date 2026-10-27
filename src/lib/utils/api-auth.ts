@@ -1,11 +1,22 @@
 import { NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
+import { authenticatedUserId } from "@/lib/auth/claims";
+import { loadUserRowWithBand } from "@/lib/auth/viewer";
 import type { AuthUser } from "@/lib/types/database";
 import type { UserRole } from "@/lib/types/enums";
 
 /** Account statuses that may not use the API at all. */
 const BLOCKED_STATUSES = new Set(["suspended", "banned", "inactive"]);
+
+/**
+ * The authenticated caller: AuthUser plus their stored age band, so routes
+ * need no second user_profiles query for it.
+ */
+export type ApiAuthUser = AuthUser & {
+  /** user_profiles.effective_band, or null when the user has no profile row. */
+  effective_band: string | null;
+};
 
 /**
  * The caller's profile, or null when the account is deleted, suspended, banned
@@ -16,20 +27,16 @@ const BLOCKED_STATUSES = new Set(["suspended", "banned", "inactive"]);
 async function loadActiveProfile(
   serviceClient: Awaited<ReturnType<typeof createSupabaseServiceClient>>,
   authId: string
-): Promise<AuthUser | null> {
-  const { data: profile } = await serviceClient
-    .from("users")
-    .select("id, auth_id, role, display_name, status")
-    .eq("auth_id", authId)
-    .is("deleted_at", null)
-    .single();
+): Promise<ApiAuthUser | null> {
+  const profile = await loadUserRowWithBand(serviceClient, authId);
   if (!profile || BLOCKED_STATUSES.has(profile.status)) return null;
   return {
     id: profile.id,
     auth_id: profile.auth_id,
     role: profile.role,
     display_name: profile.display_name,
-  } as AuthUser;
+    effective_band: profile.effective_band,
+  } as ApiAuthUser;
 }
 
 /**
@@ -38,18 +45,16 @@ async function loadActiveProfile(
  */
 export async function getAuthUser(
   request: NextRequest
-): Promise<AuthUser | null> {
+): Promise<ApiAuthUser | null> {
   // Try Bearer token first (mobile app)
   const authHeader = request.headers.get("authorization");
   if (authHeader?.startsWith("Bearer ")) {
     const token = authHeader.slice(7);
     const serviceClient = await createSupabaseServiceClient();
-    const {
-      data: { user: authUser },
-    } = await serviceClient.auth.getUser(token);
-    if (!authUser) return null;
+    const authId = await authenticatedUserId(serviceClient.auth, token);
+    if (!authId) return null;
 
-    return loadActiveProfile(serviceClient, authUser.id);
+    return loadActiveProfile(serviceClient, authId);
   }
 
   // Fall back to cookie-based auth (web)
@@ -68,13 +73,11 @@ export async function getAuthUser(
     }
   );
 
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
-  if (!authUser) return null;
+  const authId = await authenticatedUserId(supabase.auth);
+  if (!authId) return null;
 
   const serviceClient = await createSupabaseServiceClient();
-  return loadActiveProfile(serviceClient, authUser.id);
+  return loadActiveProfile(serviceClient, authId);
 }
 
 /**

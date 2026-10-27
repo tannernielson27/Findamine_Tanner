@@ -156,27 +156,28 @@ export async function enrollParticipant(userId: string): Promise<EnrollmentResul
   try {
     const supabase = await createSupabaseServiceClient();
 
-    // 1. Find the active auto-enroll study.
+    // 1+2. Find the active auto-enroll study and, in parallel, this user's
+    // enrollments (keeps the already-enrolled check to one round trip, since
+    // this runs on every (app) page load).
     stage = "find_study";
-    const { data: study } = await supabase
-      .from("treatment_studies")
-      .select("id")
-      .eq("auto_enroll", true)
-      .eq("status", "active")
-      .limit(1)
-      .maybeSingle();
+    const [{ data: study }, { data: userEnrollments }] = await Promise.all([
+      supabase
+        .from("treatment_studies")
+        .select("id")
+        .eq("auto_enroll", true)
+        .eq("status", "active")
+        .limit(1)
+        .maybeSingle(),
+      supabase.from("study_enrollments").select("study_id").eq("user_id", userId),
+    ]);
     if (!study) return { enrolled: false };
     studyId = study.id;
 
-    // 2. Already enrolled? Short-circuit (keeps this cheap to call on every load).
+    // Already enrolled? Short-circuit.
     stage = "check_existing";
-    const { data: existing } = await supabase
-      .from("study_enrollments")
-      .select("id")
-      .eq("study_id", study.id)
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (existing) return { enrolled: false };
+    if ((userEnrollments ?? []).some((e) => e.study_id === study.id)) {
+      return { enrolled: false };
+    }
 
     // 2a. Adults only (owner decision 2026-10-15). Checked here as well as at
     // the consent route and the layout, so a consent record that predates the

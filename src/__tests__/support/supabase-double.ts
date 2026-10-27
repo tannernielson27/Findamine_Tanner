@@ -43,6 +43,8 @@ export interface DoubleOptions {
 
 /** Relations the research code selects through `rel(cols)` syntax. */
 export const DEFAULT_EMBEDS: Record<string, Record<string, EmbedSpec>> = {
+  // getAuthUser loads the user row with its band in one call (one-to-one).
+  users: { user_profiles: { table: "user_profiles", localKey: "id", foreignKey: "user_id" } },
   treatment_study_dimensions: {
     treatment_dimensions: { table: "treatment_dimensions", localKey: "dimension_id" },
   },
@@ -436,6 +438,14 @@ export class SupabaseDouble {
     auth: {
       getUser: async (token?: string) => ({
         data: { user: token && this.authTokens[token] ? { id: this.authTokens[token].id } : null },
+        error: null,
+      }),
+      // Mirrors getUser: a known token yields an authenticated user's claims.
+      getClaims: async (token?: string) => ({
+        data:
+          token && this.authTokens[token]
+            ? { claims: { sub: this.authTokens[token].id, role: "authenticated" } }
+            : null,
         error: null,
       }),
     },

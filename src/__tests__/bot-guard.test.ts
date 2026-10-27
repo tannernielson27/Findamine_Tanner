@@ -29,6 +29,9 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 import { botGuard } from "@/lib/utils/bot-guard";
+import { clearBlockedIpCache } from "@/lib/utils/bot-detector";
+
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function request(userAgent: string): NextRequest {
   return new NextRequest("http://localhost:3000/api/v1/auth/login", {
@@ -43,11 +46,13 @@ const BROWSER =
 beforeEach(() => {
   h.inserts = [];
   h.blocked = false;
+  clearBlockedIpCache();
 });
 
 describe("botGuard", () => {
   it("rejects a definite bot without blocking its IP", async () => {
     const res = await botGuard(request("curl/8.4.0"));
+    await flush(); // the log insert runs after the response
 
     expect(res?.status).toBe(403);
     expect(h.inserts.filter((i) => i.table === "blocked_ips")).toHaveLength(0);
@@ -63,5 +68,13 @@ describe("botGuard", () => {
     h.blocked = true;
     const res = await botGuard(request(BROWSER));
     expect(res?.status).toBe(403);
+  });
+
+  it("caches the blocked-IP lookup briefly", async () => {
+    expect(await botGuard(request(BROWSER))).toBeNull();
+    h.blocked = true; // an admin block lands, but this instance still has the cached answer
+    expect(await botGuard(request(BROWSER))).toBeNull();
+    clearBlockedIpCache();
+    expect((await botGuard(request(BROWSER)))?.status).toBe(403);
   });
 });

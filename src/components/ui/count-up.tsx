@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { animate, motion, useMotionValue, useTransform } from "framer-motion";
+import { animate, m, useMotionValue, useTransform } from "framer-motion";
 import { EASE_OUT } from "@/lib/motion";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 
@@ -37,7 +37,7 @@ export function CountUp({ value, duration = 0.6, className }: CountUpProps) {
 
   return (
     <span className={className}>
-      <motion.span aria-hidden="true">{display}</motion.span>
+      <m.span aria-hidden="true">{display}</m.span>
       <span className="sr-only">{NUMBER_FORMAT.format(value)}</span>
     </span>
   );

@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ShieldCheck } from "lucide-react";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { backdrop, dialog } from "@/lib/motion";
+import { fetchMe, invalidateMe } from "@/lib/hooks/use-me";
 import {
   isSafetyAcknowledged,
   safetyAckMetadata,
@@ -27,7 +28,7 @@ export function SafetyNotice({ onAcknowledge }: SafetyNoticeProps) {
   }, []);
 
   return (
-    <motion.div
+    <m.div
       variants={backdrop}
       initial="hidden"
       animate="visible"
@@ -37,7 +38,7 @@ export function SafetyNotice({ onAcknowledge }: SafetyNoticeProps) {
       aria-labelledby="safety-notice-title"
       aria-describedby="safety-notice-intro"
     >
-      <motion.div
+      <m.div
         variants={dialog}
         className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-themed-border bg-surface p-5 shadow-xl sm:p-6"
       >
@@ -62,8 +63,8 @@ export function SafetyNotice({ onAcknowledge }: SafetyNoticeProps) {
         >
           I understand
         </button>
-      </motion.div>
-    </motion.div>
+      </m.div>
+    </m.div>
   );
 }
 
@@ -102,8 +103,7 @@ export function useSafetyAcknowledgement(): {
     (async () => {
       let acked = false;
       try {
-        const res = await fetch("/api/v1/auth/me");
-        const data = res.ok ? await res.json() : null;
+        const data = await fetchMe();
         const user = data?.user as { id?: string; metadata?: Record<string, unknown> } | undefined;
         storageKeyRef.current = safetyAckStorageKey(user?.id);
         acked = isSafetyAcknowledged(user?.metadata) || readLocalAck(storageKeyRef.current);
@@ -123,6 +123,7 @@ export function useSafetyAcknowledgement(): {
     setStatus("acknowledged");
     writeLocalAck(storageKeyRef.current);
     // Fire-and-forget: the profile route merges metadata, never replaces it.
+    invalidateMe();
     fetch("/api/v1/auth/profile", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },

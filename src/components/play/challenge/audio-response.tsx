@@ -5,6 +5,7 @@ import { Mic, RotateCcw, Square } from "lucide-react";
 import { PermissionDeniedNotice, PermissionPrimer } from "@/components/permissions/permission-primer";
 import { MAX_AUDIO_SECONDS, audioExtension } from "@/lib/play/audio-answer";
 import { Button } from "@/components/ui/button";
+import { fetchMe } from "@/lib/hooks/use-me";
 import { QuestionText, SubmitButton, TEXT_ACTION_CLASS } from "./parts";
 import { questionOf, type ChallengeFieldProps } from "./types";
 
@@ -23,10 +24,9 @@ function pickRecorderType(): string | undefined {
 /** True/false from /auth/me, or null when it can't be told. */
 async function isChildAccount(): Promise<boolean | null> {
   try {
-    const res = await fetch("/api/v1/auth/me");
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data?.user?.role === "child";
+    const data = await fetchMe();
+    if (!data) return null;
+    return data.user?.role === "child";
   } catch {
     return null;
   }

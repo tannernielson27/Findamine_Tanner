@@ -3,6 +3,9 @@ import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { generalLimiter } from "@/lib/utils/rate-limit";
 
+// Framework and standards listings are static reference data, identical for every viewer.
+const PUBLIC_CACHE = { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" };
+
 /**
  * Browse the curriculum library.
  * Supports filtering by subject, grade, location type, challenge type, and search query.
@@ -38,7 +41,7 @@ export async function GET(request: NextRequest) {
         .order("sort_order")
         .limit(limit);
       if (error) throw new ApiError(500, error.message);
-      return Response.json({ frameworks: data || [] });
+      return Response.json({ frameworks: data || [] }, { headers: PUBLIC_CACHE });
     }
 
     // ── Standards listing ──
@@ -63,7 +66,7 @@ export async function GET(request: NextRequest) {
 
       const { data, error } = await sQuery;
       if (error) throw new ApiError(500, error.message);
-      return Response.json({ standards: data || [] });
+      return Response.json({ standards: data || [] }, { headers: PUBLIC_CACHE });
     }
 
     if (type === "primers") {

@@ -114,7 +114,7 @@ export default function BadgesPage() {
                         badge.earned ? "bg-brand-light text-brand-dark" : "bg-surface border border-themed-border text-themed-muted"
                       }`}>
                         {badge.icon_url ? (
-                          <img src={badge.icon_url} alt="" className={`w-8 h-8 ${badge.earned ? "" : "opacity-50 grayscale"}`} />
+                          <img src={badge.icon_url} alt="" width={32} height={32} loading="lazy" decoding="async" className={`w-8 h-8 ${badge.earned ? "" : "opacity-50 grayscale"}`} />
                         ) : badge.earned ? (
                           <Star className="w-6 h-6" aria-hidden="true" />
                         ) : (

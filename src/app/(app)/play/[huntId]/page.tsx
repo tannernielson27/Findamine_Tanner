@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
-import { Celebration } from "@/components/ui/celebration";
 import { PrivacyNoticeToast } from "@/components/play/privacy-notice-toast";
 import { SafetyNotice, useSafetyAcknowledgement } from "@/components/play/safety-notice";
 import { CodenameForm, PlayEmpty, PlayLoadError, PlayLoading } from "@/components/play/play-states";
@@ -11,6 +11,12 @@ import { PlayScreen } from "@/components/play/play-screen";
 import { useCelebrationState } from "@/lib/play/use-celebration-state";
 import { usePlaySession } from "@/lib/play/use-play-session";
 import { useStopFlow } from "@/lib/play/use-stop-flow";
+
+// Confetti + framer-motion presence only matter once a stop is solved, so they
+// load as their own chunk the first time a celebration is requested.
+const Celebration = dynamic(() => import("@/components/ui/celebration").then((mod) => mod.Celebration), {
+  ssr: false,
+});
 
 export default function PlayPage() {
   const { huntId } = useParams();
@@ -21,6 +27,9 @@ export default function PlayPage() {
   // Play-safely notice before the player's first hunt (App Store 1.4.5).
   const safetyAck = useSafetyAcknowledgement();
   const [codenameInput, setCodenameInput] = useState("");
+  // Stay mounted after the first celebration so it can animate out.
+  const [celebrationRequested, setCelebrationRequested] = useState(false);
+  if (celebration.show && !celebrationRequested) setCelebrationRequested(true);
 
   if (session.loading) return <PlayLoading />;
 
@@ -41,7 +50,7 @@ export default function PlayPage() {
 
   if (session.finds.length === 0 && !session.huntComplete) return <PlayEmpty />;
 
-  const celebrationOverlay = (
+  const celebrationOverlay = celebrationRequested ? (
     <Celebration
       show={celebration.show}
       message={celebration.message}
@@ -49,7 +58,7 @@ export default function PlayPage() {
       intensity={celebration.intensity}
       onComplete={celebration.close}
     />
-  );
+  ) : null;
 
   if (session.huntComplete) {
     return (

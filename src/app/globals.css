@@ -1,19 +1,13 @@
 @import "tailwindcss";
-@import "@fontsource/inter/400.css";
-@import "@fontsource/inter/500.css";
-@import "@fontsource/inter/600.css";
-@import "@fontsource/inter/700.css";
-@import "@fontsource/nunito/400.css";
-@import "@fontsource/nunito/600.css";
-@import "@fontsource/nunito/700.css";
-@import "@fontsource/dm-sans/400.css";
-@import "@fontsource/dm-sans/500.css";
-@import "@fontsource/fredoka/400.css";
-@import "@fontsource/fredoka/500.css";
-@import "@fontsource/fredoka/600.css";
-@import "@fontsource/fredoka/700.css";
-@import "@fontsource/caveat/400.css";
-@import "@fontsource/caveat/700.css";
+@import "@fontsource/inter/latin-400.css";
+@import "@fontsource/inter/latin-500.css";
+@import "@fontsource/inter/latin-600.css";
+@import "@fontsource/inter/latin-700.css";
+@import "@fontsource/fredoka/latin-400.css";
+@import "@fontsource/fredoka/latin-500.css";
+@import "@fontsource/fredoka/latin-600.css";
+@import "@fontsource/fredoka/latin-700.css";
+@import "@fontsource/caveat/latin-400.css";
 
 /* ─── Tailwind v4 Theme: Age-Band Colors ────────────────────
    These map CSS custom properties (set by AgeBandProvider) to

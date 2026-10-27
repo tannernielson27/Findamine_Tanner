@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import { popover, SPRING_SNAPPY } from "@/lib/motion";
 import { Bell } from "lucide-react";
 import {
@@ -86,13 +86,33 @@ export default function NotificationBell() {
     fetchNotifications();
   }, []);
 
-  // Poll for new notifications every 30s (scales better than WebSocket per-user)
+  // Poll for new notifications every 30s, but only while the tab is visible;
+  // coming back to the tab refetches immediately and restarts the timer.
   useEffect(() => {
-    const interval = setInterval(() => {
-      fetchNotifications();
-    }, 30000);
-
-    return () => clearInterval(interval);
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const stop = () => {
+      if (interval !== null) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+    const start = () => {
+      if (interval === null) interval = setInterval(fetchNotifications, 30000);
+    };
+    const onVisibility = () => {
+      if (document.hidden) {
+        stop();
+      } else {
+        fetchNotifications();
+        start();
+      }
+    };
+    if (!document.hidden) start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
   // Close dropdown on outside click or Escape
@@ -193,7 +213,7 @@ export default function NotificationBell() {
         {/* Bell icon */}
         <Bell className="h-[22px] w-[22px]" strokeWidth={2} aria-hidden="true" />
         {unreadCount > 0 && (
-          <motion.span
+          <m.span
             key={badge.bumps}
             initial={badge.bumps > 0 ? { scale: 0.6 } : false}
             animate={{ scale: 1 }}
@@ -201,14 +221,14 @@ export default function NotificationBell() {
             className="absolute -top-0.5 -right-0.5 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-brand px-1 text-xs font-bold leading-none text-white tabular-nums"
           >
             {unreadCount > 9 ? "9+" : unreadCount}
-          </motion.span>
+          </m.span>
         )}
       </button>
 
       {/* Dropdown */}
       <AnimatePresence>
       {open && (
-        <motion.div
+        <m.div
           key="notifications"
           variants={popover}
           initial="hidden"
@@ -278,7 +298,7 @@ export default function NotificationBell() {
               })
             )}
           </div>
-        </motion.div>
+        </m.div>
       )}
       </AnimatePresence>
     </div>

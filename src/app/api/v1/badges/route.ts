@@ -4,6 +4,9 @@ import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { canViewField } from "@/lib/utils/privacy";
 import { getViewerRelationship } from "@/lib/utils/viewer";
 
+// Badge types are static seed data and the same for every viewer.
+const PUBLIC_CACHE = { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" };
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -19,7 +22,7 @@ export async function GET(request: NextRequest) {
         .select("*")
         .order("name");
 
-      return Response.json({ badge_types: data || [] });
+      return Response.json({ badge_types: data || [] }, { headers: PUBLIC_CACHE });
     }
 
     // User's badges

@@ -71,11 +71,14 @@ export async function GET(request: NextRequest) {
       type === "all"
         ? base.or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
         : base.eq(type === "sent" ? "sender_id" : "receiver_id", user.id);
-    const { data } = await scoped.order("created_at", { ascending: false }).limit(50);
+    const [{ data }, blockSets] = await Promise.all([
+      scoped.order("created_at", { ascending: false }).limit(50),
+      getBlockSets(supabase, user.id),
+    ]);
 
     // Hide kudos to/from anyone blocked either way, and kudos the viewer reported.
     const rows = (data || []) as KudosRow[];
-    const hidden = hiddenUserIds(await getBlockSets(supabase, user.id));
+    const hidden = hiddenUserIds(blockSets);
     const reported = await getReportedEntityIds(supabase, user.id, "kudos", rows.map((r) => String(r.id)));
     const visible = rows.filter(
       (r) => r.moderation_status !== "removed" && !hidden.has(r.sender_id) && !hidden.has(r.receiver_id) && !reported.has(String(r.id))

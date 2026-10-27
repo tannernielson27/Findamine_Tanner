@@ -19,7 +19,9 @@ export async function updateStreak(userId: string): Promise<{
 
   const { data: streak } = await supabase
     .from("streaks")
-    .select("*")
+    .select(
+      "current_streak, longest_streak, last_activity_date, streak_start_date, freezes_available, freezes_used, freeze_used_at"
+    )
     .eq("user_id", userId)
     .maybeSingle();
 
@@ -89,12 +91,11 @@ export async function updateStreak(userId: string): Promise<{
     { threshold: 30, code: "STREAK_30" },
   ];
 
-  for (const sb of streakBadges) {
-    if (newCurrent >= sb.threshold) {
-      const earned = await tryAwardBadge(userId, sb.code);
-      if (earned) badgesEarned.push(sb.code);
-    }
-  }
+  const eligible = streakBadges.filter((sb) => newCurrent >= sb.threshold);
+  const results = await Promise.all(eligible.map((sb) => tryAwardBadge(userId, sb.code)));
+  eligible.forEach((sb, i) => {
+    if (results[i]) badgesEarned.push(sb.code);
+  });
 
   return { current: newCurrent, longest: newLongest, justBroke, badgesEarned };
 }
@@ -116,11 +117,11 @@ export async function checkTierPromotion(userId: string): Promise<{
 }> {
   const supabase = await createSupabaseServiceClient();
 
-  // Get total points
-  const { data: points } = await supabase
-    .from("points_ledger")
-    .select("amount")
-    .eq("user_id", userId);
+  // Total points and the stored tier are independent reads.
+  const [{ data: points }, { data: stored }] = await Promise.all([
+    supabase.from("points_ledger").select("amount").eq("user_id", userId),
+    supabase.from("user_tiers").select("tier").eq("user_id", userId).maybeSingle(),
+  ]);
 
   const totalPoints = (points || []).reduce((sum, p) => sum + p.amount, 0);
 
@@ -129,13 +130,6 @@ export async function checkTierPromotion(userId: string): Promise<{
   for (const t of TIER_THRESHOLDS) {
     if (totalPoints >= t.minPoints) currentTier = t;
   }
-
-  // Get stored tier
-  const { data: stored } = await supabase
-    .from("user_tiers")
-    .select("tier")
-    .eq("user_id", userId)
-    .maybeSingle();
 
   const promoted = !stored || stored.tier < currentTier.tier;
 
@@ -161,6 +155,34 @@ export async function checkTierPromotion(userId: string): Promise<{
 
 // ── Badge Evaluation ───────────────────────────────────
 
+/**
+ * badge_types is static seed data, so code -> id is cached per server instance.
+ * A newly seeded badge is picked up once the TTL expires.
+ */
+const BADGE_TYPE_TTL_MS = 10 * 60 * 1000;
+let badgeTypeCache: { loadedAt: number; ids: Map<string, string> } | null = null;
+
+async function getBadgeTypeId(
+  supabase: Awaited<ReturnType<typeof createSupabaseServiceClient>>,
+  code: string
+): Promise<string | null> {
+  if (badgeTypeCache && Date.now() - badgeTypeCache.loadedAt < BADGE_TYPE_TTL_MS) {
+    return badgeTypeCache.ids.get(code) ?? null;
+  }
+  const { data } = await supabase.from("badge_types").select("id, code");
+  if (!data) return null;
+  badgeTypeCache = {
+    loadedAt: Date.now(),
+    ids: new Map((data as { id: string; code: string }[]).map((b) => [b.code, b.id])),
+  };
+  return badgeTypeCache.ids.get(code) ?? null;
+}
+
+/** Test hook: drop the cached badge_types. */
+export function resetBadgeTypeCache(): void {
+  badgeTypeCache = null;
+}
+
 export async function tryAwardBadge(
   userId: string,
   badgeCode: string,
@@ -169,13 +191,9 @@ export async function tryAwardBadge(
   const supabase = await createSupabaseServiceClient();
 
   // Get badge type
-  const { data: badgeType } = await supabase
-    .from("badge_types")
-    .select("id")
-    .eq("code", badgeCode)
-    .single();
-
-  if (!badgeType) return false;
+  const badgeTypeId = await getBadgeTypeId(supabase, badgeCode);
+  if (!badgeTypeId) return false;
+  const badgeType = { id: badgeTypeId };
 
   // Check if already earned
   const { data: existing } = await supabase
@@ -221,22 +239,13 @@ export async function evaluateBadges(
 
   if (event === "find_complete") {
     // FIRST_FIND — count completions across all of this user's sessions
-    const { data: userSessions } = await supabase
-      .from("play_sessions")
-      .select("id")
-      .eq("user_id", userId);
-
-    const sessionIds = (userSessions || []).map((s) => s.id);
-
-    let findCount = 0;
-    if (sessionIds.length > 0) {
-      const { count } = await supabase
-        .from("find_completions")
-        .select("*", { count: "exact", head: true })
-        .in("play_session_id", sessionIds)
-        .not("completed_at", "is", null);
-      findCount = count || 0;
-    }
+    // (one inner-join count instead of fetching every session id first).
+    const { count } = await supabase
+      .from("find_completions")
+      .select("id, play_sessions!inner(user_id)", { count: "exact", head: true })
+      .eq("play_sessions.user_id", userId)
+      .not("completed_at", "is", null);
+    const findCount = count || 0;
 
     if (findCount === 1) {
       if (await tryAwardBadge(userId, "FIRST_FIND")) earned.push("FIRST_FIND");
@@ -250,9 +259,16 @@ export async function evaluateBadges(
       .eq("user_id", userId)
       .eq("status", "completed");
 
-    if (huntCount === 1 && await tryAwardBadge(userId, "FIRST_HUNT")) earned.push("FIRST_HUNT");
-    if ((huntCount || 0) >= 5 && await tryAwardBadge(userId, "HUNTS_5")) earned.push("HUNTS_5");
-    if ((huntCount || 0) >= 25 && await tryAwardBadge(userId, "HUNTS_25")) earned.push("HUNTS_25");
+    const n = huntCount || 0;
+    const candidates = [
+      { ok: huntCount === 1, code: "FIRST_HUNT" },
+      { ok: n >= 5, code: "HUNTS_5" },
+      { ok: n >= 25, code: "HUNTS_25" },
+    ].filter((c) => c.ok);
+    const results = await Promise.all(candidates.map((c) => tryAwardBadge(userId, c.code)));
+    candidates.forEach((c, i) => {
+      if (results[i]) earned.push(c.code);
+    });
   }
 
   if (event === "kudos_sent") {

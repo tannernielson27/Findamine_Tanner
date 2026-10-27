@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { fetchMe, invalidateMe } from "@/lib/hooks/use-me";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -50,11 +51,11 @@ export default function ProfilePage() {
   const [nameError, setNameError] = useState("");
 
   useEffect(() => {
-    fetch("/api/v1/auth/me")
-      .then((r) => r.json())
+    fetchMe()
       .then((d) => {
-        setProfile(d.user);
-        const existing = d.user?.metadata?.real_name || "";
+        if (!d) throw new Error("me unavailable");
+        setProfile(d.user as unknown as ProfileData);
+        const existing = (d.user?.metadata?.real_name as string | undefined) || "";
         setRealName(existing);
         setSavedRealName(existing);
         setLoading(false);
@@ -76,7 +77,10 @@ export default function ProfilePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ real_name: realName }),
       });
-      if (res.ok) setSavedRealName(realName.trim());
+      if (res.ok) {
+        invalidateMe();
+        setSavedRealName(realName.trim());
+      }
       else setNameError("Couldn't save your name. Try again.");
     } catch {
       setNameError("Couldn't save your name. Try again.");

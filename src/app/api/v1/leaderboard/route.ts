@@ -82,16 +82,39 @@ export async function GET(request: NextRequest) {
 
     // Check if the requesting user is a teacher/admin for this hunt
     // (teachers can see real names for their own hunts)
-    const currentUser = await getAuthUser(request);
     let isHuntOwner = false;
+    let currentUser: Awaited<ReturnType<typeof getAuthUser>>;
 
     if (huntId) {
-      // Get hunt's identity_mode
-      const { data: hunt } = await supabase
-        .from("hunts")
-        .select("identity_mode, created_by")
-        .eq("id", huntId)
-        .single();
+      // Auth, the hunt's identity_mode, the board and the viewer's own session
+      // are independent: run them together (the own-session read chains off auth).
+      const authPromise = getAuthUser(request);
+      const [user, { data: hunt }, { data }, mySessionResult] = await Promise.all([
+        authPromise,
+        supabase.from("hunts").select("identity_mode, created_by").eq("id", huntId).single(),
+        // Hunt-specific: join play_sessions for codenames
+        supabase
+          .from("play_sessions")
+          .select(
+            "user_id, total_score, codename, users(id, display_name, avatar_url, role, profile_visibility)"
+          )
+          .eq("hunt_id", huntId)
+          .eq("status", "completed")
+          .order("total_score", { ascending: false })
+          .limit(limit),
+        authPromise.then((u) =>
+          u
+            ? supabase
+                .from("play_sessions")
+                .select("total_score")
+                .eq("hunt_id", huntId)
+                .eq("user_id", u.id)
+                .eq("status", "completed")
+                .maybeSingle()
+            : null
+        ),
+      ]);
+      currentUser = user;
 
       const identityMode = hunt?.identity_mode || "codename_assigned";
 
@@ -103,17 +126,6 @@ export async function GET(request: NextRequest) {
       ) {
         isHuntOwner = true;
       }
-
-      // Hunt-specific: join play_sessions for codenames
-      const { data } = await supabase
-        .from("play_sessions")
-        .select(
-          "user_id, total_score, codename, users(id, display_name, avatar_url, role, profile_visibility)"
-        )
-        .eq("hunt_id", huntId)
-        .eq("status", "completed")
-        .order("total_score", { ascending: false })
-        .limit(limit);
 
       // Enforce privacy on the two fields a leaderboard exposes: total_score
       // (restricted → the user is omitted from boards others see) and
@@ -166,31 +178,27 @@ export async function GET(request: NextRequest) {
       // Self data, so no name-redaction applies. Motivation surface (B5).
       let me: ServerMe | null = null;
       if (currentUser) {
-        const { data: mySession } = await supabase
-          .from("play_sessions")
-          .select("total_score")
-          .eq("hunt_id", huntId)
-          .eq("user_id", currentUser.id)
-          .eq("status", "completed")
-          .maybeSingle();
+        const mySession = mySessionResult?.data;
 
         if (mySession) {
           const myScore = (mySession.total_score as number) ?? 0;
-          const { count } = await supabase
-            .from("play_sessions")
-            .select("user_id", { count: "exact", head: true })
-            .eq("hunt_id", huntId)
-            .eq("status", "completed")
-            .gt("total_score", myScore);
-          const { data: nextRow } = await supabase
-            .from("play_sessions")
-            .select("total_score")
-            .eq("hunt_id", huntId)
-            .eq("status", "completed")
-            .gt("total_score", myScore)
-            .order("total_score", { ascending: true })
-            .limit(1)
-            .maybeSingle();
+          const [{ count }, { data: nextRow }] = await Promise.all([
+            supabase
+              .from("play_sessions")
+              .select("user_id", { count: "exact", head: true })
+              .eq("hunt_id", huntId)
+              .eq("status", "completed")
+              .gt("total_score", myScore),
+            supabase
+              .from("play_sessions")
+              .select("total_score")
+              .eq("hunt_id", huntId)
+              .eq("status", "completed")
+              .gt("total_score", myScore)
+              .order("total_score", { ascending: true })
+              .limit(1)
+              .maybeSingle(),
+          ]);
 
           me = {
             rank: (count ?? 0) + 1,
@@ -207,6 +215,8 @@ export async function GET(request: NextRequest) {
         me,
       });
     }
+
+    currentUser = await getAuthUser(request);
 
     // Overall leaderboard: aggregated per user via RPC, always protect children.
     // For a signed-in caller the scan goes deeper than the visible page so their

@@ -12,6 +12,7 @@ import { gradeAnswer } from "../../_lib/grading";
 import { bandForUser } from "@/lib/utils/age-band";
 import { isOwnAudioPath, parseAudioAnswer } from "@/lib/play/audio-answer";
 import { internalError } from "@/lib/utils/internal-error";
+import { runAfter } from "@/lib/utils/run-after";
 
 export async function POST(
   request: NextRequest,
@@ -33,14 +34,21 @@ export async function POST(
 
     const supabase = await createSupabaseServiceClient();
 
-    // Get session
-    const { data: session } = await supabase
-      .from("play_sessions")
-      .select("id, started_at")
-      .eq("hunt_id", huntId)
-      .eq("user_id", user.id)
-      .eq("status", "active")
-      .single();
+    // The session, the find's task, the player's age band and the hunt's
+    // metadata are independent reads: fetch them together.
+    const [{ data: session }, { data: find }, { data: profile }, { data: hunt }] =
+      await Promise.all([
+        supabase
+          .from("play_sessions")
+          .select("id, started_at")
+          .eq("hunt_id", huntId)
+          .eq("user_id", user.id)
+          .eq("status", "active")
+          .single(),
+        supabase.from("finds").select("tasks(id, content, challenge_type)").eq("id", find_id).single(),
+        supabase.from("user_profiles").select("effective_band").eq("user_id", user.id).maybeSingle(),
+        supabase.from("hunts").select("metadata").eq("id", huntId).maybeSingle(),
+      ]);
 
     if (!session) throw new ApiError(404, "No active play session");
 
@@ -58,13 +66,6 @@ export async function POST(
     if (attemptCount > maxAttempts) {
       throw new ApiError(400, "Maximum attempts reached");
     }
-
-    // Get the find's task for scoring
-    const { data: find } = await supabase
-      .from("finds")
-      .select("tasks(id, content, challenge_type)")
-      .eq("id", find_id)
-      .single();
 
     const task = find?.tasks as unknown as {
       id: string;
@@ -109,13 +110,6 @@ export async function POST(
       challengeType: task?.challenge_type || "short_text",
     });
 
-    // Get user's age band for appropriate feedback
-    const { data: profile } = await supabase
-      .from("user_profiles")
-      .select("effective_band")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
     const ageBand = bandForUser(profile?.effective_band, user.role);
     const gmMessage = getGrowthMindsetMessage(
       scoringResult.feedback.type,
@@ -145,8 +139,12 @@ export async function POST(
 
     if (updateError) throw internalError("/api/v1/play/[huntId]/answer", updateError);
 
-    // Store answer feedback
-    await supabase.from("answer_feedback").insert({
+    let privacyNotice: PrivacyNotice | null = null;
+    let badgesEarned: string[] = [];
+
+    // Everything below is independent (the completion row is already saved), so
+    // run it together.
+    const storeFeedback = supabase.from("answer_feedback").insert({
       completion_id: completion.id,
       feedback_type: scoringResult.feedback.type,
       main_message: gmMessage.main,
@@ -156,65 +154,71 @@ export async function POST(
       tone: "growth_mindset",
     });
 
-    // Award points if completed
-    let privacyNotice: PrivacyNotice | null = null;
-    let badgesEarned: string[] = [];
-    if (isNowComplete) {
-      await supabase.from("points_ledger").insert({
-        user_id: user.id,
-        amount: scoringResult.totalScore,
-        source_type: "challenge",
-        source_id: find_id,
-        hunt_id: huntId,
-        description: `Scored ${scoringResult.totalScore} on find`,
-      });
-
-      // Update session total
-      const { data: allCompletions } = await supabase
-        .from("find_completions")
-        .select("score")
-        .eq("play_session_id", session.id);
-
-      const totalScore = (allCompletions || []).reduce(
-        (sum: number, c: { score: number }) => sum + (c.score || 0),
-        0
-      );
-
-      await supabase
-        .from("play_sessions")
-        .update({ total_score: totalScore })
-        .eq("id", session.id);
-
-      // Referral economy: a recruiter earns a share when their minion scores.
-      await awardReferralPoints(user.id, scoringResult.totalScore, find_id, huntId);
-
+    if (!isNowComplete) {
+      await storeFeedback;
+    } else {
       // Just-in-time privacy notice (storyline S6, migration 063). Skipped for
       // hunts that hide scores: a notice about who can see "this score" would
       // be about a score the player is never shown. recordPrivacyNotice never
       // throws, so scoring cannot fail because of it.
-      const { data: hunt } = await supabase
-        .from("hunts")
-        .select("metadata")
-        .eq("id", huntId)
-        .maybeSingle();
       const huntHidesScores = !!(hunt?.metadata as Record<string, unknown> | null)?.hide_scores;
-      if (!huntHidesScores) {
-        privacyNotice = await recordPrivacyNotice(user.id, { findId: find_id, huntId });
-      }
 
       // Badges and the daily streak. These must never fail a scored answer.
-      try {
-        const streak = await updateStreak(user.id);
-        const findBadges = await evaluateBadges(user.id, "find_complete");
-        badgesEarned = [...streak.badgesEarned, ...findBadges];
-      } catch (gamificationError) {
-        logger.error("play.answer.gamification_error", {
-          userId: user.id,
-          huntId,
-          findId: find_id,
-          error: gamificationError instanceof Error ? gamificationError.message : String(gamificationError),
-        });
-      }
+      const gamify = async (): Promise<string[]> => {
+        try {
+          const [streak, findBadges] = await Promise.all([
+            updateStreak(user.id),
+            evaluateBadges(user.id, "find_complete"),
+          ]);
+          return [...streak.badgesEarned, ...findBadges];
+        } catch (gamificationError) {
+          logger.error("play.answer.gamification_error", {
+            userId: user.id,
+            huntId,
+            findId: find_id,
+            error: gamificationError instanceof Error ? gamificationError.message : String(gamificationError),
+          });
+          return [];
+        }
+      };
+
+      // Update session total from all completions.
+      const updateTotal = async () => {
+        const { data: allCompletions } = await supabase
+          .from("find_completions")
+          .select("score")
+          .eq("play_session_id", session.id);
+        const totalScore = (allCompletions || []).reduce(
+          (sum: number, c: { score: number }) => sum + (c.score || 0),
+          0
+        );
+        await supabase.from("play_sessions").update({ total_score: totalScore }).eq("id", session.id);
+      };
+
+      const [, , , notice, badges] = await Promise.all([
+        storeFeedback,
+        supabase.from("points_ledger").insert({
+          user_id: user.id,
+          amount: scoringResult.totalScore,
+          source_type: "challenge",
+          source_id: find_id,
+          hunt_id: huntId,
+          description: `Scored ${scoringResult.totalScore} on find`,
+        }),
+        updateTotal(),
+        huntHidesScores
+          ? Promise.resolve(null)
+          : recordPrivacyNotice(user.id, { findId: find_id, huntId }),
+        gamify(),
+      ]);
+      privacyNotice = notice;
+      badgesEarned = badges;
+
+      // Referral economy: a recruiter earns a share when their minion scores.
+      // Not part of the response, so it runs after it is sent.
+      runAfter("referral_points", () =>
+        awardReferralPoints(user.id, scoringResult.totalScore, find_id, huntId)
+      );
     }
 
     logger.info("play.answer", { userId: user.id, huntId, findId: find_id, score: scoringResult.totalScore, correct: isCorrect, attempt: attemptCount, durationMs: Math.round(performance.now() - start) });

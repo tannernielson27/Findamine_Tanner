@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { trackEvent } from "@/lib/utils/track-event";
+import { runAfter } from "@/lib/utils/run-after";
 import { WITHDRAWN_META_KEY } from "@/lib/utils/conditions";
 import { getParticipationStatus } from "@/lib/services/participant-conditions";
 
@@ -104,15 +105,17 @@ export async function POST(request: NextRequest) {
       .in("status", ["pending", "opened"])
       .select("id");
 
-    await trackEvent({
-      userId: user.id,
-      eventType: "study_withdrawn",
-      payload: {
-        enrollments_withdrawn: (withdrawn || []).length,
-        manipulations_stopped: stopped,
-        deliveries_closed: (closed || []).length,
-      },
-    });
+    runAfter("track_study_withdrawn", () =>
+      trackEvent({
+        userId: user.id,
+        eventType: "study_withdrawn",
+        payload: {
+          enrollments_withdrawn: (withdrawn || []).length,
+          manipulations_stopped: stopped,
+          deliveries_closed: (closed || []).length,
+        },
+      })
+    );
 
     return Response.json({ ok: true, status: "withdrawn", withdrawn: (withdrawn || []).length });
   } catch (error) {

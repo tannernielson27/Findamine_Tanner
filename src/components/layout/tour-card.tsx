@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef } from "react";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import type { OnboardingStep } from "@/lib/onboarding/steps";
 import type { AnchorRect } from "./use-tour-anchor";
 
@@ -61,7 +61,7 @@ export const TourCard = forwardRef<HTMLDivElement, TourCardProps>(function TourC
 
   return (
     <div className="absolute inset-x-4 mx-auto max-w-sm" style={placement}>
-      <motion.div
+      <m.div
         ref={ref}
         key={step.id}
         initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.98 }}
@@ -125,7 +125,7 @@ export const TourCard = forwardRef<HTMLDivElement, TourCardProps>(function TourC
             </button>
           )}
         </div>
-      </motion.div>
+      </m.div>
     </div>
   );
 });

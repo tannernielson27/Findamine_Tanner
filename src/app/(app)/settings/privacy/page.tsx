@@ -3,8 +3,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { countOverrides, overridesEqual, type VisibilityOverrides } from "@/lib/utils/privacy";
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { backdrop, dialog } from "@/lib/motion";
+import { fetchMe, invalidateMe } from "@/lib/hooks/use-me";
 import {
   PROFILE_FIELDS, VISIBILITY_LABELS, CATEGORIES,
   type VisibilityLevel, type PrivacyTreatment,
@@ -45,7 +46,6 @@ const OVERRIDE_CHOICES: { value: OverrideChoice; label: string }[] = [
 // answered with the controls in view before any end-of-study change. T1 wins
 // if both are somehow pending.
 const GATE_TIMEPOINTS = ["T1", "T3"] as const;
-const GATE_POLL_MS = 20_000;
 
 type DefaultCondition = "private" | "neutral" | "public";
 const DEFAULT_CONDITIONS: readonly string[] = ["private", "neutral", "public"];
@@ -190,13 +190,9 @@ export default function PrivacySettingsPage() {
     tourModeRef.current = isPrivacyTourVisit(window.location.search);
 
     let shown = false; // once the controls are up, a later failure must not replace them
-    fetch("/api/v1/auth/me")
-      .then((r) => {
-        if (!r.ok) throw new Error("Could not load privacy settings");
-        return r.json();
-      })
+    fetchMe()
       .then(async (data) => {
-        if (!data.user) throw new Error("Could not load privacy settings");
+        if (!data?.user) throw new Error("Could not load privacy settings");
 
         setTourMode(tourModeRef.current); // before anything interactive renders
 
@@ -369,11 +365,9 @@ export default function PrivacySettingsPage() {
     };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisible);
-    const timer = window.setInterval(() => void recheckGate(), GATE_POLL_MS);
     return () => {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisible);
-      window.clearInterval(timer);
     };
   }, [gateDeliveryId, recheckGate]);
 
@@ -491,6 +485,7 @@ export default function PrivacySettingsPage() {
         }),
       });
       ok = res.ok;
+      if (ok) invalidateMe(); // the first-choice gate and other readers must see the new metadata
     } catch {
       ok = false; // network failure
     }
@@ -934,7 +929,7 @@ export default function PrivacySettingsPage() {
       {/* HIGH-friction confirmation on protective changes (extra step + framing
           that mildly discourages restriction — disclosed at debrief). */}
       {confirmOpen && (
-        <motion.div
+        <m.div
           variants={backdrop}
           initial="hidden"
           animate="visible"
@@ -943,7 +938,7 @@ export default function PrivacySettingsPage() {
           aria-modal="true"
           aria-labelledby="friction-confirm-title"
         >
-          <motion.div variants={dialog} className="w-full max-w-sm rounded-2xl bg-white shadow-xl p-5">
+          <m.div variants={dialog} className="w-full max-w-sm rounded-2xl bg-white shadow-xl p-5">
             <h2 id="friction-confirm-title" className="text-base font-bold text-gray-900 mb-2">
               Hide this information?
             </h2>
@@ -969,8 +964,8 @@ export default function PrivacySettingsPage() {
                 Hide it anyway
               </button>
             </div>
-          </motion.div>
-        </motion.div>
+          </m.div>
+        </m.div>
       )}
     </main>
   );

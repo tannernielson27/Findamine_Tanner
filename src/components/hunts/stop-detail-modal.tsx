@@ -2,11 +2,10 @@
 
 import { useState } from "react";
 import { ChevronRight, X } from "lucide-react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import { backdrop, dialog } from "@/lib/motion";
 import { Collapse } from "@/components/ui/collapse";
-import { GoogleMap, Marker } from "@react-google-maps/api";
-import { useGoogleMaps } from "@/components/maps/use-google-maps";
+import dynamic from "next/dynamic";
 
 interface StopData {
   id: string;
@@ -28,15 +27,19 @@ interface StopDetailModalProps {
   onClose: () => void;
 }
 
+// The map header (and Google Maps with it) loads as its own chunk, only once a stop is opened.
+const StopMap = dynamic(() => import("./stop-detail-map"), {
+  ssr: false,
+  loading: () => <div className="h-48 rounded-t-2xl fm-shimmer" aria-hidden="true" />,
+});
+
 export default function StopDetailModal({ stop, onClose }: StopDetailModalProps) {
   const [showHints, setShowHints] = useState(false);
-
-  const { isLoaded } = useGoogleMaps();
 
   const hasCoords = stop.lat !== 0 && stop.lng !== 0;
 
   return (
-    <motion.div
+    <m.div
       variants={backdrop}
       initial="hidden"
       animate="visible"
@@ -44,7 +47,7 @@ export default function StopDetailModal({ stop, onClose }: StopDetailModalProps)
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <motion.div
+      <m.div
         variants={dialog}
         role="dialog"
         aria-modal="true"
@@ -52,42 +55,7 @@ export default function StopDetailModal({ stop, onClose }: StopDetailModalProps)
         className="w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-2xl bg-surface shadow-xl"
       >
         {/* Map header */}
-        {hasCoords && isLoaded && (
-          <div className="h-48 rounded-t-2xl overflow-hidden">
-            <GoogleMap
-              mapContainerStyle={{ width: "100%", height: "100%" }}
-              center={{ lat: stop.lat, lng: stop.lng }}
-              zoom={16}
-              options={{
-                disableDefaultUI: true,
-                zoomControl: true,
-                mapTypeControl: false,
-                streetViewControl: false,
-                fullscreenControl: false,
-              }}
-            >
-              <Marker
-                position={{ lat: stop.lat, lng: stop.lng }}
-                label={{
-                  text: String(stop.order),
-                  color: "white",
-                  fontSize: "12px",
-                  fontWeight: "bold",
-                }}
-                icon={{
-                  path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z",
-                  fillColor: "#C2410C",
-                  fillOpacity: 0.9,
-                  strokeColor: "#9A3412",
-                  strokeWeight: 1,
-                  scale: 1.8,
-                  anchor: new google.maps.Point(12, 24),
-                  labelOrigin: new google.maps.Point(12, 9),
-                }}
-              />
-            </GoogleMap>
-          </div>
-        )}
+        {hasCoords && <StopMap lat={stop.lat} lng={stop.lng} order={stop.order} />}
 
         <div className="p-5">
           {/* Header */}
@@ -171,8 +139,8 @@ export default function StopDetailModal({ stop, onClose }: StopDetailModalProps)
             </p>
           )}
         </div>
-      </motion.div>
-    </motion.div>
+      </m.div>
+    </m.div>
   );
 }
 

@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isTrustedOrigin } from "@/lib/utils/trusted-origins";
+import { authenticatedUserId } from "@/lib/auth/claims";
 import { authCookieOptions, isHttpsRequest, launchRedirect } from "@/lib/auth/session";
 
 // Pages that pending_consent users CAN access
@@ -127,8 +128,13 @@ export default async function proxy(request: NextRequest) {
     return response;
   };
 
-  // Refresh the session
-  const { data: { user: authUser } } = await supabase.auth.getUser();
+  // Refresh the session. getClaims() refreshes an expired access token (and
+  // writes the new cookies through setAll above) and otherwise verifies the JWT
+  // locally against the project's asymmetric (ES256) signing key, so the common
+  // case costs no Auth round trip. Sanctioned/deleted accounts are still caught
+  // by the users.status check below and the per-route profile lookups.
+  const authUserId = await authenticatedUserId(supabase.auth);
+  const authUser = authUserId ? { id: authUserId } : null;
 
   // Launch: `/` is the iOS app's start URL and the PWA's start_url. A
   // signed-in person goes straight into the app instead of the welcome

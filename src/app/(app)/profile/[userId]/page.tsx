@@ -101,7 +101,7 @@ export default function PeerProfilePage({ params }: { params: Promise<{ userId: 
         <div className="w-16 h-16 shrink-0 rounded-full bg-secondary/10 flex items-center justify-center font-[family-name:var(--font-display)] text-2xl text-secondary font-bold overflow-hidden">
           {profile.avatar_url ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
+            <img src={profile.avatar_url} alt="" width={64} height={64} loading="lazy" decoding="async" className="w-full h-full object-cover" />
           ) : hidden.has("display_name") ? (
             <Lock className="w-6 h-6 text-themed-muted" aria-hidden="true" />
           ) : (

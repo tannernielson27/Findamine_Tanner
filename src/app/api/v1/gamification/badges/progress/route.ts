@@ -9,17 +9,13 @@ export async function GET(request: NextRequest) {
 
     const supabase = await createSupabaseServiceClient();
 
-    // Get all badge types
-    const { data: allBadges } = await supabase
-      .from("badge_types")
-      .select("id, code, name, description, icon_url, category, criteria")
-      .order("category", { ascending: true });
-
-    // Get user's earned badges
-    const { data: earned } = await supabase
-      .from("user_badges")
-      .select("badge_type_id, earned_at")
-      .eq("user_id", user.id);
+    const [{ data: allBadges }, { data: earned }] = await Promise.all([
+      supabase
+        .from("badge_types")
+        .select("id, code, name, description, icon_url, category, criteria")
+        .order("category", { ascending: true }),
+      supabase.from("user_badges").select("badge_type_id, earned_at").eq("user_id", user.id),
+    ]);
 
     const earnedIds = new Set((earned || []).map((e) => e.badge_type_id));
     const earnedMap = new Map((earned || []).map((e) => [e.badge_type_id, e.earned_at]));

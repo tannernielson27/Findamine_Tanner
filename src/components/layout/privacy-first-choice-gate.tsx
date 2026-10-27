@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { SlidersHorizontal } from "lucide-react";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { backdrop, dialog } from "@/lib/motion";
+import { fetchMe } from "@/lib/hooks/use-me";
 
 /**
  * First-use choice gate for the NEUTRAL default condition (Workstream A / A10).
@@ -21,13 +22,11 @@ export default function PrivacyFirstChoiceGate() {
   const [needsChoice, setNeedsChoice] = useState(false);
 
   useEffect(() => {
-    fetch("/api/v1/auth/me")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        const meta = data?.user?.metadata || {};
-        setNeedsChoice(meta.privacy_default === "neutral" && !meta.privacy_first_choice_at);
-      })
-      .catch(() => setNeedsChoice(false)); // fail open: never trap the user in a broken gate
+    // fetchMe resolves null on failure: fail open, never trap the user in a broken gate.
+    fetchMe().then((data) => {
+      const meta = (data?.user?.metadata || {}) as Record<string, unknown>;
+      setNeedsChoice(meta.privacy_default === "neutral" && !meta.privacy_first_choice_at);
+    });
   }, [pathname]);
 
   // Never cover the page where the choice is actually made — nor the survey
@@ -40,7 +39,7 @@ export default function PrivacyFirstChoiceGate() {
   if (!needsChoice || exempt) return null;
 
   return (
-    <motion.div
+    <m.div
       variants={backdrop}
       initial="hidden"
       animate="visible"
@@ -49,7 +48,7 @@ export default function PrivacyFirstChoiceGate() {
       aria-modal="true"
       aria-labelledby="privacy-choice-title"
     >
-      <motion.div variants={dialog} className="w-full max-w-md rounded-2xl bg-white shadow-xl p-6">
+      <m.div variants={dialog} className="w-full max-w-md rounded-2xl bg-white shadow-xl p-6">
         <div className="flex items-center gap-2 mb-3">
           <SlidersHorizontal aria-hidden="true" className="w-6 h-6 text-brand" />
           <h2 id="privacy-choice-title" className="text-lg font-bold text-gray-900">
@@ -70,7 +69,7 @@ export default function PrivacyFirstChoiceGate() {
         >
           Choose my settings
         </button>
-      </motion.div>
-    </motion.div>
+      </m.div>
+    </m.div>
   );
 }

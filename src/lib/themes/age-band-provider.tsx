@@ -1,8 +1,12 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useSyncExternalStore } from "react";
-import { MotionConfig } from "framer-motion";
+import { createContext, useContext, useLayoutEffect, useMemo, useState, useSyncExternalStore, type CSSProperties } from "react";
+import { LazyMotion, MotionConfig } from "framer-motion";
 import { type AgeBand, THEME_TOKENS, tokensToCssVars } from "./tokens";
+
+// framer-motion's animation features load after first paint; `m` components
+// render their initial state until then, so nothing blocks hydration.
+const loadMotionFeatures = () => import("./motion-features").then((mod) => mod.default);
 
 const VALID_BANDS: AgeBand[] = ["primary", "intermediate", "teen", "adult"];
 
@@ -51,7 +55,23 @@ export function AgeBandProvider({
 
   const band = selectedBand ?? urlOverride ?? baseBand;
 
-  useEffect(() => {
+  // Same tokens, inline on a layout-neutral wrapper: this is part of the server
+  // HTML, so the subtree paints with the right theme before hydration instead of
+  // flashing the default one. The <html> writes below cover everything outside
+  // the wrapper (body, portals) as soon as React commits.
+  const wrapperStyle = useMemo(
+    () =>
+      ({
+        display: "contents",
+        ...tokensToCssVars(THEME_TOKENS[band]),
+        fontFamily: THEME_TOKENS[band].fontFamily,
+      }) as CSSProperties,
+    [band]
+  );
+
+  // Layout effect: runs before the browser paints the commit, so a band change
+  // (or the client-side URL override) never shows one frame of the old theme.
+  useLayoutEffect(() => {
     // Set data attribute on html element
     document.documentElement.setAttribute("data-age-band", band);
 
@@ -70,7 +90,13 @@ export function AgeBandProvider({
       {/* reducedMotion="user" makes every framer-motion animation honor the OS
           prefers-reduced-motion setting (opacity-only, no transforms). Combined
           with the global CSS guard + confetti gating, this completes C4. */}
-      <MotionConfig reducedMotion="user">{children}</MotionConfig>
+      <LazyMotion features={loadMotionFeatures}>
+        <MotionConfig reducedMotion="user">
+          <div style={wrapperStyle}>
+            {children}
+          </div>
+        </MotionConfig>
+      </LazyMotion>
     </AgeBandContext.Provider>
   );
 }

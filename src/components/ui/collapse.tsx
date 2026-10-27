@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import { DURATION, EASE_IN, EASE_OUT } from "@/lib/motion";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 
@@ -22,7 +22,7 @@ export function Collapse({ open, children }: CollapseProps) {
   return (
     <AnimatePresence initial={false}>
       {open && (
-        <motion.div
+        <m.div
           key="collapse"
           initial={{ height: 0, opacity: 0 }}
           animate={{ height: "auto", opacity: 1, transition: { duration: DURATION.slow, ease: EASE_OUT } }}
@@ -30,7 +30,7 @@ export function Collapse({ open, children }: CollapseProps) {
           className="overflow-hidden"
         >
           {children}
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>
   );

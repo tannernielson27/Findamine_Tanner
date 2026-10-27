@@ -25,6 +25,29 @@ const ZONE_COLORS: Record<string, string> = {
   burning: "#EF4444",
 };
 
+// Module-level so the objects keep one identity: @react-google-maps/api re-applies
+// options/styles to the map whenever the reference changes, i.e. on every GPS fix.
+const MAP_OPTIONS: google.maps.MapOptions = {
+  disableDefaultUI: true,
+  zoomControl: true,
+  mapTypeControl: false,
+  streetViewControl: false,
+  fullscreenControl: false,
+  styles: [
+    // Subtle map style — reduce visual noise
+    { featureType: "poi", stylers: [{ visibility: "off" }] },
+    { featureType: "transit", stylers: [{ visibility: "off" }] },
+  ],
+};
+
+const TARGET_CIRCLE_OPTIONS: google.maps.CircleOptions = {
+  fillColor: "#10B981",
+  fillOpacity: 0.15,
+  strokeColor: "#10B981",
+  strokeWeight: 2,
+  strokeOpacity: 0.5,
+};
+
 const containerStyle = { width: "100%", height: "280px", borderRadius: "12px" };
 
 export default function NavigateMap({
@@ -71,6 +94,26 @@ export default function NavigateMap({
     frame();
   }, [map, hasUser, targetLat, targetLng, frame]);
 
+  const zoneColor = zone ? ZONE_COLORS[zone] || "#6B7280" : "#6B7280";
+  const userPosition = useMemo(
+    () => (userLat != null && userLng != null ? { lat: userLat, lng: userLng } : null),
+    [userLat, userLng]
+  );
+  const userIcon = useMemo<google.maps.Symbol | undefined>(
+    () =>
+      isLoaded
+        ? {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 10,
+            fillColor: zoneColor,
+            fillOpacity: 1,
+            strokeColor: "#fff",
+            strokeWeight: 3,
+          }
+        : undefined,
+    [isLoaded, zoneColor]
+  );
+
   if (unavailableReason) {
     return (
       <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
@@ -87,8 +130,6 @@ export default function NavigateMap({
     );
   }
 
-  const zoneColor = zone ? ZONE_COLORS[zone] || "#6B7280" : "#6B7280";
-
   return (
     <div className="relative">
       <GoogleMap
@@ -96,44 +137,20 @@ export default function NavigateMap({
         center={target}
         zoom={16}
         onLoad={onLoad}
-        options={{
-          disableDefaultUI: true,
-          zoomControl: true,
-          mapTypeControl: false,
-          streetViewControl: false,
-          fullscreenControl: false,
-          styles: [
-            // Subtle map style — reduce visual noise
-            { featureType: "poi", stylers: [{ visibility: "off" }] },
-            { featureType: "transit", stylers: [{ visibility: "off" }] },
-          ],
-        }}
+        options={MAP_OPTIONS}
       >
         {/* Target area circle */}
         <CircleF
           center={target}
           radius={radiusMeters}
-          options={{
-            fillColor: "#10B981",
-            fillOpacity: 0.15,
-            strokeColor: "#10B981",
-            strokeWeight: 2,
-            strokeOpacity: 0.5,
-          }}
+          options={TARGET_CIRCLE_OPTIONS}
         />
 
         {/* User position marker */}
-        {hasUser && (
+        {userPosition && (
           <MarkerF
-            position={{ lat: userLat, lng: userLng }}
-            icon={{
-              path: google.maps.SymbolPath.CIRCLE,
-              scale: 10,
-              fillColor: zoneColor,
-              fillOpacity: 1,
-              strokeColor: "#fff",
-              strokeWeight: 3,
-            }}
+            position={userPosition}
+            icon={userIcon}
           />
         )}
       </GoogleMap>

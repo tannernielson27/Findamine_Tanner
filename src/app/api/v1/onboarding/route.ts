@@ -12,22 +12,17 @@ export async function GET(request: NextRequest) {
 
     const supabase = await createSupabaseServiceClient();
 
-    // Get milestones
-    const { data: milestones } = await supabase
-      .from("user_milestones")
-      .select("milestone_type, achieved_at")
-      .eq("user_id", user.id);
-
-    // Get tutorial progress
-    const { data: tutorials } = await supabase
-      .from("tutorials")
-      .select("id, title, description, target_roles, sort_order")
-      .order("sort_order");
-
-    const { data: progress } = await supabase
-      .from("tutorial_progress")
-      .select("tutorial_id")
-      .eq("user_id", user.id);
+    const [{ data: milestones }, { data: tutorials }, { data: progress }] = await Promise.all([
+      supabase
+        .from("user_milestones")
+        .select("milestone_type, achieved_at")
+        .eq("user_id", user.id),
+      supabase
+        .from("tutorials")
+        .select("id, title, description, target_roles, sort_order")
+        .order("sort_order"),
+      supabase.from("tutorial_progress").select("tutorial_id").eq("user_id", user.id),
+    ]);
 
     const completedTutorials = new Set((progress || []).map((p) => p.tutorial_id));
     const milestoneSet = new Set((milestones || []).map((m) => m.milestone_type));

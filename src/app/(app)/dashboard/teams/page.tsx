@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { fetchMe } from "@/lib/hooks/use-me";
 import { ArrowLeft, Users } from "lucide-react";
 import TeamChat from "@/components/social/team-chat";
 import { NETWORK_ERROR_MESSAGE } from "@/app/login/auth-client";
@@ -32,17 +33,14 @@ export default function TeamsPage() {
 
   const load = useCallback(async () => {
     try {
-      const [teamsRes, meRes] = await Promise.all([
+      const [teamsRes, me] = await Promise.all([
         fetch("/api/v1/teams?mine=true", { cache: "no-store" }),
-        fetch("/api/v1/auth/me"),
+        fetchMe(),
       ]);
       if (!teamsRes.ok) throw new Error(String(teamsRes.status));
       const data = await teamsRes.json();
       setTeams(data.teams || []);
-      if (meRes.ok) {
-        const me = await meRes.json();
-        setCurrentUserId(me.user?.id || "");
-      }
+      if (me) setCurrentUserId(me.user?.id || "");
       setError("");
     } catch (err) {
       setError(err instanceof TypeError ? NETWORK_ERROR_MESSAGE : "We couldn't load your teams.");

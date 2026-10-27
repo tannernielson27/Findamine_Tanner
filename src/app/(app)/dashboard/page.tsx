@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import { createSupabaseServerClient, createSupabaseServiceClient } from "@/lib/supabase/server";
+import { createSupabaseServiceClient } from "@/lib/supabase/server";
+import { getAuthId, getViewerRow } from "@/lib/auth/viewer";
 import { HUNT_CREATOR_ROLES } from "@/components/layout/nav-links";
 import { ResumeCard } from "@/components/home/resume-card";
 import { WeeklyCard } from "@/components/home/weekly-card";
@@ -21,27 +22,14 @@ import type { AgeBand } from "@/lib/themes/tokens";
  * My Hunts is a tab for creators.
  */
 export default async function HomePage() {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
-  if (!authUser) redirect("/login");
+  // Shared with the (app) layout for this request: no extra auth or profile queries.
+  const authId = await getAuthId();
+  if (!authId) redirect("/login");
 
-  const db = await createSupabaseServiceClient();
-  const { data: profile } = await db
-    .from("users")
-    .select("id, role")
-    .eq("auth_id", authUser.id)
-    .is("deleted_at", null)
-    .maybeSingle();
+  const profile = await getViewerRow();
   if (!profile) redirect("/login");
 
-  const { data: userProfile } = await db
-    .from("user_profiles")
-    .select("effective_band")
-    .eq("user_id", profile.id)
-    .maybeSingle();
-  const band = bandForUser(userProfile?.effective_band, profile.role);
+  const band = bandForUser(profile.effective_band, profile.role);
   const isCreator = HUNT_CREATOR_ROLES.includes(profile.role);
 
   return (

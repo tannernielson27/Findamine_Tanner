@@ -149,7 +149,26 @@ export function detectBot(request: NextRequest): BotScore {
 /**
  * Check if an IP is blocked. Returns true if blocked.
  */
+const BLOCK_CACHE_TTL_MS = 60_000;
+const BLOCK_CACHE_MAX = 5_000;
+const blockCache = new Map<string, { blocked: boolean; expiresAt: number }>();
+
+/** Drop cached block decisions (tests, admin changes within this instance). */
+export function clearBlockedIpCache(): void {
+  blockCache.clear();
+}
+
 export async function isIpBlocked(ipHash: string): Promise<boolean> {
+  const cached = blockCache.get(ipHash);
+  if (cached && cached.expiresAt > Date.now()) return cached.blocked;
+
+  const blocked = await lookupIpBlocked(ipHash);
+  if (blockCache.size >= BLOCK_CACHE_MAX) blockCache.clear();
+  blockCache.set(ipHash, { blocked, expiresAt: Date.now() + BLOCK_CACHE_TTL_MS });
+  return blocked;
+}
+
+async function lookupIpBlocked(ipHash: string): Promise<boolean> {
   const supabase = await createSupabaseServiceClient();
   const { data } = await supabase
     .from("blocked_ips")

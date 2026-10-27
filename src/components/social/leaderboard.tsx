@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Medal, Star, Trophy } from "lucide-react";
-import { motion } from "framer-motion";
+import { LazyMotion, m } from "framer-motion";
 import { SPRING_SNAPPY } from "@/lib/motion";
 import {
   competitionRanks,
@@ -46,6 +46,8 @@ async function loadBoard(huntId: string | undefined): Promise<Board | null> {
     return null;
   }
 }
+
+const loadLayoutFeatures = () => import("@/lib/themes/motion-features-max").then((mod) => mod.default);
 
 export default function Leaderboard({ huntId }: LeaderboardProps) {
   const [board, setBoard] = useState<Board | null>(null);
@@ -117,6 +119,7 @@ export default function Leaderboard({ huntId }: LeaderboardProps) {
   const unranked = viewerId != null && !standing && entries.length > 0;
 
   return (
+    <LazyMotion features={loadLayoutFeatures}>
     <div className="rounded-xl border border-themed-border bg-surface shadow-[var(--shadow-card)] overflow-hidden">
       <div className="border-b border-themed-border px-4 py-3">
         <div className="flex items-center justify-between gap-3">
@@ -162,7 +165,7 @@ export default function Leaderboard({ huntId }: LeaderboardProps) {
             return (
               // layout="position": when a live update reorders the board, rows
               // slide to their new rank instead of jumping.
-              <motion.li
+              <m.li
                 key={entry.user_id}
                 layout="position"
                 transition={SPRING_SNAPPY}
@@ -226,7 +229,7 @@ export default function Leaderboard({ huntId }: LeaderboardProps) {
                   <span className="font-[family-name:var(--font-display)] text-lg font-bold tabular-nums text-themed-text">{entry.score}</span>
                   <span className="text-xs text-themed-muted ml-1">pts</span>
                 </div>
-              </motion.li>
+              </m.li>
             );
           })}
 
@@ -270,5 +273,6 @@ export default function Leaderboard({ huntId }: LeaderboardProps) {
         </ol>
       )}
     </div>
+    </LazyMotion>
   );
 }

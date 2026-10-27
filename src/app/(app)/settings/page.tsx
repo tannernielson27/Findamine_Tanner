@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { fetchMe, invalidateMe } from "@/lib/hooks/use-me";
 import Link from "next/link";
 import { Settings, RefreshCw, Shield, BookOpen, Users, Ban, FileText } from "lucide-react";
 import { restartOnboardingTour } from "@/components/layout/onboarding";
@@ -18,12 +19,11 @@ export default function SettingsPage() {
   const [tourRestarted, setTourRestarted] = useState(false);
 
   useEffect(() => {
-    fetch("/api/v1/auth/me")
-      .then(async (res) => {
-        if (!res.ok) throw new Error("Could not load settings");
-        const data = await res.json();
-        if (!data.user) throw new Error("Could not load settings");
-        setUser(data.user);
+    // A retry must not be answered from the cache.
+    fetchMe({ force: loadAttempt > 0 })
+      .then((data) => {
+        if (!data?.user) throw new Error("Could not load settings");
+        setUser(data.user as unknown as { display_name: string; email: string; role: string });
         setDisplayName(data.user.display_name || "");
       })
       .catch(() => setLoadFailed(true));
@@ -46,6 +46,7 @@ export default function SettingsPage() {
         body: JSON.stringify({ display_name: displayName }),
       });
       if (res.ok) {
+        invalidateMe();
         setMessage("Saved!");
       } else {
         // 422 carries a friendly content-filter message; show it.

@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Bell, Camera, MapPin, Mic, type LucideIcon } from "lucide-react";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { dialog } from "@/lib/motion";
 import {
   PRIMER_COPY,
@@ -129,7 +129,7 @@ export function PermissionPrimer({ kind, onContinue, deniedActions }: Permission
   }
 
   return (
-    <motion.section
+    <m.section
       variants={dialog}
       initial="hidden"
       animate="visible"
@@ -154,6 +154,6 @@ export function PermissionPrimer({ kind, onContinue, deniedActions }: Permission
       <Button size="lg" block onClick={handleContinue}>
         {copy.continueLabel}
       </Button>
-    </motion.section>
+    </m.section>
   );
 }

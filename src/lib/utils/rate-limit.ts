@@ -141,6 +141,9 @@ function createBucket(max: number, windowMs: number, prefix: string): Bucket {
         redis: await getUpstashRedis(),
         limiter: Ratelimit.slidingWindow(max, msToUpstashDuration(windowMs)),
         prefix: `rl:${prefix}`,
+        // Per-instance cache of keys already over the limit: a blocked caller
+        // is rejected without another Redis round trip.
+        ephemeralCache: new Map(),
       });
     }
     return limiter.limit(key);
@@ -193,9 +196,16 @@ function createRateLimiter(opts: {
 
   return {
     async check(request: NextRequest, userId?: string | null): Promise<void> {
-      await perIp.consume(ipKey(request));
+      // The two buckets are independent counters: consume them concurrently.
+      // allSettled so both are always counted; the IP bucket's error wins,
+      // matching the old IP-then-user order.
+      const checks = [perIp.consume(ipKey(request))];
       if (opts.keyBy !== "ip" && typeof userId === "string" && userId) {
-        await perUser.consume(userKey(userId));
+        checks.push(perUser.consume(userKey(userId)));
+      }
+      const results = await Promise.allSettled(checks);
+      for (const r of results) {
+        if (r.status === "rejected") throw r.reason;
       }
     },
     checkKey: (key: string) => perUser.consume(key),

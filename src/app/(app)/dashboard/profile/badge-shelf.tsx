@@ -74,7 +74,7 @@ export function BadgeShelf() {
           {badges.slice(0, SHOWN).map((b) => (
             <li key={b.id} className="flex w-[84px] shrink-0 flex-col items-center gap-2 text-center">
               <span className="flex h-16 w-16 items-center justify-center rounded-full border border-themed-border bg-surface" aria-hidden="true">
-                {b.iconUrl ? <img src={b.iconUrl} alt="" className="h-9 w-9" /> : <Award className="h-7 w-7 text-juniper" />}
+                {b.iconUrl ? <img src={b.iconUrl} alt="" width={36} height={36} loading="lazy" decoding="async" className="h-9 w-9" /> : <Award className="h-7 w-7 text-juniper" />}
               </span>
               <span className="line-clamp-2 text-[13px] font-semibold leading-tight text-themed-text">{b.name}</span>
             </li>

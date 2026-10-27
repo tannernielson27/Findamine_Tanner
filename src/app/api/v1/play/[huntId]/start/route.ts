@@ -4,6 +4,7 @@ import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { logger } from "@/lib/utils/logger";
 import { botGuard } from "@/lib/utils/bot-guard";
 import { trackEvent } from "@/lib/utils/track-event";
+import { runAfter } from "@/lib/utils/run-after";
 import { activeTeamIdsInHunt, teamModeOf } from "../../../teams/team-rules";
 import { canAccessHunt } from "@/lib/hunts/review";
 import { internalError } from "@/lib/utils/internal-error";
@@ -23,7 +24,9 @@ export async function POST(
     const user = await getAuthUser(request);
     if (!user) throw new ApiError(401, "Not authenticated");
 
-    trackEvent({ userId: user.id, eventType: "play_start", payload: { hunt_id: huntId } });
+    runAfter("track_play_start", () =>
+      trackEvent({ userId: user.id, eventType: "play_start", payload: { hunt_id: huntId } })
+    );
 
     logger.info("play.start", { path: `/api/v1/play/${huntId}/start`, userId: user.id });
 

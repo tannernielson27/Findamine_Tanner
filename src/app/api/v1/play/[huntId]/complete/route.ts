@@ -3,6 +3,7 @@ import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { trackEvent } from "@/lib/utils/track-event";
 import { evaluateBadges, updateStreak } from "@/lib/services/gamification";
+import { runAfter } from "@/lib/utils/run-after";
 import { logger } from "@/lib/utils/logger";
 
 export async function POST(
@@ -47,13 +48,17 @@ export async function POST(
       return Response.json({ session: finished[0], already_completed: true, badges_earned: [] });
     }
 
-    trackEvent({ userId: user.id, eventType: "play_complete", payload: { hunt_id: huntId } });
+    runAfter("track_play_complete", () =>
+      trackEvent({ userId: user.id, eventType: "play_complete", payload: { hunt_id: huntId } })
+    );
 
     // Badges and the daily streak. These must never fail the completion.
     let badgesEarned: string[] = [];
     try {
-      const streak = await updateStreak(user.id);
-      const huntBadges = await evaluateBadges(user.id, "hunt_complete");
+      const [streak, huntBadges] = await Promise.all([
+        updateStreak(user.id),
+        evaluateBadges(user.id, "hunt_complete"),
+      ]);
       badgesEarned = [...streak.badgesEarned, ...huntBadges];
     } catch (gamificationError) {
       logger.error("play.complete.gamification_error", {

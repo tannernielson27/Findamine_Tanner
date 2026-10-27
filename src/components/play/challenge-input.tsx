@@ -1,12 +1,20 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { MultipleChoice } from "./challenge/multiple-choice";
 import { NumericEntry } from "./challenge/numeric-entry";
-import { SortingOrdering } from "./challenge/sorting-ordering";
-import { PhotoObservation } from "./challenge/photo-observation";
-import { SketchDraw } from "./challenge/sketch-draw";
-import { AudioResponse } from "./challenge/audio-response";
 import { TextInput } from "./challenge/text-input";
+
+// The heavier challenge types (drawing canvas, recorder, camera, drag sorting)
+// load as separate chunks, only when a stop actually uses them. Multiple
+// choice, numeric and text stay in the main play bundle: they cover most stops.
+function ChallengeSkeleton() {
+  return <div className="min-h-24 rounded-xl fm-shimmer" aria-hidden="true" />;
+}
+const SortingOrdering = dynamic(() => import("./challenge/sorting-ordering").then((mod) => mod.SortingOrdering), { loading: ChallengeSkeleton });
+const PhotoObservation = dynamic(() => import("./challenge/photo-observation").then((mod) => mod.PhotoObservation), { loading: ChallengeSkeleton });
+const SketchDraw = dynamic(() => import("./challenge/sketch-draw").then((mod) => mod.SketchDraw), { loading: ChallengeSkeleton });
+const AudioResponse = dynamic(() => import("./challenge/audio-response").then((mod) => mod.AudioResponse), { loading: ChallengeSkeleton });
 
 interface ChallengeInputProps {
   challengeType: string;

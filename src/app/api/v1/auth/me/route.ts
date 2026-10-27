@@ -11,25 +11,23 @@ export async function GET(request: NextRequest) {
 
     // Get full profile
     const supabase = await createSupabaseServiceClient();
-    const { data: profile, error } = await supabase
-      .from("users")
-      .select("id, email, display_name, avatar_url, role, status, created_at, metadata, profile_visibility, profile_visibility_overrides")
-      .eq("id", user.id)
-      .is("deleted_at", null)
-      .single();
+    // The profile row and the age band are independent reads.
+    const [{ data: profile, error }, { data: bandRow }] = await Promise.all([
+      supabase
+        .from("users")
+        .select("id, email, display_name, avatar_url, role, status, created_at, metadata, profile_visibility, profile_visibility_overrides")
+        .eq("id", user.id)
+        .is("deleted_at", null)
+        .single(),
+      // age_band is a user_profiles column (effective_band). Selecting it from
+      // `users` failed this whole query in PostgREST, so /auth/me 404'd — which
+      // is the call the privacy page depends on for its condition and settings.
+      supabase.from("user_profiles").select("effective_band").eq("user_id", user.id).maybeSingle(),
+    ]);
 
     if (error || !profile) {
       throw new ApiError(404, "User profile not found");
     }
-
-    // age_band is a user_profiles column (effective_band). Selecting it from
-    // `users` failed this whole query in PostgREST, so /auth/me 404'd — which
-    // is the call the privacy page depends on for its condition and settings.
-    const { data: bandRow } = await supabase
-      .from("user_profiles")
-      .select("effective_band")
-      .eq("user_id", user.id)
-      .maybeSingle();
 
     return Response.json({ user: { ...profile, age_band: bandRow?.effective_band ?? null } });
   } catch (error) {

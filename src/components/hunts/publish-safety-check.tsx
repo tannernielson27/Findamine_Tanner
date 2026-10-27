@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { ShieldCheck } from "lucide-react";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { backdrop, dialog } from "@/lib/motion";
 
 /** What the creator affirms before a hunt goes public. */
@@ -41,7 +41,7 @@ export function PublishSafetyCheck({ busy = false, onConfirm, onCancel }: Publis
   }, [onCancel]);
 
   return (
-    <motion.div
+    <m.div
       variants={backdrop}
       initial="hidden"
       animate="visible"
@@ -50,7 +50,7 @@ export function PublishSafetyCheck({ busy = false, onConfirm, onCancel }: Publis
       aria-modal="true"
       aria-labelledby="publish-safety-title"
     >
-      <motion.div variants={dialog} className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+      <m.div variants={dialog} className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
         <div className="mb-3 flex items-center gap-2">
           <ShieldCheck aria-hidden="true" className="h-6 w-6 shrink-0 text-brand" />
           <h2 id="publish-safety-title" className="text-lg font-bold text-gray-900">
@@ -94,7 +94,7 @@ export function PublishSafetyCheck({ busy = false, onConfirm, onCancel }: Publis
             Submit for review
           </button>
         </div>
-      </motion.div>
-    </motion.div>
+      </m.div>
+    </m.div>
   );
 }

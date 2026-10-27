@@ -9,6 +9,7 @@
 import { NextRequest } from "next/server";
 import { detectBot, getIpHash, isIpBlocked } from "./bot-detector";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
+import { runAfter } from "./run-after";
 
 /**
  * Returns a 403 Response if the request is from a blocked IP or
@@ -31,7 +32,9 @@ export async function botGuard(request: NextRequest): Promise<Response | null> {
   // to admins.
   if (result.definite) {
     // Log the event
-    try {
+    const userAgent = request.headers.get("user-agent");
+    const path = new URL(request.url).pathname;
+    runAfter("bot_blocked_log", async () => {
       const supabase = await createSupabaseServiceClient();
       await supabase.from("behavioral_events").insert({
         event_type: "bot_blocked",
@@ -40,20 +43,20 @@ export async function botGuard(request: NextRequest): Promise<Response | null> {
           ip_hash: ipHash,
           score: result.score,
           reasons: result.reasons,
-          user_agent: request.headers.get("user-agent"),
-          path: new URL(request.url).pathname,
+          user_agent: userAgent,
+          path,
         },
       });
-    } catch {
-      // Don't fail the guard if logging fails
-    }
+    });
 
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // Log suspicious activity (score >= 50) but don't block
   if (result.score >= 50) {
-    try {
+    const userAgent = request.headers.get("user-agent");
+    const path = new URL(request.url).pathname;
+    runAfter("bot_suspicious_log", async () => {
       const supabase = await createSupabaseServiceClient();
       await supabase.from("behavioral_events").insert({
         event_type: "bot_suspicious",
@@ -63,13 +66,11 @@ export async function botGuard(request: NextRequest): Promise<Response | null> {
           score: result.score,
           classification: result.classification,
           reasons: result.reasons,
-          user_agent: request.headers.get("user-agent"),
-          path: new URL(request.url).pathname,
+          user_agent: userAgent,
+          path,
         },
       });
-    } catch {
-      // Don't fail if logging fails
-    }
+    });
   }
 
   return null; // Request is OK

@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { createSupabaseServerClient, createSupabaseServiceClient } from "@/lib/supabase/server";
+import { after } from "next/server";
+import { getAuthId, getViewerRow } from "@/lib/auth/viewer";
 import { safeNextPath } from "@/lib/services/auth-emails";
 import TopBar from "@/components/layout/top-bar";
 import AppChrome from "@/components/layout/app-chrome";
@@ -28,14 +29,16 @@ function loginUrl(path: string): string {
 }
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createSupabaseServerClient();
-  const { data: { user: authUser } } = await supabase.auth.getUser();
-  const requestPath = (await headers()).get(REQUEST_PATH_HEADER) ?? "";
+  // One auth check + one profile lookup per request: getViewerRow() is
+  // React-cache()d, so pages that call it again reuse this result.
+  const [viewer, requestHeaders] = await Promise.all([getViewerRow(), headers()]);
+  const requestPath = requestHeaders.get(REQUEST_PATH_HEADER) ?? "";
   const isPublic = isPublicAppPath(requestPath);
+  const authId = viewer ? viewer.auth_id : await getAuthId();
 
   // Backstop for the route guard in src/proxy.ts: nothing in this group except
   // the public catalogue renders for a signed-out visitor.
-  if (!authUser && !isPublic) {
+  if (!authId && !isPublic) {
     redirect(loginUrl(requestPath));
   }
 
@@ -47,14 +50,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   let researchEligible = false;
   let needsDateOfBirth = false;
 
-  if (authUser) {
-    const serviceClient = await createSupabaseServiceClient();
-    const { data } = await serviceClient
-      .from("users")
-      .select("id, display_name, role, avatar_url, metadata, date_of_birth, profile_visibility")
-      .eq("auth_id", authUser.id)
-      .is("deleted_at", null)
-      .maybeSingle();
+  if (authId) {
+    const data = viewer;
     // DOB and the visibility map stay on the server: only the fields the
     // navbar needs are passed on to client components.
     const storedVisibility = data?.profile_visibility;
@@ -92,22 +89,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       privacyFriction = assigned === "low" || assigned === "high" ? assigned : null;
     }
 
-    // Get age band
+    // The stored age band came with the profile lookup.
     if (profile) {
-      const { data: userProfile } = await serviceClient
-        .from("user_profiles")
-        .select("effective_band")
-        .eq("user_id", profile.id)
-        .maybeSingle();
-      ageBand = bandForUser(userProfile?.effective_band, profile.role);
+      ageBand = bandForUser(data?.effective_band, profile.role);
 
       // Anyone outside the study starts private-leaning instead of with an
       // empty map (which is enforced as "everyone"). Skips enrolled users.
-      await applyNonParticipantDefaults(
-        profile.id,
-        ageBand,
-        storedVisibility as Record<string, unknown> | null | undefined
-      );
+      // Pure side-effect write (nothing rendered depends on it), and it runs
+      // after enrollment above so it still sees a fresh enrollment row. It is
+      // a no-op for anyone who already has a map, so it only costs a request
+      // the first time.
+      const userId = profile.id;
+      const visibility = storedVisibility as Record<string, unknown> | null | undefined;
+      if (!visibility || Object.keys(visibility).length === 0) {
+        after(() => applyNonParticipantDefaults(userId, ageBand, visibility));
+      }
     }
   }
 

@@ -29,23 +29,32 @@ export default async function HuntDetailPage({ params }: { params: Promise<{ id:
   const { id } = await params;
   const supabase = await createSupabaseServiceClient();
 
+  // The hunt and the viewer are independent (the viewer is also cached from
+  // the layout), so load them together.
   // `*` includes cover_image_url once migration 079 is applied.
-  const { data: hunt } = await supabase
-    .from("hunts")
-    .select("*, finds(id, sort_order, deleted_at, clue_text, clue_hints, locations(name, latitude, longitude, radius_meters), tasks(title, challenge_type), primers(title, content))")
-    .eq("id", id)
-    .is("deleted_at", null)
-    .single();
+  const [{ data: hunt }, viewer] = await Promise.all([
+    supabase
+      .from("hunts")
+      .select("*, finds(id, sort_order, deleted_at, clue_text, clue_hints, locations(name, latitude, longitude, radius_meters), tasks(title, challenge_type), primers(title, content))")
+      .eq("id", id)
+      .is("deleted_at", null)
+      .single(),
+    getBrowseViewer(),
+  ]);
 
   if (!hunt) notFound();
-
-  const viewer = await getBrowseViewer();
 
   // Only hunts approved in publish review are public. Drafts are visible to
   // their owner and reviewers; published-but-unapproved hunts also to the
   // creator's roster students. Same rule as the hunts API (canAccessHunt).
   const isPublic = isPubliclyAvailable(hunt);
-  if (!isPublic && !(await canAccessHunt(supabase, hunt, viewer))) notFound();
+  // Social proof only needs the hunt, so it runs alongside the access check.
+  // Nothing from it is rendered unless the access check passes.
+  const [hasAccess, social] = await Promise.all([
+    isPublic ? true : canAccessHunt(supabase, hunt, viewer),
+    getHuntSocialProof(supabase, hunt.id, hunt.created_by),
+  ]);
+  if (!hasAccess) notFound();
 
   // Same statuses the play API accepts (play/[huntId]/start).
   const isPlayable = PLAYABLE_STATUSES.includes(hunt.status);
@@ -57,7 +66,6 @@ export default async function HuntDetailPage({ params }: { params: Promise<{ id:
 
   const finds = liveFinds(hunt.finds as DetailFind[] | null);
   const start = startArea(finds, hunt.center_latitude, hunt.center_longitude);
-  const social = await getHuntSocialProof(supabase, hunt.id, hunt.created_by);
   const tags = [
     audienceLabel(hunt.target_audience),
     ...((hunt.subject_domains as string[] | null) ?? []).map(subjectLabel),

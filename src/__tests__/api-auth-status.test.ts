@@ -10,11 +10,21 @@ const h = vi.hoisted(() => ({ profile: null as null | Record<string, unknown> })
 
 vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServiceClient: async () => ({
-    auth: { getUser: async () => ({ data: { user: { id: "auth-1" } } }) },
+    auth: {
+      getClaims: async () => ({
+        data: { claims: { sub: "auth-1", role: "authenticated" } },
+        error: null,
+      }),
+    },
     from: () => ({
       select: () => ({
         eq: () => ({
-          is: () => ({ single: async () => ({ data: h.profile }) }),
+          is: () => ({
+            maybeSingle: async () => ({
+              data: h.profile ? { ...h.profile, user_profiles: { effective_band: "adult" } } : null,
+              error: null,
+            }),
+          }),
         }),
       }),
     }),
@@ -38,7 +48,7 @@ describe("getAuthUser account status", () => {
 
   it("returns active users without the status field", async () => {
     h.profile = { ...base, status: "active" };
-    expect(await getAuthUser(bearerRequest())).toEqual(base);
+    expect(await getAuthUser(bearerRequest())).toEqual({ ...base, effective_band: "adult" });
   });
 
   it.each(["suspended", "banned", "inactive"])("rejects %s accounts", async (status) => {
@@ -48,7 +58,7 @@ describe("getAuthUser account status", () => {
 
   it("still resolves pending_consent accounts (the proxy gates them)", async () => {
     h.profile = { ...base, role: "child", status: "pending_consent" };
-    expect(await getAuthUser(bearerRequest())).toEqual({ ...base, role: "child" });
+    expect(await getAuthUser(bearerRequest())).toEqual({ ...base, role: "child", effective_band: "adult" });
   });
 
   it("returns null when there is no profile", async () => {

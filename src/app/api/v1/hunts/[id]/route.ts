@@ -28,16 +28,18 @@ export async function GET(
     const { id } = await params;
     const supabase = await createSupabaseServiceClient();
 
-    const { data: hunt, error } = await supabase
-      .from("hunts")
-      .select("*, finds(*, locations(*), tasks(*), primers(*))")
-      .eq("id", id)
-      .is("deleted_at", null)
-      .single();
+    // The hunt and the caller's session are independent: look both up at once.
+    const [{ data: hunt, error }, user] = await Promise.all([
+      supabase
+        .from("hunts")
+        .select("*, finds(*, locations(*), tasks(*), primers(*))")
+        .eq("id", id)
+        .is("deleted_at", null)
+        .single(),
+      getAuthUser(request),
+    ]);
 
     if (error || !hunt) throw new ApiError(404, "Hunt not found");
-
-    const user = await getAuthUser(request);
 
     // Drafts: owner and reviewers only. Published but not yet approved for the
     // public catalogue: also the creator's roster students.

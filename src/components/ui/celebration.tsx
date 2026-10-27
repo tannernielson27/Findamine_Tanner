@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import ReactConfetti from "react-confetti";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { useAgeBand } from "@/lib/themes/age-band-provider";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import type { CelebrationIntensity } from "@/lib/play/celebration";
@@ -76,7 +76,7 @@ export function Celebration({
     return (
       <AnimatePresence>
         {show && message && (
-          <motion.div
+          <m.div
             initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
@@ -84,7 +84,7 @@ export function Celebration({
           >
             <p className="text-sm font-semibold">{message}</p>
             {subMessage && <p className="text-xs opacity-90">{subMessage}</p>}
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     );
@@ -109,7 +109,7 @@ export function Celebration({
       )}
       <AnimatePresence>
         {show && message && (
-          <motion.div
+          <m.div
             initial={band === "primary"
               ? { scale: 0, rotate: -15 }
               : { opacity: 0, y: 30 }
@@ -145,7 +145,7 @@ export function Celebration({
                 </p>
               )}
             </div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </>

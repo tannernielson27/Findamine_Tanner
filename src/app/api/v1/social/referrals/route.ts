@@ -10,6 +10,7 @@ import {
 } from "@/lib/services/referral";
 import { getIsActiveParticipant } from "@/lib/services/participant-conditions";
 import { trackEvent } from "@/lib/utils/track-event";
+import { runAfter } from "@/lib/utils/run-after";
 import { filterProfileForViewer, type ViewerRelationship } from "@/lib/utils/privacy";
 import { getViewerRelationships } from "@/lib/utils/viewer";
 
@@ -120,11 +121,13 @@ export async function GET(request: NextRequest) {
       // The notice is about to render (once per page load). Record the exposure
       // so notice-to-action can be measured against later privacy changes.
       if (!disclosureEligible && forfeitedPoints > 0) {
-        await trackEvent({
-          userId: user.id,
-          eventType: "forfeit_notice_viewed",
-          payload: { forfeited_points: forfeitedPoints, ...switches },
-        });
+        runAfter("track_forfeit_notice_viewed", () =>
+          trackEvent({
+            userId: user.id,
+            eventType: "forfeit_notice_viewed",
+            payload: { forfeited_points: forfeitedPoints, ...switches },
+          })
+        );
       }
     }
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion";
 import type { PrivacyNotice } from "@/lib/services/privacy-notice";
 
@@ -83,7 +83,7 @@ export function PrivacyNoticeToast({ notice, onClose }: PrivacyNoticeToastProps)
   }
 
   return (
-    <motion.div
+    <m.div
       role="status"
       aria-live="polite"
       initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 16 }}
@@ -116,6 +116,6 @@ export function PrivacyNoticeToast({ notice, onClose }: PrivacyNoticeToastProps)
           </svg>
         </button>
       </div>
-    </motion.div>
+    </m.div>
   );
 }
