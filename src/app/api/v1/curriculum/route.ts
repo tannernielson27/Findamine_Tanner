@@ -1,10 +1,27 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
-import { errorResponse, ApiError } from "@/lib/utils/api-auth";
+import { errorResponse, ApiError, getAuthUser } from "@/lib/utils/api-auth";
 import { generalLimiter } from "@/lib/utils/rate-limit";
+import { redactContent } from "../hunts/redact-finds";
 
 // Framework and standards listings are static reference data, identical for every viewer.
 const PUBLIC_CACHE = { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" };
+
+/** Roles that may create hunts (POST /api/v1/hunts), and so copy library answer keys. */
+const HUNT_AUTHOR_ROLES = ["teacher", "hunt_creator", "admin", "researcher"];
+
+type TaskRow = { content?: Record<string, unknown> | null } & Record<string, unknown>;
+
+/**
+ * Library tasks keep their answer keys in `content`. Only hunt authors need
+ * them (the find editor copies them into a new hunt); everyone else, including
+ * signed-out visitors, gets the task with the keys stripped.
+ */
+async function taskShaper(request: NextRequest): Promise<(task: TaskRow) => TaskRow> {
+  const user = await getAuthUser(request);
+  if (user && HUNT_AUTHOR_ROLES.includes(user.role)) return (task) => task;
+  return (task) => (task?.content ? { ...task, content: redactContent(task.content) } : task);
+}
 
 /**
  * Browse the curriculum library.
@@ -110,10 +127,11 @@ export async function GET(request: NextRequest) {
         .eq("standard_id", std.id)
         .limit(limit);
 
+      const shape = await taskShaper(request);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const tasks = (alignments || []).map((a: any) => {
         const taskData = Array.isArray(a.tasks) ? a.tasks[0] : a.tasks;
-        return { ...taskData, alignment_strength: a.alignment_strength };
+        return { ...shape(taskData ?? {}), alignment_strength: a.alignment_strength };
       });
 
       return Response.json({ tasks, standard: standardCode });
@@ -141,10 +159,10 @@ export async function GET(request: NextRequest) {
     if (difficultyMax) query = query.lte("difficulty_rating", parseInt(difficultyMax));
     if (q) query = query.or(`title.ilike.%${q}%,description.ilike.%${q}%`);
 
-    const { data, error } = await query;
+    const [{ data, error }, shape] = await Promise.all([query, taskShaper(request)]);
     if (error) throw new ApiError(500, error.message);
 
-    return Response.json({ tasks: data || [] });
+    return Response.json({ tasks: ((data || []) as TaskRow[]).map(shape) });
   } catch (error) {
     return errorResponse(error);
   }

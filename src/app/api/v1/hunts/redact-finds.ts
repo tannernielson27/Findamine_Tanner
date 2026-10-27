@@ -23,7 +23,7 @@ export function canSeeAnswerKeys(viewer: Viewer | null, huntCreatedBy: string | 
   return viewer.id === huntCreatedBy || MANAGER_ROLES.includes(viewer.role);
 }
 
-function redactContent(content: Record<string, unknown>): Record<string, unknown> {
+export function redactContent(content: Record<string, unknown>): Record<string, unknown> {
   const redacted = Object.fromEntries(
     Object.entries(content).filter(([key]) => !ANSWER_KEY_FIELDS.includes(key))
   );

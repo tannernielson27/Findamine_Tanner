@@ -8,8 +8,8 @@
 -- 2. Duplicate indexes on task_standard_alignments: idx_tsa_* duplicate
 --    idx_task_alignments_*, and the (task_id, standard_id) unique key already
 --    covers lookups by task_id, so idx_task_alignments_task is redundant too.
-
-BEGIN;
+--
+-- No BEGIN/COMMIT here: deploy-080.sh wraps the file in one transaction.
 
 ALTER POLICY users_select_own ON public.users
   USING (auth_id = (SELECT auth.uid()));
@@ -48,5 +48,3 @@ ALTER POLICY hint_ratings_authenticated_insert ON public.hint_ratings
 DROP INDEX IF EXISTS public.idx_tsa_standard;
 DROP INDEX IF EXISTS public.idx_tsa_task;
 DROP INDEX IF EXISTS public.idx_task_alignments_task;
-
-COMMIT;
