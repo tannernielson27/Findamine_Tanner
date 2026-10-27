@@ -117,7 +117,7 @@ function existingUnconfirmedLink(token: string) {
   };
 }
 
-const ADULT = { email: "a@byu.edu", password: "long-enough-1", display_name: "Ana", role: "adult", date_of_birth: "2000-01-01" };
+const ADULT = { email: "a@byu.edu", password: "long-enough-1", display_name: "Ana", role: "adult", age_confirmed: true };
 
 describe("POST /api/v1/auth/register", () => {
   it("creates the account through a signup link and emails the confirmation", async () => {

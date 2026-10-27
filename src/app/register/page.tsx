@@ -22,7 +22,7 @@ function RegisterForm() {
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [role, setRole] = useState("adult");
-  const [dateOfBirth, setDateOfBirth] = useState("");
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [error, setError] = useState("");
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [loading, setLoading] = useState(false);
@@ -31,8 +31,9 @@ function RegisterForm() {
   // Deep link to return to after confirming; the server validates it.
   const next = searchParams.get("next") || "";
   const loginHref = next ? `/login?next=${encodeURIComponent(next)}` : "/login";
-  // Self-registered players confirm their age: teens 13+, adults 18+.
-  const needsDob = role === "teen" || role === "adult";
+  // Self-registered players confirm their age range: teens 13+, adults 18+.
+  // No date of birth is asked for (App Store guideline 5.1.1(v)).
+  const needsAgeConfirm = role === "teen" || role === "adult";
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
@@ -48,7 +49,7 @@ function RegisterForm() {
         password,
         display_name: displayName,
         role,
-        date_of_birth: needsDob ? dateOfBirth : undefined,
+        age_confirmed: needsAgeConfirm ? ageConfirmed : undefined,
         referral_code: referralCode || undefined,
         next: next || undefined,
       },
@@ -198,7 +199,10 @@ function RegisterForm() {
               <select
                 id="role"
                 value={role}
-                onChange={(e) => setRole(e.target.value)}
+                onChange={(e) => {
+                  setRole(e.target.value);
+                  setAgeConfirmed(false);
+                }}
                 className="block w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-base sm:text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition"
               >
                 <option value="adult">College student / adult player (18+)</option>
@@ -208,26 +212,20 @@ function RegisterForm() {
               </select>
             </div>
 
-            {needsDob && (
-              <div>
-                <label htmlFor="dob" className="block text-sm font-medium text-gray-700 mb-1">
-                  Date of birth
-                </label>
+            {needsAgeConfirm && (
+              <label htmlFor="ageConfirm" className="flex items-start gap-2.5 text-sm text-gray-700">
                 <input
-                  id="dob"
-                  type="date"
+                  id="ageConfirm"
+                  type="checkbox"
                   required
-                  value={dateOfBirth}
-                  onChange={(e) => setDateOfBirth(e.target.value)}
-                  max={new Date().toISOString().split("T")[0]}
-                  className="block w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-base sm:text-sm focus:bg-white focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 transition"
+                  checked={ageConfirmed}
+                  onChange={(e) => setAgeConfirmed(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-brand focus:ring-brand/30"
                 />
-                <p className="mt-1.5 text-xs text-gray-500">
-                  {role === "adult"
-                    ? "Adult accounts are for players 18 or older."
-                    : "You must be 13 or older to create your own account."}
-                </p>
-              </div>
+                <span>
+                  {role === "adult" ? "I confirm I am 18 or older." : "I confirm I am 13 or older."}
+                </span>
+              </label>
             )}
 
             {role === "teen" && (
@@ -239,7 +237,7 @@ function RegisterForm() {
 
             <button
               type="submit"
-              disabled={loading || (needsDob && !dateOfBirth)}
+              disabled={loading || (needsAgeConfirm && !ageConfirmed)}
               className="w-full rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark hover:shadow-md disabled:opacity-50 transition"
             >
               {loading ? "Creating account..." : "Start Exploring"}

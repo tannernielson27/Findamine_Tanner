@@ -66,7 +66,7 @@ export const POST = withLogging("POST /api/v1/auth/register", async (request: Ne
   const requestStartedAt = Date.now();
   await registerIpLimiter.check(request);
   const body = await request.json();
-  const { password, display_name, role, date_of_birth } = body;
+  const { password, display_name, role, date_of_birth, age_confirmed } = body;
   const email = normalizeEmail(body.email);
 
   if (!email || !password) {
@@ -90,8 +90,12 @@ export const POST = withLogging("POST /api/v1/auth/register", async (request: Ne
     }
   }
 
-  // Teens must be 13+, adults 18+ (an 18+ "teen" becomes an adult player).
-  const resolved = resolveSelfRegisterRole(role, date_of_birth);
+  // Teens confirm they are 13+, adults 18+. A date of birth is optional
+  // (App Store 5.1.1(v)); if one is sent it is still checked.
+  const resolved = resolveSelfRegisterRole(role, {
+    ageConfirmed: age_confirmed,
+    dateOfBirth: date_of_birth,
+  });
   if (!resolved.ok) {
     throw new ApiError(resolved.status, resolved.message);
   }

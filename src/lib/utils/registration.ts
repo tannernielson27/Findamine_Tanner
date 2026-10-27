@@ -1,8 +1,9 @@
 /**
  * Self-registration role rules. Pure, so the age gates are unit tested.
  *
- * - teen:  13 to 17. Under 13 is refused; 18+ becomes an adult player.
- * - adult: 18+. Under 18 is refused (register as a teen instead).
+ * - teen:  13 to 17, confirmed by checkbox. If an (optional) date of birth
+ *          is sent: under 13 is refused; 18+ becomes an adult player.
+ * - adult: 18+, confirmed by checkbox. An optional DOB under 18 is refused.
  * - parent / teacher / hunt_creator: no age gate.
  * - anything else falls back to parent (unchanged legacy behavior).
  */
@@ -20,9 +21,19 @@ export function ageInYears(dateOfBirth: string, now: number = Date.now()): numbe
   return Math.floor((now - new Date(dateOfBirth).getTime()) / YEAR_MS);
 }
 
+/**
+ * How a teen or adult shows their age. Sign-up asks only for a checkbox
+ * confirming the age range (App Store 5.1.1(v): a date of birth may not be
+ * required). A date of birth is still honored if an older client sends one.
+ */
+export interface AgeEvidence {
+  ageConfirmed?: unknown;
+  dateOfBirth?: string | null;
+}
+
 export function resolveSelfRegisterRole(
   requested: unknown,
-  dateOfBirth: string | null | undefined,
+  evidence: AgeEvidence,
   now: number = Date.now()
 ): RoleResolution {
   const role: SelfRegisterRole = (SELF_REGISTER_ROLES as readonly string[]).includes(requested as string)
@@ -31,8 +42,18 @@ export function resolveSelfRegisterRole(
 
   if (role !== "teen" && role !== "adult") return { ok: true, role };
 
+  const { dateOfBirth } = evidence;
   if (!dateOfBirth) {
-    return { ok: false, status: 400, message: `Date of birth is required for ${role} accounts` };
+    return evidence.ageConfirmed === true
+      ? { ok: true, role }
+      : {
+          ok: false,
+          status: 400,
+          message:
+            role === "adult"
+              ? "Please confirm you are 18 or older"
+              : "Please confirm you are 13 or older",
+        };
   }
   const age = ageInYears(dateOfBirth, now);
 
