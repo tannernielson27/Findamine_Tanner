@@ -53,8 +53,10 @@ import { base64ToFile, classifyPhotoError, mimeForFormat, PhotoError } from "@/l
 import { fromNativeState, queryPlatformPermission } from "@/lib/native/permissions";
 import { openInApp } from "@/lib/native/bootstrap";
 import { PRIMER_COPY, deniedMessage, deniedTitle } from "@/lib/permissions/primer";
+import { enablePush, pushState, pushSupported } from "@/lib/native/push";
 
 const NATIVE_IOS = { Capacitor: { isNativePlatform: () => true, getPlatform: () => "ios" } };
+const NATIVE_ANDROID = { Capacitor: { isNativePlatform: () => true, getPlatform: () => "android" } };
 const WEB_CORE = { Capacitor: { isNativePlatform: () => false, getPlatform: () => "web" } };
 
 function flush() {
@@ -318,5 +320,26 @@ describe("primer copy for the native permissions", () => {
     expect(deniedMessage("notifications", "ios")).toBe(
       "Turn it on in Settings > Findamine > Notifications to use notifications."
     );
+  });
+});
+
+describe("push notifications by platform", () => {
+  it("is supported only in the iOS app (Android has no Firebase setup yet)", () => {
+    expect(pushSupported(NATIVE_IOS)).toBe(true);
+    expect(pushSupported(NATIVE_ANDROID)).toBe(false);
+    expect(pushSupported(WEB_CORE)).toBe(false);
+  });
+
+  it("reports unavailable in the Android app and never registers", async () => {
+    vi.stubGlobal("window", NATIVE_ANDROID);
+    plugins.pushPermission = "granted";
+    expect(await pushState()).toBe("unavailable");
+    expect(await enablePush()).toBe("unavailable");
+  });
+
+  it("still reads the permission in the iOS app", async () => {
+    stubNative();
+    plugins.pushPermission = "denied";
+    expect(await pushState()).toBe("denied");
   });
 });

@@ -81,3 +81,38 @@ describe("iOS Info.plist", () => {
     expect(pbx.match(/PRODUCT_BUNDLE_IDENTIFIER = app\.findamine;/g)).toHaveLength(2);
   });
 });
+
+describe("Android app", () => {
+  const manifest = read("android/app/src/main/AndroidManifest.xml");
+
+  it("leaves push (no Firebase yet) and status-bar (SystemBars does it) out of the Android build", () => {
+    const included = config.android?.includePlugins ?? [];
+    expect(included).not.toContain("@capacitor/push-notifications");
+    const pkg = JSON.parse(read("package.json")) as { dependencies: Record<string, string> };
+    const capPlugins = Object.keys(pkg.dependencies).filter(
+      (d) => d.startsWith("@capacitor/") && !["@capacitor/core", "@capacitor/ios", "@capacitor/android"].includes(d)
+    );
+    expect([...included].sort()).toEqual(capPlugins.filter((d) => !["@capacitor/push-notifications", "@capacitor/status-bar"].includes(d)).sort());
+  });
+
+  it("asks only for foreground location and the microphone, never background location", () => {
+    expect(manifest).toContain("android.permission.ACCESS_FINE_LOCATION");
+    expect(manifest).toContain("android.permission.ACCESS_COARSE_LOCATION");
+    expect(manifest).toContain("android.permission.RECORD_AUDIO");
+    expect(manifest).not.toContain("ACCESS_BACKGROUND_LOCATION");
+    // The camera plugin uses the system camera app; declaring CAMERA would make it need a grant.
+    expect(manifest).not.toContain("android.permission.CAMERA");
+    expect(manifest).not.toContain("POST_NOTIFICATIONS");
+  });
+
+  it("does not require hardware some phones lack", () => {
+    for (const feature of ["android.hardware.location.gps", "android.hardware.camera", "android.hardware.microphone"]) {
+      expect(manifest).toContain(`<uses-feature android:name="${feature}" android:required="false" />`);
+    }
+  });
+
+  it("uses the app id and keeps cleartext traffic off", () => {
+    expect(read("android/app/build.gradle")).toContain('applicationId "app.findamine"');
+    expect(manifest).not.toContain('usesCleartextTraffic="true"');
+  });
+});

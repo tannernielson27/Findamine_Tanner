@@ -7,11 +7,22 @@
  * prompt. The APNs token is stored server-side by
  * POST /api/v1/notifications/devices and removed on disable and on sign-out.
  *
- * Every function is a no-op (or "unavailable") outside the wrapper, and the
+ * Every function is a no-op (or "unavailable") outside the iOS app, and the
  * plugin is imported lazily so web bundles and SSR never evaluate it.
+ *
+ * Android: push needs Firebase (google-services.json + an FCM sender on the
+ * server), which isn't set up yet, and register() crashes the app without it.
+ * The plugin is left out of the Android build (capacitor.config.ts
+ * android.includePlugins) and pushSupported() is false there, so the Settings
+ * card stays hidden.
  */
 
-import { isNativeApp } from "./platform";
+import { isNativeApp, nativePlatform } from "./platform";
+
+/** Push works only in the iOS app for now. */
+export function pushSupported(win?: unknown): boolean {
+  return nativePlatform(win) === "ios";
+}
 
 const TOKEN_KEY = "findamine:push-token";
 const DEVICES_URL = "/api/v1/notifications/devices";
@@ -82,7 +93,7 @@ async function sendToken(token: string): Promise<boolean> {
 
 /** Current state for the Settings toggle. Never throws. */
 export async function pushState(): Promise<PushState> {
-  if (!isNativeApp()) return "unavailable";
+  if (!pushSupported()) return "unavailable";
   try {
     const { PushNotifications } = await import("@capacitor/push-notifications");
     const { receive } = await PushNotifications.checkPermissions();
@@ -98,7 +109,7 @@ export async function pushState(): Promise<PushState> {
  * saves the token for the signed-in user. Call only after the primer.
  */
 export async function enablePush(): Promise<PushEnableResult> {
-  if (!isNativeApp()) return "unavailable";
+  if (!pushSupported()) return "unavailable";
   try {
     const { PushNotifications } = await import("@capacitor/push-notifications");
     let { receive } = await PushNotifications.checkPermissions();
@@ -117,7 +128,7 @@ export async function enablePush(): Promise<PushEnableResult> {
 
 /** Removes this device's token from the server and stops APNs delivery. */
 export async function disablePush(): Promise<void> {
-  if (!isNativeApp()) return;
+  if (!pushSupported()) return;
   await forgetPushDevice();
   try {
     const { PushNotifications } = await import("@capacitor/push-notifications");
@@ -154,7 +165,7 @@ export async function forgetPushDevice(): Promise<void> {
  * rotated APNs token reaches the server. Never prompts. Never throws.
  */
 export async function refreshPushRegistration(): Promise<void> {
-  if (!isNativeApp() || !readStoredToken()) return;
+  if (!pushSupported() || !readStoredToken()) return;
   try {
     const { PushNotifications } = await import("@capacitor/push-notifications");
     if ((await PushNotifications.checkPermissions()).receive !== "granted") return;

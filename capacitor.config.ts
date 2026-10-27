@@ -3,7 +3,8 @@ import type { CapacitorConfig } from "@capacitor/cli";
 import { APP_HOSTS } from "./src/lib/native/app-hosts";
 
 /**
- * Capacitor iOS wrapper for Findamine (see docs/ios-build-on-mac.md).
+ * Capacitor iOS and Android wrapper for Findamine (see docs/ios-build-on-mac.md
+ * and docs/android-build.md).
  *
  * The app loads the live Next.js site instead of a static export: the site
  * relies on server components, API routes and cookie sessions, which only run
@@ -45,7 +46,31 @@ const config: CapacitorConfig = {
     allowsLinkPreview: false,
     scrollEnabled: true,
   },
+  android: {
+    appendUserAgent: "FindamineApp/1",
+    backgroundColor: BRAND_PAPER,
+    // Left out of the Android build:
+    // - push-notifications: needs Firebase, not set up yet (src/lib/native/push.ts)
+    // - status-bar: its overlay mode fights Capacitor 8's built-in SystemBars
+    //   edge-to-edge handling (configured below), which already sets the icons.
+    includePlugins: [
+      "@capacitor/app",
+      "@capacitor/camera",
+      "@capacitor/filesystem",
+      "@capacitor/geolocation",
+      "@capacitor/haptics",
+      "@capacitor/splash-screen",
+    ],
+  },
   plugins: {
+    SystemBars: {
+      // Android: the site sets viewport-fit=cover and pads itself with
+      // env(safe-area-inset-*); the hint avoids a layout jump on load.
+      insetsHandling: "css",
+      initialViewportFitValueHint: "cover",
+      // Dark icons over the light paper/white app chrome.
+      style: "LIGHT",
+    },
     SplashScreen: {
       // Hidden by the web app once it has rendered (src/lib/native/bootstrap.ts),
       // with this as a safety net if the page never loads.
