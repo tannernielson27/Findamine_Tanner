@@ -9,6 +9,7 @@ import { SearchX } from "lucide-react";
 import { HuntCard } from "@/components/ui/hunt-card";
 import { withDistances, type ExploreHunt } from "@/lib/hunts/explore-filters";
 import { useSilentLocation } from "./explore-location";
+import { ExploreMapLink } from "./explore-map-fab";
 
 interface ExploreResultsProps {
   hunts: ExploreHunt[];
@@ -21,22 +22,28 @@ interface ExploreResultsProps {
   allAgesHref: string | null;
   /** The audience filter in effect, e.g. "Adults & families". */
   audienceLabel: string;
+  /** Same search in map view; shown as a Map toggle beside the count. */
+  mapHref?: string | null;
 }
 
-export function ExploreResults({ hunts, nearOn, clearHref, narrowed, allAgesHref, audienceLabel }: ExploreResultsProps) {
+export function ExploreResults({ hunts, nearOn, clearHref, narrowed, allAgesHref, audienceLabel, mapHref = null }: ExploreResultsProps) {
   const origin = useSilentLocation();
   const list = withDistances(hunts, origin, nearOn);
   const sortedByDistance = nearOn && !!origin;
 
   return (
     <section aria-labelledby="all-hunts-heading" className="flex flex-col gap-4">
-      <div className="flex items-baseline justify-between gap-3 px-1">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <h2 id="all-hunts-heading" className="font-[family-name:var(--font-display)] text-[22px] font-semibold text-themed-text">
           {sortedByDistance ? "All hunts nearby" : "All hunts"}
         </h2>
-        <span className="shrink-0 text-[15px] tabular-nums text-themed-muted" aria-live="polite">
-          {list.length} {list.length === 1 ? "result" : "results"}
-        </span>
+        <div className="flex shrink-0 items-center gap-3">
+          <span className="text-[15px] tabular-nums text-themed-muted" aria-live="polite">
+            {list.length} {list.length === 1 ? "result" : "results"}
+          </span>
+          {/* Nothing to map on an empty list. */}
+          {mapHref && list.length > 0 && <ExploreMapLink href={mapHref} />}
+        </div>
       </div>
 
       {list.length === 0 ? (

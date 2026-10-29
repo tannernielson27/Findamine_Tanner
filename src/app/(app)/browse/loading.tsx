@@ -10,7 +10,7 @@ export default function ExploreLoading() {
     <main className="fm-tab-safe-mini mx-auto w-full max-w-5xl pt-5" aria-busy="true">
       <style>{`@keyframes fm-explore-delayed{to{opacity:1}}.fm-explore-delayed{opacity:0;animation:fm-explore-delayed 150ms ease-out 300ms forwards}`}</style>
       <p role="status" className="sr-only">Loading hunts</p>
-      <header className="px-5 pb-1.5 sm:px-4">
+      <header className="px-4 pb-1.5">
         <h1 className="font-[family-name:var(--font-display)] text-[32px] font-semibold leading-[1.1] text-themed-text">Explore</h1>
       </header>
       <div className="fm-explore-delayed px-4" aria-hidden="true">

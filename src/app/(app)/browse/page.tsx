@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { ChevronRight, Map as MapIcon } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { HuntCard } from "@/components/ui/hunt-card";
 import { ExploreControls } from "@/components/explore/explore-controls";
 import { ExploreResults } from "@/components/explore/explore-results";
 import { ExploreMapView } from "@/components/explore/explore-map-view";
+import { ExploreMapFab } from "@/components/explore/explore-map-fab";
 import { AudienceSelect } from "@/components/explore/audience-select";
 import {
   ANY_AUDIENCE,
@@ -93,16 +94,18 @@ export default async function ExplorePage({ searchParams }: { searchParams: Sear
   }
 
   const popular = narrowed ? [] : popularCampusHunts(all);
+  const mapHref = exploreHref({ q, filters, audience: rawAudience, view: "map" });
 
   return (
-    <main className="mx-auto w-full max-w-5xl pt-5">
-      <header className="flex flex-col gap-3.5 px-5 pb-1.5 sm:px-4">
+    // pb-16: room for the phone Map pill (ExploreMapFab) so it never covers the last card.
+    <main className="mx-auto w-full max-w-5xl pb-16 pt-5 lg:pb-0">
+      <header className="flex flex-col gap-3.5 px-4 pb-1.5">
         <h1 className="font-[family-name:var(--font-display)] text-[32px] font-semibold leading-[1.1] text-themed-text">Explore</h1>
       </header>
 
       <div className="px-4">
         <ExploreControls q={q} filters={filters} audience={rawAudience} view="list" />
-        <div className="flex flex-wrap items-center justify-between gap-x-4 px-1">
+        <div className="flex flex-wrap items-center justify-between gap-x-4">
           <AudienceSelect q={q} filters={filters} choice={audience} />
           <Link
             href="/browse/standards"
@@ -122,12 +125,21 @@ export default async function ExplorePage({ searchParams }: { searchParams: Sear
 
       {popular.length > 0 && (
         <section aria-labelledby="popular-heading" className="mt-4">
-          <h2 id="popular-heading" className="mx-5 mb-3 font-[family-name:var(--font-display)] text-[22px] font-semibold text-themed-text">
+          <h2 id="popular-heading" className="mx-4 mb-3 font-[family-name:var(--font-display)] text-[22px] font-semibold text-themed-text">
             Popular at BYU
           </h2>
-          <ul className="fm-no-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-1" aria-labelledby="popular-heading">
+          {/* scroll-px-4: mandatory snapping otherwise aligns the first tile to the
+              scroller's edge and skips the px-4 inset. From sm up the tiles size
+              to fill the row (4, then 5 across) instead of leaving a gap. */}
+          <ul
+            className="fm-no-scrollbar flex scroll-px-4 snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-1"
+            aria-labelledby="popular-heading"
+          >
             {popular.map((hunt) => (
-              <li key={hunt.id} className="shrink-0 snap-start">
+              <li
+                key={hunt.id}
+                className="shrink-0 snap-start sm:w-[calc((100%-3*0.75rem)/4)] lg:w-[calc((100%-4*0.75rem)/5)]"
+              >
                 <HuntCard hunt={hunt} variant="poster" />
               </li>
             ))}
@@ -143,19 +155,12 @@ export default async function ExplorePage({ searchParams }: { searchParams: Sear
           narrowed={narrowed}
           allAgesHref={allAgesHref}
           audienceLabel={audienceSetLabel(audience.audiences)}
+          mapHref={mapHref}
         />
       </div>
 
       {/* Nothing to map on an empty list, and the pill would cover the empty state's actions. */}
-      {hunts.length > 0 && (
-        <Link
-          href={exploreHref({ q, filters, audience: rawAudience, view: "map" })}
-          className="fixed left-1/2 z-30 inline-flex h-12 -translate-x-1/2 items-center gap-2 rounded-full bg-ink px-5 text-[15px] font-bold text-white no-underline shadow-[0_8px_20px_rgb(28_36_48/0.28)] transition-colors hover:bg-ink-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 bottom-[calc(var(--fm-tabbar-h)_+_var(--fm-minibar-h)_+_var(--fm-tabbar-gap)_+_30px_+_env(safe-area-inset-bottom))]"
-        >
-          <MapIcon className="h-[18px] w-[18px]" aria-hidden="true" />
-          Map
-        </Link>
-      )}
+      {hunts.length > 0 && <ExploreMapFab href={mapHref} />}
     </main>
   );
 }
