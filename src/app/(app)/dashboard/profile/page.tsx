@@ -3,12 +3,13 @@
 import { useState, useEffect } from "react";
 import { fetchMe, invalidateMe } from "@/lib/hooks/use-me";
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { Award, Brain, ChevronRight, CircleUserRound, Trophy, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatRow } from "@/components/ui/progress";
 import { initialsOf } from "@/components/home/home-data";
 import { BadgeShelf } from "./badge-shelf";
 import { SettingsList } from "./settings-list";
+import { profileSubtitle } from "./profile-format";
 import type { PrivacyFriction } from "@/components/layout/nav-links";
 
 interface ProfileData {
@@ -91,14 +92,14 @@ export default function ProfilePage() {
   if (loading) return <ProfileSkeleton />;
   if (!profile) {
     return (
-      <main className="mx-auto max-w-2xl px-4 py-6">
+      <main className="mx-auto max-w-3xl px-4 py-6">
         <p className="text-base text-themed-muted">We couldn&apos;t load your profile. Try again in a moment.</p>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-2xl px-4 pb-4 pt-6">
+    <main className="mx-auto max-w-3xl px-4 pb-4 pt-6">
       {/* Stats header */}
       <header className="flex items-center gap-4">
         <div
@@ -112,7 +113,7 @@ export default function ProfilePage() {
             {profile.display_name || "Explorer"}
           </h1>
           <p className="m-0 text-[15px] text-themed-muted">
-            {profile.role} · joined {new Date(profile.created_at).toLocaleDateString()}
+            {profileSubtitle(profile.role, profile.created_at)}
           </p>
         </div>
       </header>
@@ -161,10 +162,10 @@ export default function ProfilePage() {
       {/* You */}
       <nav aria-label="Your pages" className="mt-7">
         <ul className="m-0 list-none overflow-hidden rounded-card border border-themed-border bg-surface p-0">
-          <YouLink href={`/profile/${profile.id}`} title="Your player page" description="What other players see, limited by your privacy settings" first />
-          <YouLink href="/dashboard/badges" title="Badges" description="Everything you've earned and what's next" />
-          <YouLink href="/leaderboard" title="Leaderboard" description="Ranked by hunt score from finished hunts" />
-          <YouLink href="/dashboard/assessment" title="Personality Assessment" description="Big 5 + Growth Mindset" />
+          <YouLink href={`/profile/${profile.id}`} icon={CircleUserRound} title="Your player page" description="What other players see, limited by your privacy settings" first />
+          <YouLink href="/dashboard/badges" icon={Award} title="Badges" description="Everything you've earned and what's next" />
+          <YouLink href="/leaderboard" icon={Trophy} title="Leaderboard" description="Ranked by hunt score from finished hunts" />
+          <YouLink href="/dashboard/assessment" icon={Brain} title="Personality assessment" description="Big 5 + Growth Mindset" />
         </ul>
       </nav>
 
@@ -176,16 +177,26 @@ export default function ProfilePage() {
   );
 }
 
-function YouLink({ href, title, description, first = false }: { href: string; title: string; description: string; first?: boolean }) {
+interface YouLinkProps {
+  href: string;
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  first?: boolean;
+}
+
+/** Same row layout as SettingsList (icon, 14px gap) so the two lists' text columns line up. */
+function YouLink({ href, icon: Icon, title, description, first = false }: YouLinkProps) {
   return (
     <li className={first ? undefined : "border-t border-divider"}>
       <Link
         href={href}
-        className="flex min-h-14 items-center justify-between gap-3 px-4 py-3 text-themed-text no-underline transition-colors duration-150 hover:bg-themed-bg"
+        className="flex min-h-[68px] items-center gap-3.5 px-4 py-3 text-themed-text no-underline transition-colors duration-150 hover:bg-themed-bg"
       >
-        <span className="min-w-0">
-          <span className="block text-base font-semibold">{title}</span>
-          <span className="block text-sm text-themed-muted">{description}</span>
+        <Icon className="h-[22px] w-[22px] shrink-0 text-themed-muted" aria-hidden="true" />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="text-base font-semibold">{title}</span>
+          <span className="text-sm text-themed-muted">{description}</span>
         </span>
         <ChevronRight className="h-5 w-5 shrink-0 text-themed-muted" aria-hidden="true" />
       </Link>
@@ -195,7 +206,7 @@ function YouLink({ href, title, description, first = false }: { href: string; ti
 
 function ProfileSkeleton() {
   return (
-    <main className="mx-auto max-w-2xl px-4 pb-4 pt-6" aria-busy="true" aria-label="Loading profile">
+    <main className="mx-auto max-w-3xl px-4 pb-4 pt-6" aria-busy="true" aria-label="Loading profile">
       <div className="fm-shimmer" aria-hidden="true">
         <div className="flex items-center gap-4">
           <div className="h-[72px] w-[72px] shrink-0 rounded-full bg-divider" />
