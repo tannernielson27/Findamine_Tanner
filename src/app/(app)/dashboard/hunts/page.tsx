@@ -1,8 +1,17 @@
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient, createSupabaseServiceClient } from "@/lib/supabase/server";
 import Link from "next/link";
-import { Map, Plus, PlusCircle } from "lucide-react";
+import { ChevronRight, Map, Plus, PlusCircle } from "lucide-react";
 import { ButtonLink } from "@/components/ui/button";
+import { Tag } from "@/components/ui/chip";
+import { cn } from "@/lib/utils/cn";
+import { audienceLabel, huntStatusLabel, stopCountLabel, updatedLabel } from "./hunt-list-format";
+
+/** finds(count) comes back as [{ count }]. */
+function stopCountOf(finds: unknown): number {
+  const count = Array.isArray(finds) ? (finds[0] as { count?: unknown } | undefined)?.count : undefined;
+  return typeof count === "number" ? count : 0;
+}
 
 export default async function MyHuntsPage() {
   const supabase = await createSupabaseServerClient();
@@ -20,16 +29,17 @@ export default async function MyHuntsPage() {
 
   const { data: hunts } = await serviceClient
     .from("hunts")
-    .select("id, title, status, target_audience, play_mode, created_at, finds(count)")
+    .select("id, title, status, target_audience, play_mode, created_at, updated_at, finds(count)")
     .eq("created_by", profile.id)
     .is("deleted_at", null)
     .order("updated_at", { ascending: false });
 
+  const now = new Date();
+
   return (
-    <main className="mx-auto max-w-4xl px-4 py-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <Map className="w-6 h-6 text-brand" />
+    <main className="mx-auto max-w-3xl px-4 pb-4 pt-6">
+      <div className="mb-5 flex items-center justify-between gap-3 px-1">
+        <h1 className="m-0 font-[family-name:var(--font-display)] text-[32px] font-semibold leading-[1.1] text-themed-text">
           My Hunts
         </h1>
         {/* "Create" is not a tab (tabs are places): it lives here, in My Hunts. */}
@@ -55,34 +65,34 @@ export default async function MyHuntsPage() {
           </Link>
         </div>
       ) : (
-        <div className="space-y-3">
-          {hunts.map((hunt) => (
-            <Link
-              key={hunt.id}
-              href={`/dashboard/hunts/${hunt.id}`}
-              className="group flex items-center justify-between rounded-2xl border border-gray-100/80 bg-white p-5 hover:shadow-lg hover:-translate-y-0.5 transition duration-300"
-            >
-              <div>
-                <h3 className="font-[family-name:var(--font-display)] font-semibold text-gray-900 group-hover:text-brand transition-colors">
-                  {hunt.title}
-                </h3>
-                <div className="flex items-center gap-2 mt-1.5 text-xs">
-                  <span className={`rounded-full px-2.5 py-0.5 font-medium ${
-                    hunt.status === "published"
-                      ? "bg-green-100 text-green-700"
-                      : "bg-gray-100 text-gray-600"
-                  }`}>
-                    {hunt.status}
+        // Same grouped list as Home's "Your hunts" (components/home/your-hunts.tsx).
+        <ul className="m-0 list-none overflow-hidden rounded-card border border-themed-border bg-surface p-0">
+          {hunts.map((hunt, i) => {
+            const status = huntStatusLabel(hunt.status);
+            const details = [
+              audienceLabel(hunt.target_audience),
+              stopCountLabel(stopCountOf(hunt.finds)),
+              updatedLabel(hunt.updated_at ?? hunt.created_at, now),
+            ].filter(Boolean);
+            return (
+              <li key={hunt.id} className={cn(i > 0 && "border-t border-divider")}>
+                <Link
+                  href={`/dashboard/hunts/${hunt.id}`}
+                  className="flex min-h-16 items-center gap-3 px-4 py-3 text-themed-text no-underline transition-colors duration-150 hover:bg-themed-bg"
+                >
+                  <span className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span className="truncate font-[family-name:var(--font-display)] text-lg font-semibold">{hunt.title}</span>
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-themed-muted">
+                      <Tag tone={status.tone}>{status.label}</Tag>
+                      {details.join(" · ")}
+                    </span>
                   </span>
-                  <span className="text-gray-400">{hunt.target_audience}</span>
-                </div>
-              </div>
-              <span className="text-sm text-gray-400 group-hover:text-brand transition-colors">
-                {new Date(hunt.created_at).toLocaleDateString()}
-              </span>
-            </Link>
-          ))}
-        </div>
+                  <ChevronRight className="h-5 w-5 shrink-0 text-themed-muted" aria-hidden="true" />
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </main>
   );

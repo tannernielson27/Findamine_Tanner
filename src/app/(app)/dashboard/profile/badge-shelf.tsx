@@ -42,7 +42,7 @@ export function BadgeShelf() {
 
   return (
     <section aria-labelledby="profile-badges" className="mt-7">
-      <div className="flex items-baseline justify-between gap-3 px-1 pb-3">
+      <div className="flex items-baseline justify-between gap-3 pb-3">
         <h2 id="profile-badges" className="m-0 font-[family-name:var(--font-display)] text-[22px] font-semibold">
           Badges
         </h2>

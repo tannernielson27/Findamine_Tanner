@@ -17,7 +17,9 @@ const ICONS: Record<ProfileLinkIcon, LucideIcon> = {
   terms: ScrollText,
 };
 
-const ROW = "flex min-h-14 w-full items-center gap-3.5 px-4 py-3 text-left text-themed-text no-underline transition-colors duration-150 hover:bg-themed-bg";
+// 68px min: the height of a row with a subtitle, so title-only rows (Privacy
+// Policy, Terms of Use, Sign out) line up with the rest.
+const ROW = "flex min-h-[68px] w-full items-center gap-3.5 px-4 py-3 text-left text-themed-text no-underline transition-colors duration-150 hover:bg-themed-bg";
 
 /**
  * Profile's settings list: what used to be in the hamburger menu (Settings,
