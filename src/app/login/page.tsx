@@ -71,7 +71,7 @@ export default async function LoginPage({
           {account === "unavailable" && (
             <Link
               href={next}
-              className="block w-full rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark transition"
+              className="flex min-h-12 w-full items-center justify-center rounded-xl bg-brand px-4 text-base font-bold text-white shadow-sm hover:bg-brand-dark transition"
             >
               Try again
             </Link>
@@ -80,8 +80,8 @@ export default async function LoginPage({
             label={account === "no_profile" ? "Sign out" : "Sign out instead"}
             className={
               account === "no_profile"
-                ? "w-full rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-dark disabled:opacity-50 transition"
-                : "text-sm font-medium text-brand hover:underline disabled:opacity-50"
+                ? "min-h-12 w-full rounded-xl bg-brand px-4 text-base font-bold text-white shadow-sm hover:bg-brand-dark disabled:opacity-50 transition"
+                : "inline-flex min-h-8 items-center text-sm font-medium text-brand hover:underline disabled:opacity-50"
             }
           />
         </div>

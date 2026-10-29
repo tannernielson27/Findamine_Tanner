@@ -61,17 +61,17 @@ export default function TermsOfUsePage() {
         <p>{OPERATOR_NAME} sends you to real places. Your safety is your responsibility, and
           a hunt is never a reason to take a risk.</p>
         <ul>
-          <li><strong>Stay aware of your surroundings.</strong> Do not look at your screen while
+          <li><strong>Stay aware of your surroundings.</strong>{" "}Do not look at your screen while
             walking near traffic, crossing streets, cycling, or driving. Never use the app while
             driving.</li>
-          <li><strong>Do not trespass.</strong> Stay on public land or places you have permission
+          <li><strong>Do not trespass.</strong>{" "}Stay on public land or places you have permission
             to be. Do not enter private property, closed areas, or restricted buildings, even if a
             clue seems to point there.</li>
           <li><strong>Obey all laws</strong>, posted signs, park rules, and instructions from
             property owners, staff and police.</li>
-          <li><strong>Avoid danger.</strong> Skip any stop that is unsafe, for example because of
+          <li><strong>Avoid danger.</strong>{" "}Skip any stop that is unsafe, for example because of
             weather, darkness, water, cliffs, construction or traffic.</li>
-          <li><strong>Children</strong> should play with a parent, teacher or other responsible
+          <li><strong>Children</strong>{" "}should play with a parent, teacher or other responsible
             adult.</li>
           <li>Hunt creators must place stops only in places that are public, safe and legal to
             visit (see section 5 for how hunts are reviewed).</li>
@@ -79,7 +79,7 @@ export default function TermsOfUsePage() {
       </LegalSection>
 
       <LegalSection id="conduct" title="4. Community rules">
-        <p><strong>We have zero tolerance for objectionable content and abusive users.</strong> You
+        <p><strong>We have zero tolerance for objectionable content and abusive users.</strong>{" "}You
           may not post, send or create anything that:</p>
         <ul>
           <li>harasses, bullies, threatens, stalks or intimidates anyone;</li>
@@ -113,7 +113,7 @@ export default function TermsOfUsePage() {
           in the app, shown as by &quot;Deleted user&quot;, unless you delete them first; see section
           8 of the <Link href={PRIVACY_PATH} className={linkClass}>Privacy Policy</Link>.</p>
         <p>Only post content you have the right to share.</p>
-        <p><strong>Publishing hunts.</strong> If you create hunts:</p>
+        <p><strong>Publishing hunts.</strong>{" "}If you create hunts:</p>
         <ul>
           <li>When you publish a hunt you must confirm that it is safe and appropriate for its
             audience: every stop is in a public place that is safe and legal to visit, and nothing
@@ -137,7 +137,7 @@ export default function TermsOfUsePage() {
             hunt stops, or email us at <ContactEmail />. A report keeps a copy of the reported
             text where it can, so it can be reviewed even if the original is changed or
             deleted.</li>
-          <li>You can <strong>block</strong> any player from their profile and manage your blocks
+          <li>You can <strong>block</strong>{" "}any player from their profile and manage your blocks
             in <strong>Settings → Blocked players</strong>. Blocking works both ways: neither of
             you sees the other&apos;s chat messages, kudos, wall posts or shoutouts, neither can
             send the other kudos, shoutouts or friend requests, and any friendship between you is
@@ -165,8 +165,8 @@ export default function TermsOfUsePage() {
       </LegalSection>
 
       <LegalSection id="ending" title="8. Ending your account">
-        <p>You can stop using {OPERATOR_NAME} at any time and delete your account in the app from
-          <strong> Settings → Delete account</strong>. Deletion cannot be undone. If you are a
+        <p>You can stop using {OPERATOR_NAME} at any time and delete your account in the app from{" "}
+          <strong>Settings → Delete account</strong>. Deletion cannot be undone. If you are a
           parent, deleting your account also deletes the child and teen accounts you created.
           Section 8 of the <Link href={PRIVACY_PATH} className={linkClass}>Privacy Policy</Link>{" "}
           explains what is deleted and the few records that are kept. We may suspend or close
