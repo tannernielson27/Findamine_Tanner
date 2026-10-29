@@ -128,7 +128,7 @@ export default function TopBar({ user }: TopBarProps) {
         </div>
       </header>
       {isHome && (
-        <div className="mx-auto max-w-6xl px-5 pb-5 pt-5 lg:px-4 lg:pt-8">
+        <div className="mx-auto max-w-3xl px-5 pb-5 pt-5 lg:pt-8">
           <HomeGreeting displayName={user.display_name} />
         </div>
       )}
