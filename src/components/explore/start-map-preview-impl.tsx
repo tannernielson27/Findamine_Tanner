@@ -59,7 +59,8 @@ export function StartMapPreview({ lat, lng, radiusMeters }: StartMapPreviewProps
           <span className="absolute left-1/2 top-[40%] h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-dashed border-brand bg-brand/15" />
         </div>
       )}
-      <span className="absolute bottom-3 left-3 rounded-full bg-white/95 px-3 py-1.5 text-[13px] font-semibold text-themed-text">
+      {/* Top-left: Google's terms forbid covering the logo in the bottom-left corner. */}
+      <span className="absolute top-3 left-3 rounded-full bg-white/95 px-3 py-1.5 text-[13px] font-semibold text-themed-text">
         Start area
       </span>
     </div>

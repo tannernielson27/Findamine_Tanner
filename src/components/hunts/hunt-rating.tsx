@@ -64,18 +64,21 @@ export default function HuntRating({ huntId }: HuntRatingProps) {
 
   return (
     <section aria-label="Ratings" className="rounded-[18px] border border-themed-border bg-surface p-4">
-      {/* Average rating display */}
+      {/* Average rating display. With no ratings, just the text: an empty
+          star row would read as a second rating control. */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <div className="flex" aria-hidden="true">
-          {[1, 2, 3, 4, 5].map((star) => (
-            <Star
-              key={star}
-              className={`w-4 h-4 ${avgRating && star <= Math.round(avgRating) ? "fill-current text-warning" : "text-themed-border"}`}
-            />
-          ))}
-        </div>
         {avgRating ? (
-          <span className="text-sm tabular-nums text-themed-muted">{avgRating} ({totalRatings} rating{totalRatings !== 1 ? "s" : ""})</span>
+          <>
+            <div className="flex" aria-hidden="true">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <Star
+                  key={star}
+                  className={`w-4 h-4 ${star <= Math.round(avgRating) ? "fill-current text-warning" : "text-themed-border"}`}
+                />
+              ))}
+            </div>
+            <span className="text-sm tabular-nums text-themed-muted">{avgRating} ({totalRatings} rating{totalRatings !== 1 ? "s" : ""})</span>
+          </>
         ) : (
           <span className="text-sm text-themed-muted">No ratings yet</span>
         )}

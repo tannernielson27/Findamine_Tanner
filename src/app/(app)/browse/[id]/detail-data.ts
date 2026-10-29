@@ -1,7 +1,63 @@
-import type { createSupabaseServiceClient } from "@/lib/supabase/server";
-import { isReviewer } from "@/lib/hunts/review";
+import { cache } from "react";
+import { createSupabaseServiceClient } from "@/lib/supabase/server";
+import { canAccessHunt, isPubliclyAvailable, isReviewer } from "@/lib/hunts/review";
+import { activeTeamIdsInHunt } from "@/app/api/v1/teams/team-rules";
+import { getBrowseViewer } from "../viewer";
+import { isOwnerPreview } from "./cta-state";
 
 type ServiceClient = Awaited<ReturnType<typeof createSupabaseServiceClient>>;
+
+/**
+ * The hunt row behind the detail page. Request-scoped (React cache), so the
+ * page and generateMetadata share one query.
+ * `*` includes cover_image_url once migration 079 is applied.
+ */
+export const loadDetailHunt = cache(async (id: string) => {
+  const supabase = await createSupabaseServiceClient();
+  const { data } = await supabase
+    .from("hunts")
+    .select("*, finds(id, sort_order, deleted_at, clue_text, clue_hints, locations(name, latitude, longitude, radius_meters), tasks(title, challenge_type), primers(title, content))")
+    .eq("id", id)
+    .is("deleted_at", null)
+    .single();
+  return data;
+});
+
+/**
+ * Whether the current viewer may open this hunt. Only hunts approved in
+ * publish review are public. Drafts are visible to their owner and reviewers;
+ * published-but-unapproved hunts also to the creator's roster students. Same
+ * rule as the hunts API (canAccessHunt). Cached so the page and its metadata
+ * (which must not leak a private hunt's title) run it once.
+ */
+export const canViewDetailHunt = cache(async (id: string): Promise<boolean> => {
+  const [hunt, viewer] = await Promise.all([loadDetailHunt(id), getBrowseViewer()]);
+  if (!hunt) return false;
+  if (isPubliclyAvailable(hunt)) return true;
+  return canAccessHunt(await createSupabaseServiceClient(), hunt, viewer);
+});
+
+/**
+ * True when the viewer runs this teacher-formed team hunt but isn't on one of
+ * its teams, so the sticky bar offers "Preview hunt" like the team panel.
+ * Only queries team membership for managers; on a lookup error it falls back
+ * to the regular team CTA.
+ */
+export async function ownerPreviewFor(
+  supabase: ServiceClient,
+  hunt: { id: string; play_mode: unknown; created_by: string },
+  viewer: { id: string; role: string } | null
+): Promise<boolean> {
+  if (!viewer) return false;
+  const canManage = viewer.id === hunt.created_by || isReviewer(viewer.role);
+  if (!isOwnerPreview({ playMode: hunt.play_mode, canManage, onTeam: false })) return false;
+  try {
+    const teamIds = await activeTeamIdsInHunt(supabase, viewer.id, hunt.id);
+    return isOwnerPreview({ playMode: hunt.play_mode, canManage, onTeam: teamIds.length > 0 });
+  } catch {
+    return false;
+  }
+}
 
 type One<T> = T | T[] | null | undefined;
 const one = <T,>(v: One<T>): T | null => (Array.isArray(v) ? v[0] ?? null : v ?? null);

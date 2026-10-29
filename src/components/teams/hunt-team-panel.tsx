@@ -8,7 +8,7 @@ import { NETWORK_ERROR_MESSAGE, postJson } from "@/app/login/auth-client";
 /**
  * Team step of a team-mode hunt's detail page: shows the player's team (or
  * lets them join / create one when the hunt allows it) and only offers
- * "Start Hunt" once they are on a team.
+ * "Start hunt" once they are on a team.
  *
  * Member names come from GET /api/v1/teams, which has already applied each
  * member's privacy settings for this viewer; a hidden name arrives as null
@@ -48,6 +48,9 @@ const TEAM_NAME_MAX = 40;
 
 const PRIMARY_LINK =
   "inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand px-6 text-base font-semibold text-white transition-colors hover:bg-brand-dark sm:w-auto";
+/** Same footprint as PRIMARY_LINK, outlined, for when the sticky bar already carries the primary action. */
+const SECONDARY_LINK =
+  "inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg border border-themed-border bg-surface px-6 text-base font-semibold text-themed-text transition-colors hover:bg-themed-bg sm:w-auto";
 const PRIMARY_BUTTON =
   "inline-flex min-h-11 items-center justify-center rounded-lg bg-brand px-4 text-sm font-semibold text-white transition-colors hover:bg-brand-dark disabled:opacity-50";
 const SECONDARY_BUTTON =
@@ -171,8 +174,8 @@ export default function HuntTeamPanel({ huntId, playHref }: { huntId: string; pl
     <p role="alert" className="mt-3 text-sm font-medium text-[var(--color-error)]">{actionError}</p>
   );
 
-  const startLink = (label: string) => (
-    <Link href={playHref} className={PRIMARY_LINK}>
+  const startLink = (label: string, className = PRIMARY_LINK) => (
+    <Link href={playHref} className={className}>
       <Play className="h-5 w-5" aria-hidden="true" />
       {label}
     </Link>
@@ -188,7 +191,7 @@ export default function HuntTeamPanel({ huntId, playHref }: { huntId: string; pl
         <>
           <TeamSummary team={myTeam} viewerId={viewer.id} />
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            {startLink("Start Hunt")}
+            {startLink("Start hunt")}
             {selfSelect &&
               (confirmLeave ? (
                 <>
@@ -251,7 +254,8 @@ export default function HuntTeamPanel({ huntId, playHref }: { huntId: string; pl
               ? "You run this hunt and aren't on a team yourself. You can still preview it."
               : "No teams have been formed for this hunt yet, so players can't start it. You can still preview it."}
           </p>
-          {startLink("Preview Hunt")}
+          {/* The sticky bar also says "Preview hunt", so this one stays secondary. */}
+          {startLink("Preview hunt", SECONDARY_LINK)}
         </>
       ) : (
         <>

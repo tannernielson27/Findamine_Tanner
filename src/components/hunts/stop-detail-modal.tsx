@@ -191,7 +191,7 @@ export function StopList({ finds }: { finds: any[] }) {
                   {i + 1}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-base font-medium text-themed-text">
+                  <span className="block truncate font-[family-name:var(--font-display)] text-base font-semibold text-themed-text">
                     {locations?.name || `Stop ${i + 1}`}
                   </span>
                   {find.clue_text && (
