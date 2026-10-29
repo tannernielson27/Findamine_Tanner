@@ -53,8 +53,8 @@ export default function LegalPage({ title, intro, sections, children }: LegalPag
             <Image
               src="/logo-findamine.png"
               alt="findamine home"
-              width={140}
-              height={35}
+              width={160}
+              height={33}
               className="h-auto"
               style={{ objectFit: "contain" }}
             />
@@ -70,10 +70,15 @@ export default function LegalPage({ title, intro, sections, children }: LegalPag
 
         <nav aria-label="On this page" className="mb-8 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">On this page</p>
-          <ol className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2 text-sm list-decimal pl-5">
-            {sections.map((s) => (
-              <li key={s.id}>
-                <a href={`#${s.id}`} className="text-gray-700 hover:text-brand hover:underline">
+          {/* CSS columns (not a grid) so the list reads down each column, and a
+              fixed-width, tabular-figure number so "10." lines up with "9.". */}
+          <ol className="list-none text-sm sm:columns-2 sm:gap-x-6">
+            {sections.map((s, i) => (
+              <li key={s.id} className="flex break-inside-avoid">
+                <span aria-hidden="true" className="flex min-h-8 w-7 shrink-0 items-center justify-end pr-2 tabular-nums text-gray-400">
+                  {i + 1}.
+                </span>
+                <a href={`#${s.id}`} className="flex min-h-8 items-center text-gray-700 hover:text-brand hover:underline">
                   {s.title}
                 </a>
               </li>
@@ -89,10 +94,10 @@ export default function LegalPage({ title, intro, sections, children }: LegalPag
           <p>
             Questions? <ContactEmail />
           </p>
-          <nav aria-label="Legal" className="flex flex-wrap gap-5">
-            <Link href="/" className="hover:text-gray-700">Home</Link>
-            <Link href={PRIVACY_PATH} className="hover:text-gray-700">Privacy Policy</Link>
-            <Link href={TERMS_PATH} className="hover:text-gray-700">Terms of Use</Link>
+          <nav aria-label="Legal" className="flex flex-wrap gap-x-5">
+            <Link href="/" className="inline-flex min-h-8 items-center hover:text-gray-700">Home</Link>
+            <Link href={PRIVACY_PATH} className="inline-flex min-h-8 items-center hover:text-gray-700">Privacy Policy</Link>
+            <Link href={TERMS_PATH} className="inline-flex min-h-8 items-center hover:text-gray-700">Terms of Use</Link>
           </nav>
         </footer>
       </div>

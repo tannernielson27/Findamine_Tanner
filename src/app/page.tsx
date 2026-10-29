@@ -1,9 +1,9 @@
-import Link from "next/link";
 import Image from "next/image";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Compass } from "lucide-react";
 import { ButtonLink } from "@/components/ui/button";
+import LegalLinks from "@/components/legal/legal-links";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { launchRedirect } from "@/lib/auth/session";
 import { selectHeroBanner, getHeroBannerContext } from "@/lib/services/hero-banner";
@@ -66,15 +66,7 @@ export default async function Welcome() {
           </ButtonLink>
         </div>
 
-        <p className="mt-6 text-xs text-gray-500">
-          <Link href="/privacy" className="inline-flex min-h-8 items-center hover:text-gray-700 hover:underline">
-            Privacy Policy
-          </Link>
-          <span aria-hidden="true" className="mx-2">&middot;</span>
-          <Link href="/terms" className="inline-flex min-h-8 items-center hover:text-gray-700 hover:underline">
-            Terms of Use
-          </Link>
-        </p>
+        <LegalLinks className="mt-6" />
       </section>
     </main>
   );
