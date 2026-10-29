@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ShieldCheck, Star } from "lucide-react";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
@@ -15,44 +16,55 @@ import { ShareButton } from "@/components/explore/share-button";
 import { StatRow } from "@/components/explore/stat-row";
 import { StartMapPreview } from "@/components/explore/start-map-preview";
 import { ChallengeChips, DetailSection, subjectLabel } from "@/components/explore/hunt-detail-parts";
-import { canAccessHunt, isPubliclyAvailable, isReviewer } from "@/lib/hunts/review";
+import { isPubliclyAvailable, isReviewer } from "@/lib/hunts/review";
 import { audienceLabel, shortPlayMode } from "@/lib/hunts/card-data";
 import { isCampusHunt } from "@/lib/hunts/explore-filters";
 import { formatPlayMode } from "../hunt-meta";
 import { getBrowseViewer } from "../viewer";
 import { DetailCtaBar } from "./detail-cta-bar";
-import { getHuntSocialProof, liveFinds, startArea, challengeTypesOf, type DetailFind } from "./detail-data";
+import {
+  canViewDetailHunt,
+  getHuntSocialProof,
+  liveFinds,
+  loadDetailHunt,
+  ownerPreviewFor,
+  startArea,
+  challengeTypesOf,
+  type DetailFind,
+} from "./detail-data";
 
 const PLAYABLE_STATUSES = ["published", "enrollment_open", "in_progress"];
 
-export default async function HuntDetailPage({ params }: { params: Promise<{ id: string }> }) {
+interface HuntDetailProps {
+  params: Promise<{ id: string }>;
+}
+
+/** Tab title is the hunt's name ("BYU Heritage Walk | findamine"), never a hidden hunt's. */
+export async function generateMetadata({ params }: HuntDetailProps): Promise<Metadata> {
+  const { id } = await params;
+  const [hunt, canView] = await Promise.all([loadDetailHunt(id), canViewDetailHunt(id)]);
+  if (!hunt || !canView || !hunt.title) return {};
+  return { title: hunt.title };
+}
+
+export default async function HuntDetailPage({ params }: HuntDetailProps) {
   const { id } = await params;
   const supabase = await createSupabaseServiceClient();
 
   // The hunt and the viewer are independent (the viewer is also cached from
-  // the layout), so load them together.
-  // `*` includes cover_image_url once migration 079 is applied.
-  const [{ data: hunt }, viewer] = await Promise.all([
-    supabase
-      .from("hunts")
-      .select("*, finds(id, sort_order, deleted_at, clue_text, clue_hints, locations(name, latitude, longitude, radius_meters), tasks(title, challenge_type), primers(title, content))")
-      .eq("id", id)
-      .is("deleted_at", null)
-      .single(),
-    getBrowseViewer(),
-  ]);
+  // the layout), so load them together. The hunt query is shared with
+  // generateMetadata.
+  const [hunt, viewer] = await Promise.all([loadDetailHunt(id), getBrowseViewer()]);
 
   if (!hunt) notFound();
 
-  // Only hunts approved in publish review are public. Drafts are visible to
-  // their owner and reviewers; published-but-unapproved hunts also to the
-  // creator's roster students. Same rule as the hunts API (canAccessHunt).
   const isPublic = isPubliclyAvailable(hunt);
-  // Social proof only needs the hunt, so it runs alongside the access check.
-  // Nothing from it is rendered unless the access check passes.
-  const [hasAccess, social] = await Promise.all([
-    isPublic ? true : canAccessHunt(supabase, hunt, viewer),
+  // Social proof and the owner-preview check only need the hunt, so they run
+  // alongside the access check. Nothing from them is rendered unless it passes.
+  const [hasAccess, social, ownerPreview] = await Promise.all([
+    canViewDetailHunt(id),
     getHuntSocialProof(supabase, hunt.id, hunt.created_by),
+    ownerPreviewFor(supabase, hunt, viewer),
   ]);
   if (!hasAccess) notFound();
 
@@ -91,11 +103,15 @@ export default async function HuntDetailPage({ params }: { params: Promise<{ id:
         alt=""
         className="h-[300px]"
       >
-        <div className="absolute inset-x-4 top-4 flex justify-between">
-          <IconLink href="/browse" label="Back to Explore" tone="floating">
-            <ArrowLeft className="h-[22px] w-[22px]" strokeWidth={2.2} aria-hidden="true" />
-          </IconLink>
-          <ShareButton title={hunt.title} path={`/browse/${hunt.id}`} />
+        {/* Lined up with the content column (max-w-3xl) on wide screens; 16px
+            from the edges on phones, as before. */}
+        <div className="absolute inset-x-0 top-4">
+          <div className="mx-auto flex max-w-3xl justify-between px-4">
+            <IconLink href="/browse" label="Back to Explore" tone="floating">
+              <ArrowLeft className="h-[22px] w-[22px]" strokeWidth={2.2} aria-hidden="true" />
+            </IconLink>
+            <ShareButton title={hunt.title} path={`/browse/${hunt.id}`} />
+          </div>
         </div>
       </TopoCover>
 
@@ -215,7 +231,7 @@ export default async function HuntDetailPage({ params }: { params: Promise<{ id:
         </div>
       </div>
 
-      <DetailCtaBar huntId={hunt.id} status={hunt.status} playable={isPlayable} teamHunt={isTeamHunt} signedIn={!!viewer} />
+      <DetailCtaBar huntId={hunt.id} status={hunt.status} playable={isPlayable} teamHunt={isTeamHunt} signedIn={!!viewer} ownerPreview={ownerPreview} />
     </main>
   );
 }
