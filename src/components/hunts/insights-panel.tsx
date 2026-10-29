@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { FilterChip } from "@/components/ui/chip";
+import { countLabel, insightsSummary } from "@/components/home/home-copy";
 
 interface InsightsData {
   top_by_score: { hunt_id: string; title: string; audience: string; plays: number; avg_score: number }[];
@@ -12,10 +14,30 @@ interface InsightsData {
   total_completions: number;
 }
 
+type InsightsTab = "top" | "types" | "audiences";
+
+const TABS: { key: InsightsTab; label: string }[] = [
+  { key: "top", label: "Top hunts" },
+  { key: "types", label: "Challenge types" },
+  { key: "audiences", label: "Audiences" },
+];
+
+function hasAnyInsights(data: InsightsData): boolean {
+  return data.top_by_score.length > 0 || data.challenge_type_insights.length > 0 || data.audience_insights.length > 0;
+}
+
+function EmptyTab() {
+  return <p className="m-0 py-4 text-center text-sm text-themed-muted">No data yet</p>;
+}
+
+/**
+ * Creator insights card on Home (inside "Your hunts"). Renders nothing until
+ * there is something to compare, so creators never see an empty card.
+ */
 export default function InsightsPanel() {
   const [data, setData] = useState<InsightsData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"top" | "types" | "audiences">("top");
+  const [tab, setTab] = useState<InsightsTab>("top");
 
   useEffect(() => {
     fetch("/api/v1/analytics/insights")
@@ -25,97 +47,85 @@ export default function InsightsPanel() {
   }, []);
 
   if (loading) return null;
-  if (!data || data.total_completions === 0) return null;
+  if (!data || data.total_completions === 0 || !hasAnyInsights(data)) return null;
+
+  const summary = insightsSummary(data.total_hunts_with_data, data.total_completions);
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <h3 className="text-sm font-semibold text-gray-900 mb-3">Learn from Other Hunts</h3>
-      <p className="text-[11px] text-gray-500 mb-3">
-        {data.total_hunts_with_data} hunts · {data.total_completions} total completions
-      </p>
+    <section aria-labelledby="home-insights" className="rounded-card border border-themed-border bg-surface p-5">
+      <h3 id="home-insights" className="m-0 font-[family-name:var(--font-display)] text-[22px] font-semibold leading-tight text-themed-text">
+        Learn from other hunts
+      </h3>
+      {summary && <p className="m-0 mt-1 text-sm text-themed-muted">{summary}</p>}
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-3">
-        {[
-          { key: "top" as const, label: "Top Hunts" },
-          { key: "types" as const, label: "Challenge Types" },
-          { key: "audiences" as const, label: "Audiences" },
-        ].map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`rounded-full px-3 py-1 text-[11px] font-medium transition ${
-              tab === t.key ? "bg-sky-100 text-sky-700" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-            }`}
-          >
+      <div role="group" aria-label="Insight type" className="mt-4 flex flex-wrap gap-2">
+        {TABS.map((t) => (
+          <FilterChip key={t.key} selected={tab === t.key} onToggle={() => setTab(t.key)}>
             {t.label}
-          </button>
+          </FilterChip>
         ))}
       </div>
 
-      {/* Top Hunts */}
-      {tab === "top" && (
-        <div className="space-y-1.5 max-h-48 overflow-y-auto">
-          {data.top_by_score.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-4">No data yet</p>
+      <div className="mt-4">
+        {tab === "top" &&
+          (data.top_by_score.length === 0 ? (
+            <EmptyTab />
           ) : (
-            data.top_by_score.map((h, i) => (
-              <Link
-                key={h.hunt_id}
-                href={`/browse/${h.hunt_id}`}
-                className="flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-gray-50 transition"
-              >
-                <span className="w-5 text-gray-400 font-medium">#{i + 1}</span>
-                <span className="flex-1 text-gray-900 truncate">{h.title}</span>
-                <span className="text-sky-600 font-medium">{h.avg_score} pts</span>
-                <span className="text-gray-400">{h.plays} plays</span>
-              </Link>
-            ))
-          )}
-        </div>
-      )}
+            <ul className="m-0 flex max-h-64 list-none flex-col overflow-y-auto p-0">
+              {data.top_by_score.map((h, i) => (
+                <li key={h.hunt_id} className={i > 0 ? "border-t border-divider" : undefined}>
+                  <Link
+                    href={`/browse/${h.hunt_id}`}
+                    className="flex min-h-11 items-center gap-3 py-2 text-[15px] text-themed-text no-underline hover:text-link"
+                  >
+                    <span className="w-7 shrink-0 font-semibold tabular-nums text-themed-muted">#{i + 1}</span>
+                    <span className="min-w-0 flex-1 truncate">{h.title}</span>
+                    <span className="shrink-0 font-semibold tabular-nums text-link">{h.avg_score} pts</span>
+                    <span className="shrink-0 text-sm tabular-nums text-themed-muted">{countLabel(h.plays, "play")}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ))}
 
-      {/* Challenge Type Insights */}
-      {tab === "types" && (
-        <div className="space-y-1.5">
-          {data.challenge_type_insights.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-4">No data yet</p>
+        {tab === "types" &&
+          (data.challenge_type_insights.length === 0 ? (
+            <EmptyTab />
           ) : (
-            data.challenge_type_insights.map((ct) => (
-              <div key={ct.challenge_type} className="flex items-center gap-2 text-xs">
-                <span className="flex-1 text-gray-700">{ct.challenge_type.replace(/_/g, " ")}</span>
-                <div className="w-24 bg-gray-100 rounded-full h-2">
-                  <div
-                    className="h-2 rounded-full bg-sky-500 transition-[width]"
-                    style={{ width: `${ct.avg_score}%` }}
-                  />
-                </div>
-                <span className="w-12 text-right text-gray-600 font-medium">{ct.avg_score} pts</span>
-                <span className="w-10 text-right text-gray-400">n={ct.sample_size}</span>
-              </div>
-            ))
-          )}
-        </div>
-      )}
+            <ul className="m-0 flex list-none flex-col gap-3 p-0">
+              {data.challenge_type_insights.map((ct) => (
+                <li key={ct.challenge_type} className="flex items-center gap-3 text-[15px]">
+                  <span className="min-w-0 flex-1 truncate capitalize text-themed-text">{ct.challenge_type.replace(/_/g, " ")}</span>
+                  <span className="h-2 w-24 shrink-0 overflow-hidden rounded-full bg-divider" aria-hidden="true">
+                    <span
+                      className="block h-2 rounded-full bg-link transition-[width]"
+                      style={{ width: `${Math.min(100, Math.max(0, ct.avg_score))}%` }}
+                    />
+                  </span>
+                  <span className="w-14 shrink-0 text-right font-semibold tabular-nums text-themed-text">{ct.avg_score} pts</span>
+                  <span className="w-12 shrink-0 text-right text-sm tabular-nums text-themed-muted">n={ct.sample_size}</span>
+                </li>
+              ))}
+            </ul>
+          ))}
 
-      {/* Audience Insights */}
-      {tab === "audiences" && (
-        <div className="space-y-1.5">
-          {data.audience_insights.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-4">No data yet</p>
+        {tab === "audiences" &&
+          (data.audience_insights.length === 0 ? (
+            <EmptyTab />
           ) : (
-            data.audience_insights.map((a) => (
-              <div key={a.audience} className="flex items-center gap-2 text-xs">
-                <span className="rounded-full bg-sky-50 px-2 py-0.5 text-sky-700 text-[11px] w-16 text-center">
-                  {a.audience}
-                </span>
-                <span className="text-gray-600">{a.total_plays} plays</span>
-                <span className="text-gray-700 font-medium">avg {a.avg_score} pts</span>
-              </div>
-            ))
-          )}
-        </div>
-      )}
-    </div>
+            <ul className="m-0 flex list-none flex-col gap-3 p-0">
+              {data.audience_insights.map((a) => (
+                <li key={a.audience} className="flex items-center gap-3 text-[15px]">
+                  <span className="inline-flex min-w-20 justify-center rounded-full bg-sky-tint px-[11px] py-[5px] text-[13px] font-semibold capitalize text-link">
+                    {a.audience}
+                  </span>
+                  <span className="text-themed-muted">{countLabel(a.total_plays, "play")}</span>
+                  <span className="font-semibold text-themed-text">avg {a.avg_score} pts</span>
+                </li>
+              ))}
+            </ul>
+          ))}
+      </div>
+    </section>
   );
 }

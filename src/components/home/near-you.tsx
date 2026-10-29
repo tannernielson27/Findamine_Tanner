@@ -38,12 +38,16 @@ export function NearYou({ hunts }: { hunts: HuntCardData[] }) {
   }, [hunts]);
 
   const shown = (sorted ?? hunts).slice(0, SHOWN);
+  // One result fills the row instead of leaving half of it empty.
+  const single = shown.length === 1;
 
+  // Same box as the other Home sections (mx-4, header px-1); the carousel
+  // bleeds back out with -mx-4 px-4 so cards still scroll edge to edge.
   return (
-    <section aria-labelledby="home-near-you" className="mt-7">
-      <SectionHeader id="home-near-you" title="Near you" link={{ href: "/browse", label: "See all" }} />
+    <section aria-labelledby="home-near-you" className="mx-4 mt-7">
+      <SectionHeader id="home-near-you" title="Near you" link={{ href: "/browse", label: "See all" }} className="px-1" />
       {shown.length === 0 ? (
-        <div className="mx-4 flex items-center gap-3.5 rounded-card border border-themed-border bg-surface p-5">
+        <div className="flex items-center gap-3.5 rounded-card border border-themed-border bg-surface p-5">
           <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-juniper-tint text-juniper" aria-hidden="true">
             <MapPinned className="h-6 w-6" />
           </span>
@@ -52,10 +56,10 @@ export function NearYou({ hunts }: { hunts: HuntCardData[] }) {
           </p>
         </div>
       ) : (
-        <ul className="fm-no-scrollbar m-0 flex snap-x snap-mandatory list-none gap-3 overflow-x-auto px-4 pb-1" aria-label="Hunts near you">
+        <ul className="fm-no-scrollbar -mx-4 my-0 flex snap-x snap-mandatory scroll-px-4 list-none gap-3 overflow-x-auto px-4 pb-1" aria-label="Hunts near you">
           {shown.map((hunt) => (
-            <li key={hunt.id} className="shrink-0 snap-start">
-              <HuntCard hunt={hunt} variant="shelf" />
+            <li key={hunt.id} className={single ? "w-full snap-start" : "shrink-0 snap-start"}>
+              <HuntCard hunt={hunt} variant="shelf" className={single ? "w-full" : undefined} />
             </li>
           ))}
         </ul>
@@ -67,11 +71,11 @@ export function NearYou({ hunts }: { hunts: HuntCardData[] }) {
 /** Skeleton matching two shelf cards. */
 export function NearYouSkeleton() {
   return (
-    <div className="mt-7" aria-hidden="true">
-      <div className="px-5 pb-3">
+    <div className="mx-4 mt-7" aria-hidden="true">
+      <div className="px-1 pb-3">
         <div className="h-7 w-32 rounded-md bg-divider" />
       </div>
-      <div className="flex gap-3 overflow-hidden px-4">
+      <div className="-mx-4 flex gap-3 overflow-hidden px-4">
         {[0, 1].map((i) => (
           <div key={i} className="fm-shimmer w-[236px] shrink-0 overflow-hidden rounded-2xl border border-themed-border bg-surface">
             <div className="h-[120px] bg-divider" />
