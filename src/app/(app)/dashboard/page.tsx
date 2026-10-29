@@ -14,8 +14,9 @@ import type { AgeBand } from "@/lib/themes/tokens";
 
 /**
  * Home: "what should I do next?" (OVERHAUL_PLAN.md §4.2, Main.dc.html).
- * The greeting lives in the top bar (components/layout/top-bar.tsx) so it
- * shares a row with the bell, as in the mockup.
+ * The greeting is rendered by components/layout/top-bar.tsx, just below the
+ * sticky logo + bell bar. Every section here uses the same box (mx-4, with
+ * SectionHeader px-1) so headings and cards share one left and right edge.
  *
  * Order: resume card → weekly ring → Near you → Friends → (creators) Your hunts.
  * The old shortcut rows are gone: Badges, Teams and Social are in Profile;

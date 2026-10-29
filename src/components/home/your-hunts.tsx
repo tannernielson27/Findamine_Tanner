@@ -4,6 +4,7 @@ import InsightsPanel from "@/components/hunts/insights-panel";
 import { Tag } from "@/components/ui/chip";
 import { cn } from "@/lib/utils/cn";
 import { SectionHeader } from "./section-header";
+import { yourHuntsLinkLabel } from "./home-copy";
 
 export interface CreatorHuntSummary {
   id: string;
@@ -34,7 +35,7 @@ export function YourHunts({ hunts, total }: YourHuntsProps) {
       <SectionHeader
         id="home-your-hunts"
         title="Your hunts"
-        link={{ href: "/dashboard/hunts", label: total > 0 ? `All ${total}` : "My Hunts" }}
+        link={{ href: "/dashboard/hunts", label: yourHuntsLinkLabel(total) }}
         className="px-1"
       />
       {hunts.length === 0 ? (
