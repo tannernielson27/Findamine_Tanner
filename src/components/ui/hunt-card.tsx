@@ -1,16 +1,20 @@
 /**
  * Hunt card in the four layouts the overhaul uses:
- * - "full":   Explore list. 168px cover, title + rating, icon stats row.
+ * - "full":   Explore list. 168px cover, title + rating, stats row.
  * - "shelf":  Home "Near you" carousel. 236px wide, 120px cover.
- * - "poster": Explore shelves. 160px square cover, text below, no box.
+ * - "poster": Explore shelves. Square cover (160px on phones, fills its
+ *             column from sm up), text below, no box.
  * - "row":    Map sheet preview. 88px thumbnail beside the text.
+ *
+ * Every variant shows the same icon stats row (HuntStats), so a hunt reads
+ * the same on Home, Explore and the map.
  */
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { ChevronRight, Clock, Flag, MapPin, Star, User, Users } from "lucide-react";
 import { TopoCover, toneForHunt } from "@/components/ui/topo-cover";
 import { Tag } from "@/components/ui/chip";
-import { audienceLabel, cardStats, formatDistance, shortPlayMode, type HuntCardData } from "@/lib/hunts/card-data";
+import { audienceLabel, formatDistance, shortPlayMode, type HuntCardData } from "@/lib/hunts/card-data";
 import { cn } from "@/lib/utils/cn";
 
 export type HuntCardVariant = "full" | "shelf" | "poster" | "row";
@@ -28,14 +32,16 @@ export function HuntCard({ hunt, variant = "full", href, className }: HuntCardPr
   const link = href ?? `/browse/${hunt.id}`;
   const tone = toneForHunt(hunt.id, hunt.title);
   const tag = audienceLabel(hunt.audience);
-  const stats = cardStats(hunt);
 
   if (variant === "poster") {
+    // The title always reserves two lines, so every tile's stats row starts at the same height.
     return (
-      <Link href={link} className={cn("flex w-40 shrink-0 snap-start flex-col gap-2 text-themed-text no-underline", className)}>
-        <TopoCover tone={tone} imageUrl={hunt.coverImageUrl} alt="" className="h-40 rounded-2xl" />
-        <span className="font-[family-name:var(--font-display)] text-[17px] font-semibold leading-tight">{hunt.title}</span>
-        <span className="-mt-1 text-sm text-themed-muted">{stats.filter((s) => !s.endsWith("mi") && !s.endsWith("ft")).slice(0, 2).join(" · ")}</span>
+      <Link href={link} className={cn("flex w-40 shrink-0 snap-start flex-col gap-2 text-themed-text no-underline sm:w-full", className)}>
+        <TopoCover tone={tone} imageUrl={hunt.coverImageUrl} alt="" className="aspect-square w-full rounded-2xl" />
+        <span className="line-clamp-2 min-h-[2.5em] font-[family-name:var(--font-display)] text-[17px] font-semibold leading-tight">
+          {hunt.title}
+        </span>
+        <HuntStats hunt={hunt} compact withDistance={false} className="-mt-1" />
       </Link>
     );
   }
@@ -51,7 +57,7 @@ export function HuntCard({ hunt, variant = "full", href, className }: HuntCardPr
         </TopoCover>
         <div className="flex flex-col gap-1.5 px-3.5 pb-3.5 pt-3">
           <span className="font-[family-name:var(--font-display)] text-lg font-semibold leading-tight">{hunt.title}</span>
-          <span className="text-sm text-themed-muted">{stats.slice(0, 3).join(" · ")}</span>
+          <HuntStats hunt={hunt} compact />
         </div>
       </Link>
     );
@@ -65,18 +71,16 @@ export function HuntCard({ hunt, variant = "full", href, className }: HuntCardPr
         className={cn("flex gap-3 rounded-[18px] border border-themed-border bg-surface p-2.5 text-themed-text no-underline", className)}
       >
         <TopoCover tone={tone} imageUrl={hunt.coverImageUrl} className="h-[88px] w-[88px] shrink-0 rounded-xl" />
-        <span className="flex min-w-0 flex-1 flex-col justify-center gap-1">
+        <div className="flex min-w-0 flex-1 flex-col justify-center gap-1">
           <span className="font-[family-name:var(--font-display)] text-lg font-semibold leading-tight">{hunt.title}</span>
-          <span className="text-sm text-themed-muted">{stats.filter((s) => s !== dist).join(" · ")}</span>
+          <HuntStats hunt={hunt} compact withDistance={false} />
           {dist && <span className="text-sm font-semibold text-juniper">{dist} from you</span>}
-        </span>
+        </div>
         <ChevronRight className="h-5 w-5 self-center text-themed-muted" aria-hidden="true" />
       </Link>
     );
   }
 
-  const dist = formatDistance(hunt.distanceMeters);
-  const mode = shortPlayMode(hunt.playMode);
   return (
     <Link
       href={link}
@@ -95,22 +99,56 @@ export function HuntCard({ hunt, variant = "full", href, className }: HuntCardPr
             </span>
           )}
         </div>
-        <ul className="flex flex-wrap gap-x-3.5 gap-y-1 text-sm text-themed-muted" aria-label="Hunt details">
-          {dist && <Stat icon={<MapPin className="h-4 w-4" aria-hidden="true" />}>{dist}</Stat>}
-          {hunt.stopCount ? <Stat icon={<Flag className="h-4 w-4" aria-hidden="true" />}>{hunt.stopCount} stops</Stat> : null}
-          {hunt.durationMinutes ? <Stat icon={<Clock className="h-4 w-4" aria-hidden="true" />}>{hunt.durationMinutes} min</Stat> : null}
-          {mode && (
-            <Stat icon={mode === "Team" ? <Users className="h-4 w-4" aria-hidden="true" /> : <User className="h-4 w-4" aria-hidden="true" />}>{mode}</Stat>
-          )}
-        </ul>
+        <HuntStats hunt={hunt} />
       </div>
     </Link>
   );
 }
 
-function Stat({ icon, children }: { icon: ReactNode; children: ReactNode }) {
+interface HuntStatsProps {
+  hunt: HuntCardData;
+  /** Smaller icons and gaps for the narrow card layouts. */
+  compact?: boolean;
+  /** False where the card shows distance elsewhere (row) or not at all (poster). */
+  withDistance?: boolean;
+  className?: string;
+}
+
+/** The stats row every card uses: distance, stops, minutes, play mode, each with its icon. */
+function HuntStats({ hunt, compact = false, withDistance = true, className }: HuntStatsProps) {
+  const dist = withDistance ? formatDistance(hunt.distanceMeters) : null;
+  const mode = shortPlayMode(hunt.playMode);
+  if (!dist && !hunt.stopCount && !hunt.durationMinutes && !mode) return null;
+  const iconClass = compact ? "h-3.5 w-3.5" : "h-4 w-4";
   return (
-    <li className="inline-flex items-center gap-[5px] tabular-nums">
+    <ul
+      className={cn("m-0 flex list-none flex-wrap gap-y-1 p-0 text-sm text-themed-muted", compact ? "gap-x-2.5" : "gap-x-3.5", className)}
+      aria-label="Hunt details"
+    >
+      {dist && <Stat compact={compact} icon={<MapPin className={iconClass} aria-hidden="true" />}>{dist}</Stat>}
+      {hunt.stopCount ? (
+        <Stat compact={compact} icon={<Flag className={iconClass} aria-hidden="true" />}>
+          {hunt.stopCount} {hunt.stopCount === 1 ? "stop" : "stops"}
+        </Stat>
+      ) : null}
+      {hunt.durationMinutes ? (
+        <Stat compact={compact} icon={<Clock className={iconClass} aria-hidden="true" />}>{hunt.durationMinutes} min</Stat>
+      ) : null}
+      {mode && (
+        <Stat
+          compact={compact}
+          icon={mode === "Team" ? <Users className={iconClass} aria-hidden="true" /> : <User className={iconClass} aria-hidden="true" />}
+        >
+          {mode}
+        </Stat>
+      )}
+    </ul>
+  );
+}
+
+function Stat({ icon, compact, children }: { icon: ReactNode; compact: boolean; children: ReactNode }) {
+  return (
+    <li className={cn("inline-flex items-center tabular-nums", compact ? "gap-1" : "gap-[5px]")}>
       {icon}
       {children}
     </li>
