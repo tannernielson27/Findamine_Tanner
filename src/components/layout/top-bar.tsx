@@ -81,8 +81,8 @@ function DesktopNav({ user, pathname }: { user: ShellUser; pathname: string }) {
 }
 
 /**
- * The app's header. Replaces the old navbar + hamburger: logo (or, on Home
- * below lg, the greeting) on the left, bell + Privacy shield on the right.
+ * The app's header. Replaces the old navbar + hamburger: logo on the left (Home
+ * adds its greeting below the bar), bell + survey nudge on the right.
  * Everything that was in the hamburger now lives in the Profile tab.
  *
  * Keeps the `fm-app-header` class: globals.css pads the page top for the
@@ -113,39 +113,25 @@ export default function TopBar({ user }: TopBarProps) {
 
   const isHome = pathname === "/dashboard";
 
-  if (isHome) {
-    // Phones: the mockup's greeting row (scrolls away with the page).
-    // lg+: the same sticky logo + nav bar as every other screen, greeting below.
-    return (
-      <>
-        <header className="fm-app-header relative z-40 bg-themed-bg pt-[env(safe-area-inset-top)] lg:sticky lg:top-0 lg:border-b lg:border-themed-border lg:bg-white/95 lg:backdrop-blur-md">
-          <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-5 pb-5 pt-3 lg:h-16 lg:px-4 lg:py-0">
-            <div className="min-w-0 lg:hidden">
-              <HomeGreeting displayName={user.display_name} />
-            </div>
-            <div className="hidden min-w-0 items-center gap-6 lg:flex">
-              <Logo href="/dashboard" />
-              <DesktopNav user={user} pathname={pathname} />
-            </div>
-            <HeaderActions />
+  // Every tab, Home included, gets the same sticky logo + bell bar at every
+  // width (lg+ adds the inline nav). Home's greeting sits below it and
+  // scrolls away with the page.
+  return (
+    <>
+      <header className="fm-app-header sticky top-0 z-40 border-b border-themed-border bg-white/95 pt-[env(safe-area-inset-top)] backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4">
+          <div className="flex min-w-0 items-center gap-6">
+            <Logo href="/dashboard" />
+            <DesktopNav user={user} pathname={pathname} />
           </div>
-        </header>
-        <div className="mx-auto hidden max-w-6xl px-4 pb-5 pt-8 lg:block">
+          <HeaderActions />
+        </div>
+      </header>
+      {isHome && (
+        <div className="mx-auto max-w-6xl px-5 pb-5 pt-5 lg:px-4 lg:pt-8">
           <HomeGreeting displayName={user.display_name} />
         </div>
-      </>
-    );
-  }
-
-  return (
-    <header className="fm-app-header sticky top-0 z-40 border-b border-themed-border bg-white/95 pt-[env(safe-area-inset-top)] backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4">
-        <div className="flex min-w-0 items-center gap-6">
-          <Logo href="/dashboard" />
-          <DesktopNav user={user} pathname={pathname} />
-        </div>
-        <HeaderActions />
-      </div>
-    </header>
+      )}
+    </>
   );
 }

@@ -84,8 +84,19 @@
   color: var(--color-primary-dark, #0284C7);
 }
 
+/* html carries the page colour too, so iOS overscroll and the area past a
+   short page show cream instead of white. AgeBandProvider sets
+   --color-background on <html> once the app mounts; before that (and on the
+   landing, login and legal pages) the fallback is the landing cream.
+   scrollbar-gutter keeps the header from shifting sideways when a short page
+   (no scrollbar) and a long one swap on desktop. */
+html {
+  background-color: var(--color-background, #FEFCF6);
+  scrollbar-gutter: stable;
+}
+
 body {
-  background-color: var(--color-background, #FFFFFF);
+  background-color: var(--color-background, #FEFCF6);
   color: var(--color-text, #111827);
 }
 
@@ -325,10 +336,15 @@ body:has([data-fm-full-bleed]) {
   .fm-sheet-in { animation: none; }
 }
 
-/* The floating tab bar is replaced by a top nav on lg+ screens. */
+/* The floating tab bar is replaced by a top nav on lg+ screens. The mini-bar
+   still floats there (24px above the bottom, components/layout/mini-bar), so
+   .fm-tab-safe-mini keeps room for it plus 24px of breathing space. */
 @media (min-width: 1024px) {
-  .fm-tab-safe,
-  .fm-tab-safe-mini {
+  .fm-tab-safe {
     padding-bottom: calc(32px + env(safe-area-inset-bottom));
+  }
+
+  .fm-tab-safe-mini {
+    padding-bottom: calc(var(--fm-minibar-h) + 24px + 24px + env(safe-area-inset-bottom));
   }
 }
