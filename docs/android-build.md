@@ -31,6 +31,28 @@ The signed bundle is written to `android/app/build/outputs/bundle/release/app-re
 - `android/keystore.properties` (gitignored) points the release build at that key. On another machine, copy both files over.
 - **Back up the `.jks` file and its password** in a password manager. With Play App Signing (the default), Google holds the real app-signing key. If the upload key is lost, you can ask Play support to reset it, but that takes days.
 
+## Upload a new version from the command line
+
+After the first release, `npm run android:upload` uploads the bundle through the Play Developer API instead of Play Console.
+
+```sh
+npm run android:upload -- --check                         # sign in, show the latest versionCode, change nothing
+npm run android:upload -- --notes "Bug fixes"             # upload to production as a draft
+npm run android:upload -- --notes "Bug fixes" --submit    # upload and send to Google for review
+```
+
+- `--track` picks `production` (the default), `beta`, `alpha` or `internal`. `--aab` picks a different bundle; the default is the `bundleRelease` output.
+- Without `--submit` the release is saved as a draft, and you send it from **Publishing overview**. With `--submit` it goes to review, and because Managed publishing is off, it goes live as soon as Google approves it.
+- Raise `versionCode` first. `--check` prints the number the next upload needs.
+
+### One-time service account setup
+
+1. In [Google Cloud console](https://console.cloud.google.com/), pick or create a project. Enable the **Google Play Android Developer API** (APIs & Services > Library).
+2. Under **IAM & Admin > Service accounts**, create a service account (for example `play-upload`). It needs no Cloud roles.
+3. Open the account, go to **Keys > Add key > Create new key > JSON**, and save the file as `C:/Users/wildd/Desktop/Findamine/android-signing/play-service-account.json`. Keep it outside the repo and never commit it. To keep it somewhere else, set `PLAY_SERVICE_ACCOUNT` to its path.
+4. In Play Console, go to **Users and permissions > Invite new users**, and enter the service account's email address (it ends in `iam.gserviceaccount.com`). Under **App permissions**, add Findamine with **Release to production, exclude devices, and use Play App Signing** and **Release apps to testing tracks**. Then send the invitation.
+5. Run `npm run android:upload -- --check`. New permissions can take up to a day to start working. A 401 or 403 error usually means they haven't yet.
+
 ## Icons and splash
 
 `npm run android:assets` renders the launcher icons (adaptive, legacy and round) and the splash screens from `public/icon.svg`, using the same paper and compass as iOS. The output is committed, so you only need to run it when the mark changes.
