@@ -36,9 +36,16 @@ import { ApiError } from "@/lib/utils/api-auth";
 const ORIGIN = "https://findamine.test";
 const UID = "11111111-2222-3333-4444-555555555555";
 
-function confirmRequest(params: Record<string, string>): Request {
-  return new Request(`${ORIGIN}/api/auth/confirm?${new URLSearchParams(params).toString()}`);
+function confirmRequest(params: Record<string, string>, userAgent?: string): Request {
+  return new Request(`${ORIGIN}/api/auth/confirm?${new URLSearchParams(params).toString()}`, {
+    headers: userAgent ? { "user-agent": userAgent } : {},
+  });
 }
+
+const IPHONE_SAFARI =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1";
+const IPHONE_APP =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 FindamineApp/1";
 
 function locationOf(res: Response): URL {
   return new URL(res.headers.get("location") ?? "");
@@ -111,6 +118,58 @@ describe("GET /api/auth/confirm", () => {
     expect(h.verifyOtp).not.toHaveBeenCalled();
     expect(locationOf(res).pathname).toBe("/reset-password");
     expect(locationOf(res).searchParams.get("token_hash")).toBe("tok-recovery");
+  });
+
+  it("tells a phone browser to go back to the app when the link was asked for in the app", async () => {
+    h.verifyOtp.mockResolvedValue({ error: null });
+
+    const res = await confirm(
+      confirmRequest({ token_hash: "tok", type: "signup", next: "/dashboard/join-class", app: "1" }, IPHONE_SAFARI)
+    );
+
+    expect(locationOf(res).pathname).toBe("/email-confirmed");
+    expect(locationOf(res).searchParams.get("continue")).toBe("/dashboard/join-class");
+  });
+
+  it("leaves a phone browser alone when the link was asked for on the web", async () => {
+    h.verifyOtp.mockResolvedValue({ error: null });
+
+    const res = await confirm(confirmRequest({ token_hash: "tok", type: "signup", next: "/dashboard" }, IPHONE_SAFARI));
+
+    expect(locationOf(res).pathname).toBe("/dashboard");
+  });
+
+  it("goes straight on inside the app (a universal link)", async () => {
+    h.verifyOtp.mockResolvedValue({ error: null });
+
+    const res = await confirm(
+      confirmRequest({ token_hash: "tok", type: "signup", next: "/dashboard", app: "1" }, IPHONE_APP)
+    );
+
+    expect(locationOf(res).pathname).toBe("/dashboard");
+  });
+
+  it("carries the app marker onto the reset page", async () => {
+    const res = await confirm(confirmRequest({ token_hash: "tok", type: "recovery", app: "1" }, IPHONE_SAFARI));
+
+    expect(locationOf(res).pathname).toBe("/reset-password");
+    expect(locationOf(res).searchParams.get("app")).toBe("1");
+    expect(h.verifyOtp).not.toHaveBeenCalled();
+  });
+
+  it("sends a phone browser on an already-used link to the landing page, then to sign in", async () => {
+    h.verifyOtp.mockResolvedValue({ error: { message: "Email link is invalid or has expired" } });
+    h.getUserById.mockResolvedValue({ data: { user: { email_confirmed_at: "2026-09-15T00:00:00Z" } } });
+
+    const res = await confirm(
+      confirmRequest({ token_hash: "tok", type: "signup", next: "/dashboard", uid: UID, app: "1" }, IPHONE_SAFARI)
+    );
+
+    expect(locationOf(res).pathname).toBe("/email-confirmed");
+    const continueTo = new URL(locationOf(res).searchParams.get("continue") ?? "", ORIGIN);
+    expect(continueTo.pathname).toBe("/login");
+    expect(continueTo.searchParams.get("notice")).toBe("confirmed");
+    expect(continueTo.searchParams.get("next")).toBe("/dashboard");
   });
 
   it("rejects a link with a missing token or unknown type", async () => {

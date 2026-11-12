@@ -105,14 +105,20 @@ const NO_PROFILE: Result = { data: null, error: null };
 /** generateLink result for an auth user this request just created. */
 function freshLink(token: string) {
   return {
-    data: { user: { id: "auth-1", created_at: new Date().toISOString() }, properties: { hashed_token: token } },
+    data: {
+      user: { id: "auth-1", created_at: new Date().toISOString() },
+      properties: { hashed_token: token, email_otp: "135790" },
+    },
     error: null,
   };
 }
 /** generateLink result for an address that signed up earlier and never confirmed. */
 function existingUnconfirmedLink(token: string) {
   return {
-    data: { user: { id: "auth-1", created_at: "2026-09-01T00:00:00Z" }, properties: { hashed_token: token } },
+    data: {
+      user: { id: "auth-1", created_at: "2026-09-01T00:00:00Z" },
+      properties: { hashed_token: token, email_otp: "246801" },
+    },
     error: null,
   };
 }
@@ -133,7 +139,22 @@ describe("POST /api/v1/auth/register", () => {
     expect(url.searchParams.get("token_hash")).toBe("tok-signup");
     expect(url.searchParams.get("type")).toBe("signup");
     expect(url.searchParams.get("uid")).toBe("auth-1");
+    // The same token as a typed code, for the phone app.
+    expect(h.sendVerificationEmail.mock.calls[0][0]).toMatchObject({ code: "135790" });
+    // Asked for on the web, so a phone browser isn't sent back to the app.
+    expect(url.searchParams.has("app")).toBe(false);
     expect(h.enrollParticipant).toHaveBeenCalledWith("u1");
+  });
+
+  it("marks the link when the sign-up came from the phone app", async () => {
+    install({ users: [NO_PROFILE, { data: { id: "u1", email: ADULT.email, display_name: "Ana", role: "adult" }, error: null }] });
+    h.service.auth.admin.generateLink.mockResolvedValue(freshLink("tok-signup"));
+    const req = post("/api/v1/auth/register", ADULT);
+    req.headers.set("user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) Mobile/15E148 FindamineApp/1");
+
+    await register(req);
+
+    expect(confirmUrlOf(h.sendVerificationEmail).searchParams.get("app")).toBe("1");
   });
 
   it("normalizes the email before creating, storing and mailing", async () => {
@@ -263,7 +284,7 @@ describe("POST /api/v1/auth/forgot-password", () => {
   it("emails a recovery link that lands on the reset page", async () => {
     install();
     h.service.auth.admin.generateLink.mockResolvedValue({
-      data: { user: { id: "auth-1" }, properties: { hashed_token: "tok-recovery" } },
+      data: { user: { id: "auth-1" }, properties: { hashed_token: "tok-recovery", email_otp: "112233" } },
       error: null,
     });
 
@@ -274,6 +295,7 @@ describe("POST /api/v1/auth/forgot-password", () => {
     const url = confirmUrlOf(h.sendPasswordResetEmail);
     expect(url.searchParams.get("type")).toBe("recovery");
     expect(url.searchParams.get("next")).toBe("/reset-password");
+    expect(h.sendPasswordResetEmail.mock.calls[0][0]).toMatchObject({ code: "112233" });
   });
 
   it("answers an unknown address identically without sending anything", async () => {
@@ -299,7 +321,7 @@ describe("POST /api/v1/auth/resend-verification", () => {
       error: null,
     });
     h.service.auth.admin.generateLink.mockResolvedValue({
-      data: { properties: { hashed_token: "tok-magic" } },
+      data: { properties: { hashed_token: "tok-magic", email_otp: "445566" } },
       error: null,
     });
 
@@ -313,6 +335,7 @@ describe("POST /api/v1/auth/resend-verification", () => {
     expect(confirmUrlOf(h.sendVerificationEmail).searchParams.get("uid")).toBe("auth-1");
     expect(h.service.auth.admin.generateLink).toHaveBeenCalledWith({ type: "magiclink", email: "a@byu.edu" });
     expect(confirmUrlOf(h.sendVerificationEmail).searchParams.get("type")).toBe("magiclink");
+    expect(h.sendVerificationEmail.mock.calls[0][0]).toMatchObject({ code: "445566" });
   });
 
   it("never generates a link for a confirmed or unknown account", async () => {

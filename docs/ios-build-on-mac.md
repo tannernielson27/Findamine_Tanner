@@ -76,7 +76,13 @@ Auth doesn't need any redirect-URL changes for the app. Sign-in is email and pas
 - Apply migration `supabase/migrations/078_push_devices.sql` with the other pending migrations (after 071–077). Until it's applied, the device route answers 503 and the app shows "We couldn't turn on notifications".
 - When the domain moves, set **Authentication > URL Configuration > Site URL** to `https://findamine.app` and add `https://findamine.app/**` to **Redirect URLs**. Nothing uses them today, but they stop any Supabase-built email from pointing at the old host.
 
-Known limitation: email links open in Safari, not in the app. A player who verifies their email or resets their password does that in Safari and then signs in inside the app. Universal links (below) fix this.
+Email links and the app. Confirmation and password-reset emails carry both a link and a 6-digit code:
+
+- **Code (works in every build).** The app's "Check your email" screens (sign up, sign in on an unconfirmed account, forgot password) take the code, so the player never leaves the app.
+- **Universal links (builds with the Associated Domains entitlement).** `ios/App/App/App.entitlements` lists `applinks:findamine-tanner.vercel.app` and `applinks:findamine.app` (not `www`, which redirects, and iOS won't follow a redirect for this file), and the site serves `/.well-known/apple-app-site-association` (`src/lib/native/universal-links.ts`, team `54LWQR937V`). Tapping the link then opens the app, which loads it in its web view (`appUrlOpen` in `src/lib/native/bootstrap.ts`). With automatic signing, Xcode adds the Associated Domains capability to the `app.findamine` App ID the first time it signs; if it complains, turn it on under Certificates, IDs & Profiles > Identifiers > app.findamine.
+- **Fallback.** A link asked for from the app (marked `app=1` by the server from the app's user agent) but opened in a phone browser anyway (an older build, or the app not installed) lands on `/email-confirmed` or the reset page's "Password updated" screen, which tells the player to go back to the app and sign in.
+
+To check universal links on a device: install the build, long-press a confirm link in Mail and look for "Open in Findamine". iOS caches the association file through Apple's CDN, so a change to it can take a day to reach phones.
 
 ### Vercel
 
@@ -96,7 +102,6 @@ Players stay signed in only if the cookie's host stays the same. Moving hosts si
 ## 8. Not done yet
 
 - **Sending pushes.** Tokens are stored, but nothing sends notifications yet. That needs an APNs Auth Key (`.p8`, created in Certificates, IDs & Profiles > Keys with "Apple Push Notifications service" enabled; keep it out of git, `*.p8` is already ignored), stored as a Vercel secret, plus a sender (server route or Supabase Edge Function) that reads `push_devices` and respects `notification_preferences`.
-- **Universal links (optional).** These open email links in the app. Serve `/.well-known/apple-app-site-association` from the site with `{"applinks":{"details":[{"appIDs":["<TEAMID>.app.findamine"],"components":[{"/":"/api/auth/confirm*"},{"/":"/*"}]}]}}`, then add **Associated Domains** `applinks:findamine.app` in Xcode. The web side already handles the incoming link (`appUrlOpen` in `src/lib/native/bootstrap.ts`, which only accepts our hosts).
 - **"Open Settings" button** on the permission-denied notices. This needs a plugin that can open `app-settings:` (for example `@capacitor/app-launcher`).
 
 ## Reference

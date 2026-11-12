@@ -9,6 +9,7 @@ import {
   resolveSiteUrl,
   sendPasswordResetEmail,
 } from "@/lib/services/auth-emails";
+import { isAppUserAgent } from "@/lib/native/user-agent";
 
 const GENERIC_RESPONSE = { message: "If an account exists, a reset link has been sent." };
 
@@ -38,7 +39,15 @@ export async function POST(request: NextRequest) {
 
     const result = await sendPasswordResetEmail({
       to: email,
-      confirmUrl: buildAuthConfirmUrl(siteUrl, data.properties.hashed_token, "recovery", "/reset-password"),
+      confirmUrl: buildAuthConfirmUrl(
+        siteUrl,
+        data.properties.hashed_token,
+        "recovery",
+        "/reset-password",
+        undefined,
+        isAppUserAgent(request.headers.get("user-agent"))
+      ),
+      code: data.properties.email_otp,
     });
     if (!result.success) {
       logger.error("auth.forgot_password.email_failed", { error: result.error });

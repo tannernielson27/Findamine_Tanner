@@ -8,6 +8,7 @@ import { Compass } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { NETWORK_ERROR_MESSAGE, describeSignInError, postJson } from "./auth-client";
 import AuthShell, { AUTH_INPUT_CLASS, AUTH_LINK_CLASS } from "./auth-shell";
+import EmailCodeForm from "./email-code-form";
 
 export type LoginNotice = "confirmed" | "link_invalid" | "callback_failed" | null;
 
@@ -27,6 +28,7 @@ export default function LoginForm({ next, notice }: LoginFormProps) {
   const [resendState, setResendState] = useState<ResendState>("idle");
   const [resendError, setResendError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showCode, setShowCode] = useState(false);
   const router = useRouter();
   const registerHref = next === "/dashboard" ? "/register" : `/register?next=${encodeURIComponent(next)}`;
 
@@ -91,7 +93,7 @@ export default function LoginForm({ next, notice }: LoginFormProps) {
   const resendControl =
     resendState === "sent" ? (
       <span className="font-medium">
-        If this account still needs confirming, a new link is on its way. Check your spam folder too.
+        If this account still needs confirming, a new link and code are on their way. Check your spam folder too.
       </span>
     ) : (
       <>
@@ -106,6 +108,19 @@ export default function LoginForm({ next, notice }: LoginFormProps) {
         {resendError && <span className="mt-1 block">{resendError}</span>}
       </>
     );
+
+  // The emailed code confirms the account without leaving the app (the link
+  // would open in Safari on a phone). The code form itself renders below the
+  // sign-in form, since forms can't be nested.
+  const codeControl = showCode ? null : (
+    <button
+      type="button"
+      onClick={() => setShowCode(true)}
+      className="mt-2 block font-medium underline hover:no-underline"
+    >
+      Have a code from the email? Enter it
+    </button>
+  );
 
   return (
     <AuthShell
@@ -143,6 +158,7 @@ export default function LoginForm({ next, notice }: LoginFormProps) {
             That link is invalid or has expired. If you&apos;ve already confirmed your email, just sign in.
             Otherwise enter your email below and we&apos;ll send a new confirmation link.
             <div className="mt-2">{resendControl}</div>
+            {codeControl}
           </div>
         )}
 
@@ -155,7 +171,12 @@ export default function LoginForm({ next, notice }: LoginFormProps) {
         {error && (
           <div role="alert" className="rounded-xl bg-red-50 border border-red-100 p-3 text-sm text-red-700">
             {error}
-            {unconfirmed && <div className="mt-2">{resendControl}</div>}
+            {unconfirmed && (
+              <>
+                <div className="mt-2">{resendControl}</div>
+                {codeControl}
+              </>
+            )}
           </div>
         )}
 
@@ -195,6 +216,23 @@ export default function LoginForm({ next, notice }: LoginFormProps) {
           {loading ? "Signing in..." : "Sign in"}
         </Button>
       </form>
+
+      {showCode && (
+        <section aria-label="Confirm with a code" className="mt-6 border-t border-gray-100 pt-5 space-y-2">
+          <p className="text-sm text-gray-600">
+            Enter the code from your confirmation email for <strong>{email.trim().toLowerCase() || "your address"}</strong>.
+          </p>
+          <EmailCodeForm
+            email={email}
+            purpose="email"
+            autoFocus
+            onVerified={() => {
+              router.push(next);
+              router.refresh();
+            }}
+          />
+        </section>
+      )}
     </AuthShell>
   );
 }

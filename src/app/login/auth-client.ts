@@ -93,3 +93,19 @@ export function describePasswordUpdateError(error: SupabaseAuthErrorLike): strin
   if (typeof error.status === "number" && error.status >= 500) return SERVER_ERROR_MESSAGE;
   return "We couldn't update your password. Please try again.";
 }
+
+/** Digits only: people paste "123 456" or "Code: 123456" from the email. */
+export function cleanEmailCode(input: string): string {
+  return input.replace(/\D/g, "").slice(0, 10);
+}
+
+export const EMAIL_CODE_MIN_LENGTH = 6;
+
+/** Human message for a failed supabase.auth.verifyOtp with an emailed code. */
+export function describeEmailCodeError(error: SupabaseAuthErrorLike): string {
+  if (isNetworkError(error)) return NETWORK_ERROR_MESSAGE;
+  if (isRateLimited(error)) return RATE_LIMIT_MESSAGE;
+  if (typeof error.status === "number" && error.status >= 500) return SERVER_ERROR_MESSAGE;
+  // Supabase answers "otp_expired" for a wrong code and for a used or expired one.
+  return "That code is wrong or has expired. Check the newest email from us, or ask for a new one.";
+}

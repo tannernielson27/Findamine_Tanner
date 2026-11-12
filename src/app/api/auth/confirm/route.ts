@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient, createSupabaseServiceClient } from "@/lib/supabase/server";
-import { isAuthLinkType, safeNextPath } from "@/lib/services/auth-emails";
+import { FROM_APP_PARAM, isAuthLinkType, safeNextPath } from "@/lib/services/auth-emails";
 import { logger } from "@/lib/utils/logger";
+import { isPhoneBrowserOutsideApp } from "@/lib/native/user-agent";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -30,6 +31,16 @@ function loginRedirect(origin: string, params: Record<string, string>, next: str
 }
 
 /**
+ * A link asked for from the Findamine app was opened in a phone browser, which
+ * is what mail apps do: show "go back to the app and sign in" before carrying
+ * on on the web.
+ */
+function phoneBrowserLanding(origin: string, continueTo: string): NextResponse {
+  const query = new URLSearchParams({ continue: continueTo });
+  return NextResponse.redirect(`${origin}/email-confirmed?${query.toString()}`);
+}
+
+/**
  * Landing point for emailed auth links (verification, resend, password reset).
  * Exchanges the one-time token hash for a session cookie, then redirects.
  */
@@ -46,20 +57,30 @@ export async function GET(request: Request) {
   // A reset token is NOT spent on this GET: mail link scanners open links
   // before the person does, and a spent reset token cannot be recovered from.
   // The reset page exchanges it only when the new password is submitted.
+  const fromApp = searchParams.get(FROM_APP_PARAM) === "1";
   if (type === "recovery") {
     const query = new URLSearchParams({ token_hash: tokenHash });
+    if (fromApp) query.set(FROM_APP_PARAM, "1");
     return NextResponse.redirect(`${origin}/reset-password?${query.toString()}`);
   }
 
+  const outsideApp = fromApp && isPhoneBrowserOutsideApp(request.headers.get("user-agent"));
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
   if (!error) {
-    return NextResponse.redirect(`${origin}${safeNextPath(next, "/dashboard")}`);
+    const destination = safeNextPath(next, "/dashboard");
+    return outsideApp ? phoneBrowserLanding(origin, destination) : NextResponse.redirect(`${origin}${destination}`);
   }
 
   // The link is dead. If the email is confirmed anyway, the link did its job
   // already and all that is left is to sign in.
   if (await isAlreadyConfirmed(searchParams.get("uid"))) {
+    if (outsideApp) {
+      const login = new URLSearchParams({ notice: "confirmed" });
+      const safeNext = safeNextPath(next, "");
+      if (safeNext) login.set("next", safeNext);
+      return phoneBrowserLanding(origin, `/login?${login.toString()}`);
+    }
     return loginRedirect(origin, { notice: "confirmed" }, next);
   }
   return loginRedirect(origin, { error: "confirm_link_invalid" }, next);

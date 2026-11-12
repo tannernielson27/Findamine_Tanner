@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { postJson } from "@/app/login/auth-client";
 import AuthShell, { AUTH_INPUT_CLASS, AUTH_LINK_CLASS } from "@/app/login/auth-shell";
+import EmailCodeForm from "@/app/login/email-code-form";
 
 const backToSignIn = (
   <p>
@@ -20,6 +22,7 @@ export default function ForgotPasswordPage() {
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -43,11 +46,17 @@ export default function ForgotPasswordPage() {
 
   if (sent) {
     return (
-      <AuthShell title="Check your email" subtitle="A reset link is on its way" links={backToSignIn}>
-        <p className="text-sm text-gray-600 text-center">
-          If an account exists for <strong>{email.trim().toLowerCase()}</strong>, we sent a password
-          reset link. It can take a minute to arrive; check your spam folder too.
-        </p>
+      <AuthShell title="Check your email" subtitle="A reset code is on its way" links={backToSignIn}>
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600 text-center">
+            If an account exists for <strong>{email.trim().toLowerCase()}</strong>, we sent a password
+            reset email. Enter the code from it below, or tap the link in it. It can take a minute
+            to arrive; check your spam folder too.
+          </p>
+          {/* A correct code signs the person in for recovery; the reset page
+              then sets the new password on that session. */}
+          <EmailCodeForm email={email} purpose="recovery" onVerified={() => router.push("/reset-password")} />
+        </div>
       </AuthShell>
     );
   }

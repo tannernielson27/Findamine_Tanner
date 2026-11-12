@@ -8,6 +8,7 @@ import { KeyRound } from "lucide-react";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { NETWORK_ERROR_MESSAGE, describePasswordUpdateError } from "@/app/login/auth-client";
 import AuthShell, { AUTH_INPUT_CLASS, AUTH_LINK_CLASS } from "@/app/login/auth-shell";
+import { isPhoneBrowserOutsideApp } from "@/lib/native/user-agent";
 
 const backToSignIn = (
   <p>
@@ -19,7 +20,7 @@ const backToSignIn = (
 
 const MIN_PASSWORD_LENGTH = 8;
 
-type LinkStatus = "checking" | "ready" | "invalid";
+type LinkStatus = "checking" | "ready" | "invalid" | "done";
 
 export default function ResetPasswordPage() {
   const [password, setPassword] = useState("");
@@ -32,10 +33,14 @@ export default function ResetPasswordPage() {
   // only when the form is submitted, so a mail scanner that merely opens the
   // link cannot use it up before the person gets here.
   const pendingToken = useRef<string | null>(null);
+  // Set when the reset was asked for from the phone app (see /api/auth/confirm).
+  const fromApp = useRef(false);
 
   useEffect(() => {
-    const tokenHash = new URLSearchParams(window.location.search).get("token_hash");
+    const query = new URLSearchParams(window.location.search);
+    const tokenHash = query.get("token_hash");
     pendingToken.current = tokenHash;
+    fromApp.current = query.get("app") === "1";
 
     const supabase = createSupabaseBrowserClient();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
@@ -113,8 +118,33 @@ export default function ResetPasswordPage() {
       return;
     }
 
+    // A reset link opened from a mail app lands in Safari or Chrome, not in the
+    // Findamine app: the new password works there, but the app is still signed
+    // out, so say so instead of carrying on in the browser.
+    if (fromApp.current && isPhoneBrowserOutsideApp(navigator.userAgent, navigator.maxTouchPoints)) {
+      setStatus("done");
+      setLoading(false);
+      return;
+    }
     router.push("/dashboard");
     router.refresh();
+  }
+
+  if (status === "done") {
+    return (
+      <AuthShell title="Password updated">
+        <div className="space-y-4 text-center text-sm">
+          <p className="text-gray-700">
+            <strong>Using the Findamine app?</strong> Go back to the app now and sign in there with your new
+            password.
+          </p>
+          <p className="text-gray-500">Using findamine on the web instead? You&apos;re already signed in here.</p>
+          <ButtonLink href="/dashboard" variant="secondary" block>
+            Continue in this browser
+          </ButtonLink>
+        </div>
+      </AuthShell>
+    );
   }
 
   if (status === "checking") {

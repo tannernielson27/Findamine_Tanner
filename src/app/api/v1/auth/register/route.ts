@@ -21,6 +21,7 @@ import {
   safeNextPath,
   sendVerificationEmail,
 } from "@/lib/services/auth-emails";
+import { isAppUserAgent } from "@/lib/native/user-agent";
 
 type ServiceClient = Awaited<ReturnType<typeof createSupabaseServiceClient>>;
 
@@ -42,12 +43,13 @@ async function findProfileByAuthId(supabase: ServiceClient, authUserId: string) 
 async function resendToExistingAccount(
   profile: { display_name: string | null; deleted_at: string | null },
   email: string,
-  confirmUrl: string
+  confirmUrl: string,
+  code: string
 ): Promise<Response> {
   if (profile.deleted_at) {
     throw new ApiError(409, "An account with this email already exists");
   }
-  const sent = await sendVerificationEmail({ to: email, displayName: profile.display_name, confirmUrl });
+  const sent = await sendVerificationEmail({ to: email, displayName: profile.display_name, confirmUrl, code });
   if (!sent.success) {
     logger.error("auth.register.resend_email_failed", { error: sent.error });
     throw new ApiError(503, EMAIL_FAILED_MESSAGE);
@@ -134,12 +136,16 @@ export const POST = withLogging("POST /api/v1/auth/register", async (request: Ne
     link.properties.hashed_token,
     "signup",
     safeNextPath(typeof body.next === "string" ? body.next : null, "/dashboard"),
-    authUserId
+    authUserId,
+    isAppUserAgent(request.headers.get("user-agent"))
   );
+  // The same token as a typed code, for people signing up in the phone app
+  // (an emailed link opens in Safari, outside the app's session).
+  const code = link.properties.email_otp;
 
   const { data: existingProfile } = await findProfileByAuthId(supabase, authUserId);
   if (existingProfile) {
-    return resendToExistingAccount(existingProfile, email, confirmUrl);
+    return resendToExistingAccount(existingProfile, email, confirmUrl, code);
   }
 
   const { data: user, error: userError } = await supabase
@@ -159,7 +165,7 @@ export const POST = withLogging("POST /api/v1/auth/register", async (request: Ne
     // now points at this auth user, deleting the auth user would cascade to it.
     const { data: racedProfile, error: lookupError } = await findProfileByAuthId(supabase, authUserId);
     if (racedProfile) {
-      return resendToExistingAccount(racedProfile, email, confirmUrl);
+      return resendToExistingAccount(racedProfile, email, confirmUrl, code);
     }
     logger.error("auth.register.profile_failed", { code: userError.code, error: userError.message });
     if (createdNow && !lookupError) {
@@ -175,6 +181,7 @@ export const POST = withLogging("POST /api/v1/auth/register", async (request: Ne
     to: email,
     displayName: display_name || null,
     confirmUrl,
+    code,
   });
 
   if (!sent.success) {
@@ -215,7 +222,7 @@ export const POST = withLogging("POST /api/v1/auth/register", async (request: Ne
         display_name: user.display_name,
         role: user.role,
       },
-      message: "Account created. Check your email for a confirmation link.",
+      message: "Account created. Check your email for a confirmation link and code.",
       ...(referralApplied === undefined ? {} : { referral_applied: referralApplied }),
     },
     { status: 201 }

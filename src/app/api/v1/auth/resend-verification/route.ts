@@ -11,6 +11,7 @@ import {
   resolveSiteUrl,
   sendVerificationEmail,
 } from "@/lib/services/auth-emails";
+import { isAppUserAgent } from "@/lib/native/user-agent";
 
 const GENERIC_RESPONSE = { message: "If that account still needs confirming, a new link is on its way." };
 
@@ -66,7 +67,15 @@ export const POST = withLogging("POST /api/v1/auth/resend-verification", async (
   const result = await sendVerificationEmail({
     to: authUser.user.email,
     displayName: profile.display_name ?? null,
-    confirmUrl: buildAuthConfirmUrl(siteUrl, data.properties.hashed_token, "magiclink", "/dashboard", profile.auth_id),
+    confirmUrl: buildAuthConfirmUrl(
+      siteUrl,
+      data.properties.hashed_token,
+      "magiclink",
+      "/dashboard",
+      profile.auth_id,
+      isAppUserAgent(request.headers.get("user-agent"))
+    ),
+    code: data.properties.email_otp,
   });
   if (!result.success) {
     logger.error("auth.resend_verification.email_failed", { error: result.error });

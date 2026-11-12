@@ -2,11 +2,13 @@
 
 import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, MapPin, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { postJson } from "@/app/login/auth-client";
 import AuthShell, { AUTH_INPUT_CLASS, AUTH_LINK_CLASS } from "@/app/login/auth-shell";
+import EmailCodeForm from "@/app/login/email-code-form";
+import { safeNextPath } from "@/lib/utils/safe-next-path";
 
 type Outcome = { resent: boolean; referralApplied: boolean | null };
 
@@ -28,6 +30,7 @@ function RegisterForm() {
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [loading, setLoading] = useState(false);
   const searchParams = useSearchParams();
+  const router = useRouter();
   const referralCode = searchParams.get("ref")?.trim().toUpperCase() || "";
   // Deep link to return to after confirming; the server validates it.
   const next = searchParams.get("next") || "";
@@ -87,15 +90,32 @@ function RegisterForm() {
           {outcome.resent ? (
             <p className="text-gray-600">
               You already started signing up with <strong>{email.trim().toLowerCase()}</strong>, so
-              we&apos;ve re-sent your confirmation link. The password you chose the first time
+              we&apos;ve re-sent your confirmation email. The password you chose the first time
               still applies; if you don&apos;t remember it, you can reset it after confirming.
             </p>
           ) : (
             <p className="text-gray-600">
-              We sent a verification link to <strong>{email.trim().toLowerCase()}</strong>. Click the
-              link to activate your account.
+              We sent a confirmation email to <strong>{email.trim().toLowerCase()}</strong>. Enter the
+              code from it below, or tap the link in it.
             </p>
           )}
+          <EmailCodeForm
+            email={email}
+            purpose="email"
+            onVerified={() => {
+              router.push(safeNextPath(next, "/dashboard"));
+              router.refresh();
+            }}
+            failureHint={
+              <>
+                Already confirmed with the link?{" "}
+                <Link href={loginHref} className="font-medium underline hover:no-underline">
+                  Sign in
+                </Link>
+                .
+              </>
+            }
+          />
           <p className="text-gray-500">
             It can take a minute to arrive. Check your spam or junk folder too.
           </p>
