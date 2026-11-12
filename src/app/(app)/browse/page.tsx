@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { HuntCard } from "@/components/ui/hunt-card";
 import { ExploreControls } from "@/components/explore/explore-controls";
 import { ExploreResults } from "@/components/explore/explore-results";
@@ -17,21 +16,12 @@ import {
   popularCampusHunts,
   resolveAudience,
   toExploreHunt,
-  type ExploreRow,
 } from "@/lib/hunts/explore-filters";
-import { withoutMissingColumn } from "@/lib/supabase/without-missing-column";
+import { loadExploreCatalogue } from "@/lib/hunts/explore-catalogue";
 import { logger } from "@/lib/utils/logger";
 import { getBrowseViewer } from "./viewer";
 
-/** The public catalogue is small; filters run on this window. */
-const CATALOGUE_LIMIT = 200;
 const SEARCH_MAX_LEN = 120;
-
-// cover_image_url arrives with migration 079; until it is applied the query
-// retries without it (OPTIONAL_COLUMNS).
-const EXPLORE_COLUMNS =
-  "id, title, description, cover_image_url, target_audience, play_mode, estimated_duration_min, center_latitude, center_longitude, created_at, subject_domains, finds(deleted_at, tasks(challenge_type)), play_sessions(count)";
-const OPTIONAL_COLUMNS = ["cover_image_url"] as const;
 
 type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>;
 
@@ -49,27 +39,10 @@ export default async function ExplorePage({ searchParams }: { searchParams: Sear
   const viewer = await getBrowseViewer();
   const audience = resolveAudience(rawAudience, viewer);
 
-  const supabase = await createSupabaseServiceClient();
-  const filterAudience = audienceOrFilter(audience.audiences);
-  const run = (columns: string) => {
-    let query = supabase
-      .from("hunts")
-      .select(columns)
-      .is("deleted_at", null)
-      .eq("is_public", true)
-      .in("status", ["published", "enrollment_open"])
-      .order("created_at", { ascending: false })
-      .limit(CATALOGUE_LIMIT);
-    if (q) query = query.textSearch("search_vector", q, { type: "websearch" });
-    // Built only from whitelisted audience values (explore-filters).
-    if (filterAudience) query = query.or(filterAudience);
-    return query;
-  };
-
-  // Retries without cover_image_url on a database that doesn't have it yet.
-  const { data, error } = await withoutMissingColumn(run, EXPLORE_COLUMNS, OPTIONAL_COLUMNS);
+  // Cached briefly and shared by all viewers (explore-catalogue.ts).
+  const { rows, error } = await loadExploreCatalogue(q, audienceOrFilter(audience.audiences));
   if (error) logger.error("explore: hunts query failed", { code: error.code, message: error.message });
-  const all = ((data ?? []) as unknown as ExploreRow[]).map(toExploreHunt);
+  const all = rows.map(toExploreHunt);
   const hunts = applyFilters(all, filters, new Date());
   // Keep the audience the viewer chose (if any) when clearing search + chips.
   const clearHref = exploreHref({ audience: rawAudience });

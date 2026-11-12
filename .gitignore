@@ -48,3 +48,6 @@ AuthKey_*.p8
 
 # Agent worktrees
 .claude/worktrees/
+
+# load-test throwaway credentials/session cookies
+scripts/load-test/.state.json

@@ -5,6 +5,7 @@ import { ApiError } from "@/lib/utils/api-auth";
 import { emailRateLimitKey, loginEmailLimiter, loginIpLimiter } from "@/lib/utils/rate-limit";
 import { normalizeEmail } from "@/lib/utils/registration";
 import { withLogging } from "@/lib/utils/with-logging";
+import { signInFailure } from "@/lib/utils/sign-in-error";
 import { botGuard } from "@/lib/utils/bot-guard";
 import { trackEvent } from "@/lib/utils/track-event";
 import { getIpHash } from "@/lib/utils/bot-detector";
@@ -44,7 +45,7 @@ export const POST = withLogging("POST /api/v1/auth/login", async (request: NextR
       // Also log to login_attempts table
       const svc = await createSupabaseServiceClient();
       svc.from("login_attempts").insert({ email, success: false, ip_hash: ipHash, user_agent: request.headers.get("user-agent") });
-      throw new ApiError(401, "Invalid email or password");
+      throw signInFailure(error);
     }
 
     const serviceClient = await createSupabaseServiceClient();
@@ -97,7 +98,7 @@ export const POST = withLogging("POST /api/v1/auth/login", async (request: NextR
     trackEvent({ eventType: "login_attempt", eventName: "Failed login (web)", payload: { success: false, ip_hash: ipHash, email } });
     const svc = await createSupabaseServiceClient();
     svc.from("login_attempts").insert({ email, success: false, ip_hash: ipHash, user_agent: request.headers.get("user-agent") });
-    throw new ApiError(401, "Invalid email or password");
+    throw signInFailure(error);
   }
 
   const serviceClient = await createSupabaseServiceClient();
