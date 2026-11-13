@@ -9,6 +9,7 @@ import AiModeIndicator, { detectMode, type AiMode } from "./ai-mode-indicator";
 import { gradeRangeForAudience } from "@/lib/utils/grade-bands";
 import { MAX_SAFETY_NOTES_LENGTH } from "@/lib/play/safety";
 import { classifyLocationError, getCurrentLocation, locationSupported } from "@/lib/native/geolocation";
+import { DEFAULT_STOP_RADIUS_M, MAX_STOP_RADIUS_M, MIN_STOP_RADIUS_M } from "@/lib/play/arrival-check";
 
 /** An existing stop, as returned by GET /api/v1/hunts/{id} (finds with their relations). */
 export interface EditableFind {
@@ -46,8 +47,8 @@ interface FindEditorProps {
   experimentCondition?: string; // "control" | "scaffolding" | "feedback" | "full"
 }
 
-const MIN_RADIUS_METERS = 5;
-const MAX_RADIUS_METERS = 1000;
+const MIN_RADIUS_METERS = MIN_STOP_RADIUS_M;
+const MAX_RADIUS_METERS = MAX_STOP_RADIUS_M;
 
 function strings(value: unknown): string[] | null {
   return Array.isArray(value) && value.every((v) => typeof v === "string") ? (value as string[]) : null;
@@ -96,7 +97,7 @@ export default function FindEditor({ huntId, audience, onSaved, onCancel, find, 
   const [locationName, setLocationName] = useState(find?.locations?.name || "");
   const [latitude, setLatitude] = useState(find?.locations ? String(find.locations.latitude) : "");
   const [longitude, setLongitude] = useState(find?.locations ? String(find.locations.longitude) : "");
-  const [radiusMeters, setRadiusMeters] = useState(String(find?.locations?.radius_meters ?? 50));
+  const [radiusMeters, setRadiusMeters] = useState(String(find?.locations?.radius_meters ?? DEFAULT_STOP_RADIUS_M));
   const [safetyNotes, setSafetyNotes] = useState(find?.locations?.safety_notes || "");
 
   // Stop settings
@@ -265,7 +266,7 @@ export default function FindEditor({ huntId, audience, onSaved, onCancel, find, 
 
     const radius = Number(radiusMeters);
     if (radiusMeters.trim() === "" || !Number.isFinite(radius) || radius < MIN_RADIUS_METERS || radius > MAX_RADIUS_METERS) {
-      return setError(`Arrival radius must be between ${MIN_RADIUS_METERS} and ${MAX_RADIUS_METERS} meters (50 is a good default)`);
+      return setError(`Arrival radius must be between ${MIN_RADIUS_METERS} and ${MAX_RADIUS_METERS} meters (${DEFAULT_STOP_RADIUS_M} is a good default)`);
     }
 
     if (!taskTitle.trim()) return setError("Challenge title is required");
@@ -475,7 +476,7 @@ export default function FindEditor({ huntId, audience, onSaved, onCancel, find, 
           <LocationPicker
             latitude={latitude ? parseFloat(latitude) : null}
             longitude={longitude ? parseFloat(longitude) : null}
-            radiusMeters={Number(radiusMeters) > 0 ? Number(radiusMeters) : 50}
+            radiusMeters={Number(radiusMeters) > 0 ? Number(radiusMeters) : DEFAULT_STOP_RADIUS_M}
             onLocationChange={(lat, lng) => {
               setLatitude(lat.toFixed(6));
               setLongitude(lng.toFixed(6));

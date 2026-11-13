@@ -168,6 +168,7 @@ function ResultsActions(props: StopResultsProps) {
       <div className="flex w-full flex-col items-center gap-2">
         {/* Browser file input on the web; native camera (after the camera primer) in the iOS app. */}
         <PhotoPicker
+          cameraOnly
           disabled={props.uploadingPhoto}
           onFile={props.onPhoto}
           className={cn(

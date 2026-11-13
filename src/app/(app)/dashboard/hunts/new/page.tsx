@@ -8,6 +8,7 @@ import { HUNT_PRESETS, type HuntPreset } from "@/lib/utils/hunt-presets";
 import { GRADE_BANDS, DEFAULT_GRADE_BAND, gradeBandFor } from "@/lib/utils/grade-bands";
 import { SHUFFLE_STOPS_KEY } from "@/lib/play/stop-order";
 import { ShuffleBadge } from "@/components/hunts/shuffle-badge";
+import { DEFAULT_STOP_RADIUS_M } from "@/lib/play/arrival-check";
 
 const SUBJECTS = [
   { value: "science_nature", label: "Science & Nature" },
@@ -245,7 +246,7 @@ export default function NewHuntPage() {
         const locData = await postJson("/api/v1/locations", {
           name: `Stop ${index + 1} (needs placement)`,
           ...placeholderPosition(centerLat, centerLng, index, total),
-          radius_meters: 50,
+          radius_meters: DEFAULT_STOP_RADIUS_M,
           location_type: aiLocationType,
         }, `Failed to create a location for stop ${index + 1}`);
         if (!locData?.location?.id) throw new Error(`Failed to create a location for stop ${index + 1}`);

@@ -2,10 +2,26 @@ import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { getHotColdZone, haversineDistance } from "@/lib/services/hot-cold";
-import { getCompletion, insertCompletion } from "../../_lib/completions";
 import { coordinatesForStorage } from "@/lib/utils/location-storage";
-import { internalError } from "@/lib/utils/internal-error";
+import { checkArrival, stopRadius, type ArrivalVerdict } from "@/lib/play/arrival-check";
+import { recordArrival } from "../../_lib/arrival";
 
+const ROUTE = "/api/v1/play/[huntId]/arrive";
+
+function finiteNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Records a player's arrival at a stop, but only when their position is inside
+ * the stop's radius (allowing for GPS error, see arrival-check.ts).
+ *
+ * Two callers:
+ *   - GPS pings while navigating (no `manual`): out of range → hot/cold data.
+ *   - "I'm here" (`manual: true`): same check, on a fresh fix. When the player
+ *     has no usable GPS the reply offers a photo check-in instead
+ *     (`photo_allowed`, see ../arrive-photo). Tapping never skips the check.
+ */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ huntId: string }> }
@@ -17,23 +33,16 @@ export async function POST(
 
     const body = await request.json();
     const { find_id } = body;
-    // `manual: true` is the player's "I'm already here" / "Skip to Challenge"
-    // override for when GPS is denied, unavailable or wrong. It records an
-    // arrival that is not GPS-verified and flags it in metadata.
     const manual = body.manual === true;
-    const hasCoords =
-      typeof body.latitude === "number" &&
-      typeof body.longitude === "number" &&
-      Number.isFinite(body.latitude) &&
-      Number.isFinite(body.longitude);
-    const latitude: number | null = hasCoords ? body.latitude : null;
-    const longitude: number | null = hasCoords ? body.longitude : null;
+    const latitude = finiteNumber(body.latitude);
+    const longitude = finiteNumber(body.longitude);
+    const hasCoords = latitude !== null && longitude !== null;
+    const accuracy = finiteNumber(body.accuracy);
 
     if (!find_id) throw new ApiError(400, "find_id is required");
 
     const supabase = await createSupabaseServiceClient();
 
-    // Get active session
     const { data: session } = await supabase
       .from("play_sessions")
       .select("id")
@@ -44,7 +53,6 @@ export async function POST(
 
     if (!session) throw new ApiError(404, "No active play session");
 
-    // Get find's location
     const { data: find } = await supabase
       .from("finds")
       .select("hot_cold_enabled, locations(latitude, longitude, radius_meters)")
@@ -57,93 +65,98 @@ export async function POST(
     const loc = find.locations as unknown as {
       latitude: number;
       longitude: number;
-      radius_meters: number;
+      radius_meters: number | null;
     } | null;
-
-    // Calculate distance and hot/cold zone
-    let distance: number | null = null;
-    let hotCold = null;
-    let withinRadius = false;
-
-    if (latitude !== null && longitude !== null && loc) {
-      distance = haversineDistance(latitude, longitude, loc.latitude, loc.longitude);
-      withinRadius = distance <= (loc.radius_meters || 50);
-
-      if (find.hot_cold_enabled !== false) {
-        hotCold = getHotColdZone(distance);
-      }
+    // A stop with no location can't be checked: any arrival counts.
+    if (!loc) {
+      return arrivedResponse(await record(supabase, session.id, find_id, user.role, {
+        latitude, longitude, accuracy, distance: null, manual,
+      }), null, null);
     }
 
-    // Not within radius yet (and no manual override): return hot/cold data
-    if (!withinRadius && loc && !manual) {
+    const hotColdEnabled = find.hot_cold_enabled !== false;
+    const radius = stopRadius(loc.radius_meters);
+
+    if (!hasCoords) {
       return Response.json({
         arrived: false,
-        distance,
-        hot_cold: hotCold,
-        hot_cold_enabled: find.hot_cold_enabled !== false,
-        radius_needed: loc.radius_meters || 50,
+        reason: "no_gps",
+        photo_allowed: manual,
+        distance: null,
+        hot_cold: null,
+        hot_cold_enabled: hotColdEnabled,
+        radius_needed: radius,
       });
     }
 
-    // Record the arrival. For a child only the fact of arrival and the distance
-    // are kept: their coordinates are used for the radius check above, never stored.
-    const stored = coordinatesForStorage(user.role, latitude, longitude);
-    const arrival = {
-      arrival_lat: stored.latitude,
-      arrival_lng: stored.longitude,
-      arrival_distance: distance,
-      arrival_manual: manual && !withinRadius,
-    };
+    const distance = haversineDistance(latitude, longitude, loc.latitude, loc.longitude);
+    const hotCold = hotColdEnabled ? getHotColdZone(distance) : null;
+    const verdict: ArrivalVerdict = checkArrival({ distance, accuracy, radius });
 
-    let completion = await getCompletion(supabase, session.id, find_id);
-    let created = false;
-
-    if (!completion) {
-      const inserted = await insertCompletion(supabase, session.id, find_id, {
-        arrived_at: new Date().toISOString(),
-        metadata: arrival,
-      });
-      completion = inserted.row;
-      created = inserted.created;
-    }
-
-    if (created) {
+    if (verdict.kind !== "inside") {
       return Response.json({
-        arrived: true,
-        completion_id: completion.id,
+        arrived: false,
+        reason: verdict.kind,
+        // Too far is the player's to fix by walking; weak GPS gets the photo route.
+        photo_allowed: manual && verdict.kind === "weak_gps",
         distance,
+        accuracy,
         hot_cold: hotCold,
-      }, { status: 201 });
-    }
-
-    if (completion.arrived_at) {
-      return Response.json({
-        arrived: true,
-        already_arrived: true,
-        completion_id: completion.id,
-        distance,
-        hot_cold: hotCold,
+        hot_cold_enabled: hotColdEnabled,
+        radius_needed: radius,
       });
     }
 
-    // A row already exists from the primer or a clue hint: stamp the arrival
-    const { error: updateError } = await supabase
-      .from("find_completions")
-      .update({
-        arrived_at: new Date().toISOString(),
-        metadata: { ...(completion.metadata || {}), ...arrival },
-      })
-      .eq("id", completion.id);
-
-    if (updateError) throw internalError("/api/v1/play/[huntId]/arrive", updateError);
-
-    return Response.json({
-      arrived: true,
-      completion_id: completion.id,
-      distance,
-      hot_cold: hotCold,
+    const recorded = await record(supabase, session.id, find_id, user.role, {
+      latitude, longitude, accuracy, distance, manual,
     });
+    return arrivedResponse(recorded, distance, hotCold);
   } catch (error) {
     return errorResponse(error);
   }
+}
+
+interface FixDetails {
+  latitude: number | null;
+  longitude: number | null;
+  accuracy: number | null;
+  distance: number | null;
+  manual: boolean;
+}
+
+function record(
+  supabase: Awaited<ReturnType<typeof createSupabaseServiceClient>>,
+  sessionId: string,
+  findId: string,
+  role: string | null | undefined,
+  fix: FixDetails
+) {
+  // For a child only the fact of arrival and the distance are kept: their
+  // coordinates are used for the radius check above, never stored.
+  const stored = coordinatesForStorage(role, fix.latitude, fix.longitude);
+  return recordArrival(supabase, sessionId, findId, {
+    arrival_lat: stored.latitude,
+    arrival_lng: stored.longitude,
+    arrival_distance: fix.distance,
+    arrival_accuracy: fix.accuracy,
+    arrival_method: fix.manual ? "gps_tap" : "gps",
+    arrival_manual: false,
+  }, ROUTE);
+}
+
+function arrivedResponse(
+  recorded: Awaited<ReturnType<typeof recordArrival>>,
+  distance: number | null,
+  hotCold: ReturnType<typeof getHotColdZone> | null
+) {
+  return Response.json(
+    {
+      arrived: true,
+      ...(recorded.alreadyArrived ? { already_arrived: true } : {}),
+      completion_id: recorded.completion.id,
+      distance,
+      hot_cold: hotCold,
+    },
+    { status: recorded.created ? 201 : 200 }
+  );
 }

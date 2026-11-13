@@ -24,6 +24,8 @@ interface PhotoPickerProps {
   className: string;
   /** What the tappable area shows, e.g. an icon and "Take Photo". */
   children: ReactNode;
+  /** Camera only, no library: for photos that prove the player is at a stop. */
+  cameraOnly?: boolean;
 }
 
 /**
@@ -35,7 +37,7 @@ interface PhotoPickerProps {
  * yet, plus a "Choose from library" option (the system photo picker, which
  * needs no permission).
  */
-export function PhotoPicker({ onFile, disabled, className, children }: PhotoPickerProps) {
+export function PhotoPicker({ onFile, disabled, className, children, cameraOnly = false }: PhotoPickerProps) {
   const native = useIsNative();
   const [showPrimer, setShowPrimer] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -76,7 +78,9 @@ export function PhotoPicker({ onFile, disabled, className, children }: PhotoPick
       if (kind === "denied") {
         setProblem(
           source === "camera"
-            ? "Camera is off for Findamine. Turn it on in Settings > Findamine > Camera, or choose a photo from your library."
+            ? cameraOnly
+              ? "Camera is off for Findamine. Turn it on in Settings > Findamine > Camera, then try again."
+              : "Camera is off for Findamine. Turn it on in Settings > Findamine > Camera, or choose a photo from your library."
             : "Findamine couldn't open your photos. Check Settings > Findamine > Photos, then try again."
         );
       } else if (kind === "failed") {
@@ -99,10 +103,12 @@ export function PhotoPicker({ onFile, disabled, className, children }: PhotoPick
         kind="camera"
         onContinue={() => void pick("camera")}
         deniedActions={
+          cameraOnly ? undefined : (
           <button type="button" onClick={() => void pick("library")} className={LIBRARY_BUTTON}>
             <ImageIcon className="h-4 w-4" aria-hidden="true" />
             Choose from library instead
           </button>
+          )
         }
       />
     );
@@ -118,6 +124,7 @@ export function PhotoPicker({ onFile, disabled, className, children }: PhotoPick
       >
         {children}
       </button>
+      {!cameraOnly && (
       <div className="mt-1 text-center">
         <button
           type="button"
@@ -129,6 +136,7 @@ export function PhotoPicker({ onFile, disabled, className, children }: PhotoPick
           Choose from library
         </button>
       </div>
+      )}
       {problem && (
         <p role="alert" className="mt-2 text-sm text-error">
           {problem}

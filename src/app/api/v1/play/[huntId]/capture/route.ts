@@ -2,9 +2,12 @@ import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { getCompletion } from "../../_lib/completions";
-import { coordinatesForStorage, parseCoordinate } from "@/lib/utils/location-storage";
-import { internalError } from "@/lib/utils/internal-error";
+import { storeFindPhoto } from "../../_lib/photos";
+import { parseCoordinate } from "@/lib/utils/location-storage";
 
+const ROUTE = "/api/v1/play/[huntId]/capture";
+
+/** The optional photo after a stop's challenge (the "geo-selfie"). */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ huntId: string }> }
@@ -16,16 +19,6 @@ export async function POST(
 
     const supabase = await createSupabaseServiceClient();
 
-    // Get user role to check COPPA
-    const { data: profile } = await supabase
-      .from("users")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    const isChild = profile?.role === "child";
-
-    // Get active session
     const { data: session } = await supabase
       .from("play_sessions")
       .select("id")
@@ -37,85 +30,35 @@ export async function POST(
     if (!session) throw new ApiError(404, "No active play session");
 
     const formData = await request.formData();
-    const file = formData.get("file") as File | null;
-    const findId = formData.get("find_id") as string;
-    const caption = formData.get("caption") as string | null;
-    // Children's precise location is never stored (COPPA): null for them.
-    const coords = coordinatesForStorage(
-      profile?.role,
-      parseCoordinate(formData.get("latitude")),
-      parseCoordinate(formData.get("longitude"))
-    );
+    const file = formData.get("file");
+    const findId = formData.get("find_id");
+    const caption = formData.get("caption");
 
-    if (!findId) throw new ApiError(400, "find_id required");
+    if (typeof findId !== "string" || !findId) throw new ApiError(400, "find_id required");
 
-    // Get completion
+    // A row also exists after a primer view or clue hint, so check the arrival
+    // itself: a photo is only taken at the stop.
     const completion = await getCompletion(supabase, session.id, findId);
+    if (!completion?.arrived_at) throw new ApiError(400, "Check in at this stop first");
 
-    if (!completion) throw new ApiError(404, "Complete the challenge first");
+    const { photo, localOnly } = await storeFindPhoto(supabase, {
+      userId: user.id,
+      role: user.role,
+      completionId: completion.id,
+      findId,
+      file: file instanceof File ? file : null,
+      caption: typeof caption === "string" ? caption : null,
+      latitude: parseCoordinate(formData.get("latitude")),
+      longitude: parseCoordinate(formData.get("longitude")),
+    }, ROUTE);
 
-    // COPPA: under-13 photos are local-only
-    if (isChild) {
-      // Record that capture happened but don't store the image
-      const { data: photo, error } = await supabase
-        .from("find_photos")
-        .insert({
-          completion_id: completion.id,
-          local_only: true,
-          caption: caption || null,
-          // No coordinates for a child: the photo and its location stay on the device.
-          latitude: null,
-          longitude: null,
-          uploaded_by: user.id,
-        })
-        .select()
-        .single();
-
-      if (error) throw internalError("/api/v1/play/[huntId]/capture", error);
-
+    if (localOnly) {
       return Response.json({
         photo,
         local_only: true,
         message: "Photo saved on your device only (for your privacy).",
       }, { status: 201 });
     }
-
-    // Non-child: upload to Supabase Storage
-    let storageRef: string | null = null;
-
-    if (file) {
-      if (file.size > 10 * 1024 * 1024) {
-        throw new ApiError(400, "Photo too large (max 10MB)");
-      }
-
-      const ext = file.name.split(".").pop() || "jpg";
-      const path = `${user.id}/${findId}_${Date.now()}.${ext}`;
-
-      // Private bucket (migration 070); only the path is stored.
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("geo-selfies")
-        .upload(path, file, { contentType: file.type });
-
-      if (uploadError) throw internalError("/api/v1/play/[huntId]/capture", uploadError);
-      storageRef = uploadData.path;
-    }
-
-    const { data: photo, error } = await supabase
-      .from("find_photos")
-      .insert({
-        completion_id: completion.id,
-        storage_ref: storageRef,
-        local_only: false,
-        caption: caption || null,
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-        uploaded_by: user.id,
-      })
-      .select()
-      .single();
-
-    if (error) throw internalError("/api/v1/play/[huntId]/capture", error);
-
     return Response.json({ photo, local_only: false }, { status: 201 });
   } catch (error) {
     return errorResponse(error);

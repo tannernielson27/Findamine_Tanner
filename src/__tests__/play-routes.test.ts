@@ -34,6 +34,8 @@ vi.mock("@/lib/services/gamification", () => ({
 }));
 
 import { POST as arrive } from "@/app/api/v1/play/[huntId]/arrive/route";
+import { POST as arrivePhoto } from "@/app/api/v1/play/[huntId]/arrive-photo/route";
+import { POST as capture } from "@/app/api/v1/play/[huntId]/capture/route";
 import { POST as answer } from "@/app/api/v1/play/[huntId]/answer/route";
 import { POST as clueHint } from "@/app/api/v1/play/[huntId]/clue-hint/route";
 import { POST as complete } from "@/app/api/v1/play/[huntId]/complete/route";
@@ -46,6 +48,8 @@ const FIND = "find-1";
 // ~1.1 km north of the stop: far outside the 50 m radius.
 const FAR = { latitude: 40.26, longitude: -111.65 };
 const AT_STOP = { latitude: 40.25, longitude: -111.65 };
+// ~61 m north: outside the 50 m radius unless GPS error is allowed for.
+const JUST_OUTSIDE = { latitude: 40.25055, longitude: -111.65 };
 
 const EMBEDS = {
   finds: {
@@ -124,24 +128,62 @@ describe("POST /play/[huntId]/arrive", () => {
     expect(db.table("find_completions")).toHaveLength(0);
   });
 
-  it("records a manual skip without coordinates and flags it as unverified", async () => {
+  it("'I'm here' without a position records nothing and offers a photo check-in", async () => {
     const db = seed();
     const res = await arrive(post("/arrive", { find_id: FIND, manual: true }), playParams);
     const body = await res.json();
-    expect(res.status).toBe(201);
-    expect(body.arrived).toBe(true);
-    const [row] = db.table("find_completions");
-    expect(row.arrived_at).toBeTruthy();
-    expect((row.metadata as Row).arrival_manual).toBe(true);
+    expect(res.status).toBe(200);
+    expect(body).toMatchObject({ arrived: false, reason: "no_gps", photo_allowed: true });
+    expect(db.table("find_completions")).toHaveLength(0);
   });
 
-  it("records a manual skip from far away, keeping the distance", async () => {
+  it("'I'm here' from far away is refused with the distance and no photo route", async () => {
     const db = seed();
     const body = await (await arrive(post("/arrive", { find_id: FIND, manual: true, ...FAR }), playParams)).json();
-    expect(body.arrived).toBe(true);
+    expect(body).toMatchObject({ arrived: false, reason: "too_far", photo_allowed: false });
+    expect(body.distance as number).toBeGreaterThan(1000);
+    expect(db.table("find_completions")).toHaveLength(0);
+  });
+
+  it("'I'm here' inside the radius records a verified tap arrival", async () => {
+    const db = seed();
+    const res = await arrive(post("/arrive", { find_id: FIND, manual: true, ...AT_STOP, accuracy: 8 }), playParams);
+    expect(res.status).toBe(201);
     const meta = db.table("find_completions")[0].metadata as Row;
-    expect(meta.arrival_manual).toBe(true);
-    expect(meta.arrival_distance as number).toBeGreaterThan(1000);
+    expect(meta).toMatchObject({ arrival_method: "gps_tap", arrival_manual: false, arrival_accuracy: 8 });
+  });
+
+  it("allows for reported GPS error just outside the radius", async () => {
+    const db = seed();
+    const body = await (await arrive(post("/arrive", { find_id: FIND, ...JUST_OUTSIDE, accuracy: 15 }), playParams)).json();
+    expect(body.arrived).toBe(true);
+    expect(db.table("find_completions")).toHaveLength(1);
+  });
+
+  it("does not stretch the radius by more than the allowance cap", async () => {
+    const db = seed();
+    const body = await (await arrive(post("/arrive", { find_id: FIND, ...JUST_OUTSIDE, accuracy: 5 }), playParams)).json();
+    expect(body).toMatchObject({ arrived: false, reason: "too_far" });
+    expect(db.table("find_completions")).toHaveLength(0);
+  });
+
+  it("won't confirm an arrival from a vague fix, even at the stop", async () => {
+    const db = seed();
+    const tap = await (await arrive(post("/arrive", { find_id: FIND, manual: true, ...AT_STOP, accuracy: 120 }), playParams)).json();
+    expect(tap).toMatchObject({ arrived: false, reason: "weak_gps", photo_allowed: true });
+    const ping = await (await arrive(post("/arrive", { find_id: FIND, ...AT_STOP, accuracy: 120 }), playParams)).json();
+    expect(ping).toMatchObject({ arrived: false, reason: "weak_gps", photo_allowed: false });
+    expect(db.table("find_completions")).toHaveLength(0);
+  });
+
+  it("never stores a child's coordinates", async () => {
+    h.user = { id: "u1", role: "child" };
+    const db = seed();
+    await arrive(post("/arrive", { find_id: FIND, ...AT_STOP }), playParams);
+    const meta = db.table("find_completions")[0].metadata as Row;
+    expect(meta.arrival_lat).toBeNull();
+    expect(meta.arrival_lng).toBeNull();
+    expect(meta.arrival_distance).not.toBeNull();
   });
 
   it("records a GPS arrival inside the radius as verified", async () => {
@@ -182,6 +224,70 @@ describe("POST /play/[huntId]/arrive", () => {
     const body = await (await arrive(post("/arrive", { find_id: FIND, ...FAR }), playParams)).json();
     expect(body.hot_cold).toBeNull();
     expect(body.hot_cold_enabled).toBe(false);
+  });
+});
+
+function photoForm(fields: Record<string, string>, withFile = true): NextRequest {
+  const form = new FormData();
+  for (const [k, v] of Object.entries(fields)) form.append(k, v);
+  if (withFile) form.append("file", new File([new Uint8Array([1, 2, 3])], "photo.jpg", { type: "image/jpeg" }));
+  return new NextRequest("http://localhost:3000/x", { method: "POST", body: form });
+}
+
+describe("POST /play/[huntId]/arrive-photo", () => {
+  it("records an unverified arrival flagged for review, with the photo linked", async () => {
+    const db = seed({ find_photos: [] });
+    const res = await arrivePhoto(photoForm({ find_id: FIND }), playParams);
+    expect(res.status).toBe(201);
+    expect(await res.json()).toMatchObject({ arrived: true, verified: false });
+    const [row] = db.table("find_completions");
+    expect(row.arrived_at).toBeTruthy();
+    const meta = row.metadata as Row;
+    expect(meta).toMatchObject({ arrival_method: "photo", arrival_manual: true, arrival_review: "pending" });
+    const [photo] = db.table("find_photos");
+    expect(meta.arrival_photo_id).toBe(photo.id);
+    expect(db.uploads[0].bucket).toBe("geo-selfies");
+  });
+
+  it("requires a photo from an adult", async () => {
+    const db = seed({ find_photos: [] });
+    const res = await arrivePhoto(photoForm({ find_id: FIND }, false), playParams);
+    expect(res.status).toBe(400);
+    expect(db.table("find_completions")).toHaveLength(0);
+  });
+
+  it("keeps a child's photo and location on the device", async () => {
+    h.user = { id: "u1", role: "child" };
+    const db = seed({ find_photos: [] });
+    const res = await arrivePhoto(photoForm({ find_id: FIND, ...{ latitude: "40.25", longitude: "-111.65" } }), playParams);
+    expect((await res.json()).local_only).toBe(true);
+    expect(db.uploads).toHaveLength(0);
+    const meta = db.table("find_completions")[0].metadata as Row;
+    expect(meta.arrival_lat).toBeNull();
+    expect(db.table("find_photos")[0]).toMatchObject({ local_only: true, latitude: null, longitude: null });
+  });
+
+  it("leaves an existing arrival alone", async () => {
+    const db = seed({ find_photos: [], find_completions: [arrived()] });
+    const body = await (await arrivePhoto(photoForm({ find_id: FIND }), playParams)).json();
+    expect(body.already_arrived).toBe(true);
+    expect(db.table("find_photos")).toHaveLength(0);
+  });
+});
+
+describe("POST /play/[huntId]/capture", () => {
+  it("refuses a photo for a stop the player hasn't checked in at", async () => {
+    const db = seed({ find_photos: [], find_completions: [arrived({ arrived_at: null })] });
+    const res = await capture(photoForm({ find_id: FIND }), playParams);
+    expect(res.status).toBe(400);
+    expect(db.table("find_photos")).toHaveLength(0);
+  });
+
+  it("saves the stop photo after arrival", async () => {
+    const db = seed({ find_photos: [], find_completions: [arrived()] });
+    const res = await capture(photoForm({ find_id: FIND }), playParams);
+    expect(res.status).toBe(201);
+    expect(db.table("find_photos")[0]).toMatchObject({ completion_id: "comp-1", local_only: false });
   });
 });
 

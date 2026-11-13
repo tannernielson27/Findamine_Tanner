@@ -119,12 +119,14 @@ describe("location validation", () => {
     expect(parseCoordinates(51.48, 0)).toEqual({ lat: 51.48, lng: 0 });
   });
 
-  it("rejects zero, negative and huge radii instead of silently substituting 50", () => {
+  it("rejects zero, negative, too-tight and huge radii instead of silently substituting a default", () => {
     expect(parseRadius(undefined)).toBeUndefined();
     expect(parseRadius(30)).toBe(30);
-    expect(() => parseRadius(0)).toThrow(/between 5 and 1000/);
-    expect(() => parseRadius(-20)).toThrow(/between 5 and 1000/);
-    expect(() => parseRadius(50000)).toThrow(/between 5 and 1000/);
+    expect(parseRadius(15)).toBe(15);
+    expect(() => parseRadius(10)).toThrow(/between 15 and 1000/);
+    expect(() => parseRadius(0)).toThrow(/between 15 and 1000/);
+    expect(() => parseRadius(-20)).toThrow(/between 15 and 1000/);
+    expect(() => parseRadius(50000)).toThrow(/between 15 and 1000/);
   });
 });
 

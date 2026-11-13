@@ -10,6 +10,7 @@ import { parseCoordinates, parseRadius } from "./validation";
 import { normalizeSafetyNotes } from "@/lib/play/safety";
 import { assertCleanFields } from "@/lib/utils/crud-helpers";
 import { internalError } from "@/lib/utils/internal-error";
+import { DEFAULT_STOP_RADIUS_M } from "@/lib/play/arrival-check";
 
 /** Location text players see at a stop; screened like other hunt content. */
 const LOCATION_TEXT_FIELDS = ["name", "description", "address", "safety_notes"];
@@ -71,7 +72,7 @@ export async function POST(request: NextRequest) {
       throw new ApiError(400, "Location name is required");
     }
     const { lat, lng } = parseCoordinates(body.latitude, body.longitude);
-    const radiusMeters = parseRadius(body.radius_meters) ?? 50;
+    const radiusMeters = parseRadius(body.radius_meters) ?? DEFAULT_STOP_RADIUS_M;
     assertCleanFields(
       { ...body, safety_notes: normalizeSafetyNotes(body.safety_notes) },
       LOCATION_TEXT_FIELDS

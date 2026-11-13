@@ -452,7 +452,19 @@ export class SupabaseDouble {
     channel: () => {
       throw new Unsupported("realtime channel");
     },
+    // Uploads always succeed and are recorded in `uploads`.
+    storage: {
+      from: (bucket: string) => ({
+        upload: async (path: string, _file: Blob, opts?: { contentType?: string }) => {
+          this.uploads.push({ bucket, path, contentType: opts?.contentType });
+          return { data: { path }, error: null };
+        },
+      }),
+    },
   };
+
+  /** Storage uploads made through `client.storage`. */
+  readonly uploads: { bucket: string; path: string; contentType?: string }[] = [];
 }
 
 let active: SupabaseDouble | null = null;

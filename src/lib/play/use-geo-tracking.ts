@@ -90,6 +90,7 @@ export function useGeoTracking({
             find_id: currentFind.id,
             latitude: fix.lat,
             longitude: fix.lng,
+            accuracy: fix.accuracy,
           }),
         });
         const data = await res.json();

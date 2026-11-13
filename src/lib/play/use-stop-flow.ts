@@ -6,12 +6,13 @@ import { hapticSuccess } from "@/lib/native/haptics";
 import { errorMessage, postJsonStrict, safeFetch } from "@/lib/play/play-api";
 import { useGeoTracking, type GeoTracking } from "@/lib/play/use-geo-tracking";
 import { useStopHints, type StopHints } from "@/lib/play/use-stop-hints";
+import { useCheckIn, type CheckIn } from "@/lib/play/use-check-in";
 import type { CelebrationControls } from "@/lib/play/use-celebration-state";
 import type { PlaySession } from "@/lib/play/use-play-session";
 import type { PrivacyNotice } from "@/lib/services/privacy-notice";
 import type { AnswerFeedback, HotCold, LocationConsent, StopStep } from "@/lib/play/play-types";
 
-export interface StopFlow extends GeoTracking {
+export interface StopFlow extends GeoTracking, CheckIn {
   step: StopStep;
   setStep: Dispatch<SetStateAction<StopStep>>;
   answer: string;
@@ -34,7 +35,6 @@ export interface StopFlow extends GeoTracking {
   handlePrimeViewed: () => Promise<void>;
   handleReadingCheckPassed: () => void;
   handleClueRead: () => void;
-  handleSkipNav: () => Promise<void>;
   handleSubmitAnswer: () => Promise<void>;
   handleCapturePhoto: (file: File) => Promise<void>;
   handleCaptureSkip: () => void;
@@ -137,25 +137,8 @@ export function useStopFlow(
   const handleReadingCheckPassed = useCallback(() => setStep("clue"), []);
   const handleClueRead = useCallback(() => setStep("navigate"), []);
 
-  const handleSkipNav = useCallback(async () => {
-    if (!currentFind) return;
-    try {
-      // `manual` asks the server to record the arrival without a GPS match.
-      // The position is sent when we have one so the record shows how far off it was.
-      const data = await postJsonStrict<{ arrived?: boolean }>(`/api/v1/play/${huntId}/arrive`, {
-        find_id: currentFind.id,
-        manual: true,
-        ...(userPos ? { latitude: userPos.lat, longitude: userPos.lng } : {}),
-      });
-      if (!data.arrived) {
-        setErrorState("We couldn't record your arrival at this stop. Please try again.");
-        return;
-      }
-      setStep("challenge");
-    } catch (err) {
-      setErrorState(errorMessage(err, "Failed to record arrival"));
-    }
-  }, [currentFind, huntId, userPos]);
+  const onCheckedIn = useCallback(() => setStep("challenge"), []);
+  const checkIn = useCheckIn({ huntId, currentFind, userPos, locationConsent, setError, onArrived: onCheckedIn });
 
   const handleSubmitAnswer = useCallback(async () => {
     if (!currentFind || !answer || submittingRef.current) return;
@@ -262,6 +245,7 @@ export function useStopFlow(
 
   return {
     ...geo,
+    ...checkIn,
     step,
     setStep,
     answer,
@@ -284,7 +268,6 @@ export function useStopFlow(
     handlePrimeViewed,
     handleReadingCheckPassed,
     handleClueRead,
-    handleSkipNav,
     handleSubmitAnswer,
     handleCapturePhoto,
     handleCaptureSkip,

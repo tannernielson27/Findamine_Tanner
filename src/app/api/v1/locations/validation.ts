@@ -1,8 +1,9 @@
 import { ApiError } from "@/lib/utils/api-auth";
+import { MAX_STOP_RADIUS_M, MIN_STOP_RADIUS_M } from "@/lib/play/arrival-check";
 
-/** Arrival radius bounds, in meters. Below ~5 m phone GPS can't reliably hit it. */
-export const MIN_RADIUS_METERS = 5;
-export const MAX_RADIUS_METERS = 1000;
+/** Arrival radius bounds, in meters (see lib/play/arrival-check.ts). */
+export const MIN_RADIUS_METERS = MIN_STOP_RADIUS_M;
+export const MAX_RADIUS_METERS = MAX_STOP_RADIUS_M;
 
 /**
  * Validate a latitude/longitude pair from a request body.
