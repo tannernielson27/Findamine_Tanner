@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { installDouble, type Row } from "@/__tests__/support/supabase-double";
 import { parseActiveHunt } from "@/lib/play/active-hunt";
 import { buildActiveHunt, lastActivity, rankSessions } from "@/lib/play/active-hunt-builder";
+import { orderStops } from "@/lib/play/stop-order";
 
 /**
  * GET /api/v1/play/active: the player's unfinished hunt with the latest
@@ -140,6 +141,26 @@ describe("active hunt builder (pure)", () => {
       completedStops: 1,
       coverImageUrl: null,
     });
+  });
+});
+
+describe("active hunt builder with shuffled stops", () => {
+  const stops = ["a", "b", "c", "d", "e"].map((id, i) => ({ id, sort_order: i }));
+  const shuffledHunt = { id: "h1", title: "T", metadata: { shuffle_stops: true } };
+  const done = (sessionId: string, findId: string) => ({
+    play_session_id: sessionId, find_id: findId, arrived_at: null, completed_at: "2026-10-20T11:00:00Z", created_at: null,
+  });
+
+  it("resumes at the first unfinished stop of the session's own shuffle", () => {
+    const order = orderStops(stops, { shuffle: true, seed: "s1" }).map((f) => f.id);
+    // Finish the first two stops of this session's order.
+    const result = buildActiveHunt(shuffledHunt, "s1", stops, [done("s1", order[0]), done("s1", order[1])], null);
+    expect(result).toMatchObject({ currentStop: 3, completedStops: 2, totalStops: 5 });
+  });
+
+  it("ignores the shuffle when the hunt does not ask for one", () => {
+    const result = buildActiveHunt({ id: "h1", title: "T", metadata: { shuffle_stops: false } }, "s1", stops, [done("s1", "a")], null);
+    expect(result.currentStop).toBe(2);
   });
 });
 

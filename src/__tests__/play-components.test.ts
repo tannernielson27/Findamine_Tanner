@@ -170,6 +170,23 @@ describe("PlayHud", () => {
     expect(html).toContain("costs 2 points");
     // Previous stop and Report a problem live behind "More" at every step.
     expect(html).toMatch(/aria-label="More options"[^>]*aria-expanded="false"|aria-expanded="false"[^>]*aria-label="More options"/);
+    expect(html).not.toContain("Shuffled");
+  });
+
+  it("marks a shuffled hunt next to the stop count", () => {
+    const html = render(
+      createElement(PlayHud, {
+        stopNumber: 1,
+        totalStops: 4,
+        completedStops: 0,
+        shuffled: true,
+        hint: null,
+        more: { onPrevious: null, reportTargetId: "f1", resetKey: "f1:clue" },
+      })
+    );
+    expect(html).toContain("Stop 1 of 4");
+    expect(html).toContain("Shuffled");
+    expect(html).toContain("random order for each player");
   });
 });
 

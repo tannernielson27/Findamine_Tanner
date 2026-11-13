@@ -18,7 +18,7 @@ const PLAYABLE_STATUSES = ["published", "enrollment_open", "in_progress"];
 const MAX_SESSIONS = 20;
 
 const NO_STORE = { "Cache-Control": "private, no-store" };
-const HUNT_COLUMNS = "id, title, status, created_by, review_status, deleted_at";
+const HUNT_COLUMNS = "id, title, status, created_by, review_status, deleted_at, metadata";
 /** Postgres undefined_column. */
 const UNDEFINED_COLUMN = "42703";
 
@@ -29,6 +29,7 @@ interface HuntRow {
   created_by: string;
   review_status: string | null;
   deleted_at: string | null;
+  metadata: Record<string, unknown> | null;
   /** Absent until migration 079 is applied. */
   cover_image_url?: string | null;
 }

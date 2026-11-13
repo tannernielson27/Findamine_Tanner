@@ -4,11 +4,14 @@ import { Lightbulb, Pause } from "lucide-react";
 import { IconButton, IconLink } from "@/components/ui/icon-button";
 import { ProgressSegments } from "@/components/ui/progress";
 import { PlayMoreMenu } from "@/components/play/play-more-menu";
+import { ShuffleBadge } from "@/components/hunts/shuffle-badge";
 
 interface PlayHudProps {
   stopNumber: number;
   totalStops: number;
   completedStops: number;
+  /** The hunt shuffles stop order per player: show the "Shuffled" marker. */
+  shuffled?: boolean;
   /** Clue hint: null hides the button (steps without a clue hint). */
   hint: { available: boolean; onRequest: () => void } | null;
   /** "More" menu: Previous stop (null on the first stop) and Report a problem. */
@@ -20,7 +23,7 @@ interface PlayHudProps {
  * this is a pause, not a quit), stop progress, the clue-hint button, and the
  * "More" menu. Stays usable while a step sheet is open.
  */
-export function PlayHud({ stopNumber, totalStops, completedStops, hint, more }: PlayHudProps) {
+export function PlayHud({ stopNumber, totalStops, completedStops, shuffled = false, hint, more }: PlayHudProps) {
   return (
     <div className="flex items-center gap-2.5">
       <IconLink href="/dashboard" label="Pause hunt" tone="floating" size="lg" className="bg-white text-ink">
@@ -28,8 +31,11 @@ export function PlayHud({ stopNumber, totalStops, completedStops, hint, more }: 
       </IconLink>
 
       <div className="flex h-[52px] min-w-0 flex-1 flex-col justify-center gap-1.5 rounded-full bg-white px-[18px] text-ink shadow-raised">
-        <span className="text-sm font-bold tabular-nums">
-          Stop {stopNumber} of {totalStops}
+        <span className="flex items-center justify-between gap-2">
+          <span className="text-sm font-bold tabular-nums">
+            Stop {stopNumber} of {totalStops}
+          </span>
+          {shuffled && <ShuffleBadge variant="compact" />}
         </span>
         <ProgressSegments total={totalStops} done={completedStops} current={stopNumber} height={5} className="gap-[3px]" />
       </div>

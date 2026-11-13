@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } 
 import { HttpError, safeFetch } from "@/lib/play/play-api";
 import type { CelebrationControls } from "@/lib/play/use-celebration-state";
 import type { Find, HuntMetadata, HuntSummaryData, StartOptions } from "@/lib/play/play-types";
+import { isShuffled, orderStops } from "@/lib/play/stop-order";
 
 export interface FinishOptions {
   findsCompleted: number;
@@ -113,6 +114,7 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
           throw new HttpError(startRes.status, startBody.error || `HTTP ${startRes.status}`);
         }
         setNeedsCodename(false);
+        const startBody = (await startRes.json().catch(() => ({}))) as { session?: { id?: string } };
 
         // Drives the next-steps funnel surfaced after onboarding.
         markFirstHuntStarted();
@@ -129,7 +131,11 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
 
         const findsData = await findsRes.json();
         const progressData = await progressRes.json();
-        const allFinds: Find[] = findsData.finds || [];
+        // Shuffled hunts: this session's own order, stable across reloads.
+        const allFinds: Find[] = orderStops((findsData.finds || []) as Find[], {
+          shuffle: isShuffled(meta as Record<string, unknown>),
+          seed: startBody.session?.id ?? progressData.session?.id,
+        });
 
         const doneCompletions = (progressData.completions || []).filter(
           (c: { completed_at: string | null }) => c.completed_at

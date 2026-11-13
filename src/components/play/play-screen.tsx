@@ -68,6 +68,7 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
           stopNumber={stopNumber}
           totalStops={finds.length}
           completedStops={completedFinds.size}
+          shuffled={huntMeta.shuffle_stops === true}
           hint={hudHint}
           more={{
             onPrevious: currentIndex > 0 ? flow.handlePreviousFind : null,

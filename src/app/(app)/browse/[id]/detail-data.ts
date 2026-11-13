@@ -106,9 +106,11 @@ const CENTER_RADIUS_M = 150;
 export function startArea(
   finds: DetailFind[],
   centerLat: number | null,
-  centerLng: number | null
+  centerLng: number | null,
+  opts: { shuffled?: boolean } = {}
 ): { lat: number; lng: number; radius: number } | null {
-  const first = finds[0]?.locations;
+  // A shuffled hunt starts at a different stop for each player: show the area.
+  const first = opts.shuffled ? null : finds[0]?.locations;
   if (first?.latitude && first?.longitude) {
     return {
       lat: first.latitude,

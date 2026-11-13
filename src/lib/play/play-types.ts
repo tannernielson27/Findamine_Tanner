@@ -35,6 +35,8 @@ export interface HuntMetadata {
   growth_only_feedback?: boolean;
   scoring_mode?: string;
   preset?: string;
+  /** Each player gets the stops in their own random order (lib/play/stop-order). */
+  shuffle_stops?: boolean;
 }
 
 export interface HotCold {

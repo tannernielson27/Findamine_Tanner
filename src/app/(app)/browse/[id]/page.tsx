@@ -14,6 +14,8 @@ import { IconLink } from "@/components/ui/icon-button";
 import { Tag } from "@/components/ui/chip";
 import { ShareButton } from "@/components/explore/share-button";
 import { StatRow } from "@/components/explore/stat-row";
+import { ShuffleBadge } from "@/components/hunts/shuffle-badge";
+import { isShuffled } from "@/lib/play/stop-order";
 import { StartMapPreview } from "@/components/explore/start-map-preview";
 import { ChallengeChips, DetailSection, subjectLabel } from "@/components/explore/hunt-detail-parts";
 import { isPubliclyAvailable, isReviewer } from "@/lib/hunts/review";
@@ -77,7 +79,8 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
   const canSeeStops = !!viewer && (viewer.id === hunt.created_by || isReviewer(viewer.role));
 
   const finds = liveFinds(hunt.finds as DetailFind[] | null);
-  const start = startArea(finds, hunt.center_latitude, hunt.center_longitude);
+  const shuffled = isShuffled(hunt.metadata as Record<string, unknown> | null);
+  const start = startArea(finds, hunt.center_latitude, hunt.center_longitude, { shuffled });
   const tags = [
     audienceLabel(hunt.target_audience),
     ...((hunt.subject_domains as string[] | null) ?? []).map(subjectLabel),
@@ -117,13 +120,18 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
 
       <div className="relative mx-auto -mt-7 flex max-w-3xl flex-col gap-[22px] rounded-t-[28px] bg-themed-bg px-5 pt-6">
         <header className="flex flex-col gap-2.5">
-          {tags.length > 0 && (
+          {(tags.length > 0 || shuffled) && (
             <ul className="flex flex-wrap gap-2" aria-label="Tags">
               {tags.map((t, i) => (
                 <li key={`${t}-${i}`}>
                   <Tag tone={i === 0 ? "blaze" : "neutral"}>{t}</Tag>
                 </li>
               ))}
+              {shuffled && (
+                <li>
+                  <ShuffleBadge />
+                </li>
+              )}
             </ul>
           )}
           <h1 className="font-[family-name:var(--font-display)] text-[32px] font-semibold leading-[1.1] text-themed-text text-balance">
@@ -171,8 +179,14 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
         {start && (
           <DetailSection
             id="start-heading"
-            title="Where it starts"
-            note={<p className="text-sm text-themed-muted">Later stops stay hidden until you reach them.</p>}
+            title={shuffled ? "Where it takes place" : "Where it starts"}
+            note={
+              <p className="text-sm text-themed-muted">
+                {shuffled
+                  ? "Stops come in a random order for each player and stay hidden until you reach them."
+                  : "Later stops stay hidden until you reach them."}
+              </p>
+            }
           >
             <StartMapPreview lat={start.lat} lng={start.lng} radiusMeters={start.radius} />
           </DetailSection>
@@ -188,7 +202,12 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
           <DetailSection
             id="stops-heading"
             title="All stops"
-            note={<p className="text-sm text-themed-muted">Only you and reviewers see the route and clues. Players see the start area.</p>}
+            note={
+              <p className="text-sm text-themed-muted">
+                Only you and reviewers see the route and clues. Players see the start area.
+                {shuffled && " Shuffled: each player gets these stops in a random order."}
+              </p>
+            }
           >
             <div className="[&>div]:mb-0 [&>div]:rounded-[18px] [&>div]:shadow-none">
               <HuntMap

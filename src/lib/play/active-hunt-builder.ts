@@ -12,6 +12,7 @@
  */
 
 import type { ActiveHunt } from "@/lib/play/active-hunt";
+import { isShuffled, orderStops } from "@/lib/play/stop-order";
 
 export interface SessionRow {
   id: string;
@@ -37,6 +38,8 @@ export interface ActiveHuntSource {
   id: string;
   title: string;
   cover_image_url?: string | null;
+  /** Hunt metadata; `shuffle_stops` changes which stop is current. */
+  metadata?: Record<string, unknown> | null;
 }
 
 function latest(values: ReadonlyArray<string | null | undefined>): string | null {
@@ -80,8 +83,9 @@ export function rankSessions(
 /**
  * Stop counts for one session. Only live stops count (a stop deleted after it
  * was finished no longer does), a stop is finished when its completion has
- * completed_at, and the current stop is the first unfinished one in hunt
- * order, matching where the play page resumes.
+ * completed_at, and the current stop is the first unfinished one in the
+ * session's stop order (the creator's order, or this session's shuffle),
+ * matching where the play page resumes.
  */
 export function buildActiveHunt(
   hunt: ActiveHuntSource,
@@ -90,7 +94,7 @@ export function buildActiveHunt(
   completions: ReadonlyArray<CompletionRow>,
   lastActiveAt: string | null
 ): ActiveHunt {
-  const ordered = [...finds].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  const ordered = orderStops(finds, { shuffle: isShuffled(hunt.metadata), seed: sessionId });
   const done = new Set(
     completions.filter((c) => c.play_session_id === sessionId && c.completed_at).map((c) => c.find_id)
   );

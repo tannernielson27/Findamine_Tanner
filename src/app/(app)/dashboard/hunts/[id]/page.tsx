@@ -9,6 +9,8 @@ import LocationPicker from "@/components/maps/location-picker";
 import { PublishSafetyCheck } from "@/components/hunts/publish-safety-check";
 import { ReviewStatusNotice } from "@/components/hunts/review-status-notice";
 import { CoverImagePicker } from "@/components/hunts/cover-image-picker";
+import { ShuffleBadge } from "@/components/hunts/shuffle-badge";
+import { isShuffled, SHUFFLE_STOPS_KEY } from "@/lib/play/stop-order";
 
 interface HuntDetail {
   id: string;
@@ -261,6 +263,7 @@ export default function HuntDetailPage() {
   const finds = hunt.finds || [];
   const showEditor = editor.mode !== "closed";
   const unplacedCount = finds.filter((f) => f.metadata?.needs_placement === true).length;
+  const shuffled = isShuffled(hunt.metadata);
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-4">
@@ -457,6 +460,25 @@ export default function HuntDetailPage() {
               <span className="text-[11px] text-gray-400">(hides scores, leaderboards, timers)</span>
             </label>
 
+            {/* Shuffle stops */}
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={shuffled}
+                disabled={actionLoading}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  const metadata = { ...(hunt.metadata || {}), [SHUFFLE_STOPS_KEY]: on };
+                  saveHunt({ metadata }, on ? "Stops will be shuffled for each player." : "Stops will play in your order.");
+                }}
+                className="mt-0.5 rounded accent-sky-600"
+              />
+              <span>
+                <span className="text-sm text-gray-700">Shuffle stops</span>
+                <span className="block text-[11px] text-gray-400">Each player gets the stops in their own random order.</span>
+              </span>
+            </label>
+
             {/* Scoring Mode */}
             <div>
               <label className="block text-xs text-gray-500 mb-1" htmlFor="scoring-mode">Scoring Mode</label>
@@ -503,8 +525,9 @@ export default function HuntDetailPage() {
       {/* Finds section */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-gray-900">
+          <h2 className="flex items-center gap-2 text-base font-semibold text-gray-900">
             Stops ({finds.length})
+            {shuffled && <ShuffleBadge />}
           </h2>
           {isDraft && !showEditor && (
             <button
@@ -515,6 +538,12 @@ export default function HuntDetailPage() {
             </button>
           )}
         </div>
+
+        {shuffled && finds.length > 1 && (
+          <p className="text-xs text-gray-500 mb-3">
+            Players get these stops in a random order. The numbers below are your order, used when shuffle is off.
+          </p>
+        )}
 
         {isDraft && unplacedCount > 0 && (
           <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 mb-3">
