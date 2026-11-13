@@ -21,7 +21,6 @@ export interface ArrivalMetadata {
   arrival_manual: boolean;
   /** "pending" when an admin should look at it. */
   arrival_review?: "pending";
-  arrival_photo_id?: string;
 }
 
 export interface RecordedArrival {
@@ -53,26 +52,36 @@ export async function recordArrival(
       return { completion: inserted.row, created: false, alreadyArrived: true };
     }
     if (inserted.created) return { completion: inserted.row, created: true, alreadyArrived: false };
-    return stamp(supabase, inserted.row, arrival, route);
+    return stamp(supabase, sessionId, findId, inserted.row, arrival, route);
   }
 
   if (existing.arrived_at) return { completion: existing, created: false, alreadyArrived: true };
   // A row already exists from the primer or a clue hint: stamp the arrival.
-  return stamp(supabase, existing, arrival, route);
+  return stamp(supabase, sessionId, findId, existing, arrival, route);
 }
 
 async function stamp(
   supabase: SupabaseClient,
+  sessionId: string,
+  findId: string,
   row: CompletionRow,
   arrival: ArrivalMetadata,
   route: string
 ): Promise<RecordedArrival> {
   const arrivedAt = new Date().toISOString();
   const metadata = { ...(row.metadata || {}), ...arrival };
-  const { error } = await supabase
+  // Only if nobody stamped it meanwhile (e.g. a GPS ping racing a photo
+  // check-in), so a verified arrival is never relabelled.
+  const { data, error } = await supabase
     .from("find_completions")
     .update({ arrived_at: arrivedAt, metadata })
-    .eq("id", row.id);
+    .eq("id", row.id)
+    .is("arrived_at", null)
+    .select("id");
   if (error) throw internalError(route, error);
+  if (!data || data.length === 0) {
+    const current = (await getCompletion(supabase, sessionId, findId)) ?? row;
+    return { completion: current, created: false, alreadyArrived: true };
+  }
   return { completion: { ...row, arrived_at: arrivedAt, metadata }, created: false, alreadyArrived: false };
 }

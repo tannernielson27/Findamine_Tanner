@@ -5,54 +5,59 @@ import { coordinatesForStorage } from "@/lib/utils/location-storage";
 
 export const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 
-export interface StorePhotoInput {
+/** The uploaded file, if the form carried a non-empty image. */
+export function photoFromForm(value: FormDataEntryValue | null): File | null {
+  if (!(value instanceof File) || value.size === 0) return null;
+  if (value.type && !value.type.startsWith("image/")) throw new ApiError(400, "That file isn't a photo");
+  if (value.size > MAX_PHOTO_BYTES) throw new ApiError(400, "Photo too large (max 10MB)");
+  return value;
+}
+
+/**
+ * Puts a stop photo in the private `geo-selfies` bucket (migration 070) and
+ * returns its path. Under-13 accounts (COPPA): nothing is uploaded, ever.
+ */
+export async function uploadFindPhoto(
+  supabase: SupabaseClient,
+  input: { userId: string; role: string | null | undefined; findId: string; file: File | null },
+  route: string
+): Promise<string | null> {
+  if (input.role === "child" || !input.file) return null;
+  const ext = input.file.name.split(".").pop() || "jpg";
+  const path = `${input.userId}/${input.findId}_${Date.now()}.${ext}`;
+  const { data, error } = await supabase.storage
+    .from("geo-selfies")
+    .upload(path, input.file, { contentType: input.file.type });
+  if (error) throw internalError(route, error);
+  return data.path;
+}
+
+export interface PhotoRowInput {
   userId: string;
   role: string | null | undefined;
   completionId: string;
-  findId: string;
-  file: File | null;
+  storageRef: string | null;
   caption: string | null;
   latitude: number | null;
   longitude: number | null;
 }
 
-export interface StoredPhoto {
-  photo: Record<string, unknown> & { id: string };
-  localOnly: boolean;
-}
-
 /**
- * Saves a stop photo. Under-13 accounts (COPPA): only the fact that a photo
- * was taken is recorded; the image and its location stay on the device.
- * Everyone else: the image goes to the private `geo-selfies` bucket.
+ * Records a stop photo. For a child only the fact that a photo was taken is
+ * kept (local_only, no coordinates); the image stays on the device.
  */
-export async function storeFindPhoto(
+export async function insertFindPhotoRow(
   supabase: SupabaseClient,
-  input: StorePhotoInput,
+  input: PhotoRowInput,
   route: string
-): Promise<StoredPhoto> {
-  const isChild = input.role === "child";
+): Promise<Record<string, unknown> & { id: string }> {
   const coords = coordinatesForStorage(input.role, input.latitude, input.longitude);
-  let storageRef: string | null = null;
-
-  if (!isChild && input.file) {
-    if (input.file.size > MAX_PHOTO_BYTES) throw new ApiError(400, "Photo too large (max 10MB)");
-    const ext = input.file.name.split(".").pop() || "jpg";
-    const path = `${input.userId}/${input.findId}_${Date.now()}.${ext}`;
-    // Private bucket (migration 070); only the path is stored.
-    const { data, error } = await supabase.storage
-      .from("geo-selfies")
-      .upload(path, input.file, { contentType: input.file.type });
-    if (error) throw internalError(route, error);
-    storageRef = data.path;
-  }
-
   const { data: photo, error } = await supabase
     .from("find_photos")
     .insert({
       completion_id: input.completionId,
-      storage_ref: storageRef,
-      local_only: isChild,
+      storage_ref: input.role === "child" ? null : input.storageRef,
+      local_only: input.role === "child",
       caption: input.caption || null,
       latitude: coords.latitude,
       longitude: coords.longitude,
@@ -60,7 +65,6 @@ export async function storeFindPhoto(
     })
     .select()
     .single();
-
   if (error || !photo) throw internalError(route, error ?? new Error("photo insert returned nothing"));
-  return { photo: photo as StoredPhoto["photo"], localOnly: isChild };
+  return photo as Record<string, unknown> & { id: string };
 }

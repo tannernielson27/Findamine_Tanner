@@ -7,6 +7,7 @@ import { PermissionPrimer } from "@/components/permissions/permission-primer";
 import { StopSafetyNote } from "@/components/play/safety-tips";
 import { ClueCard } from "@/components/play/clue-card";
 import { PhotoPicker } from "@/components/native/photo-picker";
+import { AiPhotoCheckGate } from "@/components/play/ai-photo-check-gate";
 import { PHOTO_CHECK_IN_COPY } from "@/lib/play/check-in";
 import type { Find } from "@/lib/play/play-types";
 import type { StopFlow } from "@/lib/play/use-stop-flow";
@@ -52,15 +53,17 @@ export function ThumbZone({ find, flow }: ThumbZoneProps) {
   const photoCard = photoCheckIn ? (
     <section aria-label="Photo check-in" className="flex flex-col gap-2 rounded-[20px] bg-white p-4 shadow-lg">
       <p className="text-sm text-ink">{PHOTO_CHECK_IN_COPY[photoCheckIn]}</p>
-      <PhotoPicker
-        cameraOnly
-        disabled={checkingIn}
-        onFile={(file) => busy(() => flow.handlePhotoCheckIn(file))}
-        className="inline-flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-xl bg-brand px-4 font-semibold text-white transition-colors hover:bg-brand-dark focus-within:ring-2 focus-within:ring-brand focus-within:ring-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
-      >
-        <Camera className="h-5 w-5" aria-hidden="true" />
-        {checkingIn ? "Checking in…" : "Take a check-in photo"}
-      </PhotoPicker>
+      <AiPhotoCheckGate>
+        <PhotoPicker
+          cameraOnly
+          disabled={checkingIn}
+          onFile={(file) => busy(() => flow.handlePhotoCheckIn(file))}
+          className="inline-flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-xl bg-brand px-4 font-semibold text-white transition-colors hover:bg-brand-dark focus-within:ring-2 focus-within:ring-brand focus-within:ring-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+        >
+          <Camera className="h-5 w-5" aria-hidden="true" />
+          {checkingIn ? "Checking in…" : "Take a check-in photo"}
+        </PhotoPicker>
+      </AiPhotoCheckGate>
       <button
         type="button"
         onClick={flow.cancelPhotoCheckIn}

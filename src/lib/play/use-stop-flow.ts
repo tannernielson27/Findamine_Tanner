@@ -7,6 +7,7 @@ import { errorMessage, postJsonStrict, safeFetch } from "@/lib/play/play-api";
 import { useGeoTracking, type GeoTracking } from "@/lib/play/use-geo-tracking";
 import { useStopHints, type StopHints } from "@/lib/play/use-stop-hints";
 import { useCheckIn, type CheckIn } from "@/lib/play/use-check-in";
+import { isChildAccount } from "@/lib/play/child-account";
 import type { CelebrationControls } from "@/lib/play/use-celebration-state";
 import type { PlaySession } from "@/lib/play/use-play-session";
 import type { PrivacyNotice } from "@/lib/services/privacy-notice";
@@ -203,7 +204,8 @@ export function useStopFlow(
       setErrorState(null);
       try {
         const formData = new FormData();
-        formData.append("file", file);
+        // A child's photo never leaves the device (COPPA); the server records only that one was taken.
+        if ((await isChildAccount()) !== true) formData.append("file", file);
         formData.append("find_id", currentFind.id);
         await safeFetch(`/api/v1/play/${huntId}/capture`, { method: "POST", body: formData });
         setStep("feedback");

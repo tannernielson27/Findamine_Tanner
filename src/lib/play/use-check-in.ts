@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { getCurrentLocation, locationSupported } from "@/lib/native/geolocation";
 import { errorMessage, postJsonStrict, safeFetch } from "@/lib/play/play-api";
 import { interpretCheckIn, type PhotoCheckInReason } from "@/lib/play/check-in";
+import { isChildAccount } from "@/lib/play/child-account";
 import type { UserPosition } from "@/lib/play/use-geo-tracking";
 import type { Find, LocationConsent } from "@/lib/play/play-types";
 
@@ -25,15 +26,19 @@ export interface CheckIn {
   cancelPhotoCheckIn: () => void;
 }
 
-/** A fresh, high-accuracy fix for the tap; falls back to the last tracked one. */
-async function freshPosition(consent: LocationConsent, last: UserPosition | null): Promise<UserPosition | null> {
+/**
+ * A fresh, high-accuracy fix for the tap, or null. No fallback to the last
+ * tracked position: it may be from before the player walked away. Null sends
+ * the player to the photo check-in instead.
+ */
+async function freshPosition(consent: LocationConsent): Promise<UserPosition | null> {
   // Without consent from the primer, asking now would raise the OS prompt cold.
-  if (consent !== "granted" || !locationSupported()) return last;
+  if (consent !== "granted" || !locationSupported()) return null;
   try {
     const fix = await getCurrentLocation({ enableHighAccuracy: true, maximumAge: 0, timeout: 10000 });
     return { lat: fix.latitude, lng: fix.longitude, accuracy: fix.accuracy };
   } catch {
-    return last;
+    return null;
   }
 }
 
@@ -51,7 +56,7 @@ export function useCheckIn({ huntId, currentFind, userPos, locationConsent, setE
     if (!findId) return;
     setError(null);
     try {
-      const pos = await freshPosition(locationConsent, userPos);
+      const pos = await freshPosition(locationConsent);
       const reply = await postJsonStrict<Record<string, unknown>>(`/api/v1/play/${huntId}/arrive`, {
         find_id: findId,
         manual: true,
@@ -69,7 +74,7 @@ export function useCheckIn({ huntId, currentFind, userPos, locationConsent, setE
     } catch (err) {
       setError(errorMessage(err, "Failed to record arrival"));
     }
-  }, [findId, huntId, locationConsent, userPos, setError, onArrived]);
+  }, [findId, huntId, locationConsent, setError, onArrived]);
 
   const handlePhotoCheckIn = useCallback(
     async (file: File) => {
@@ -77,9 +82,11 @@ export function useCheckIn({ huntId, currentFind, userPos, locationConsent, setE
       setError(null);
       try {
         const form = new FormData();
-        form.append("file", file);
         form.append("find_id", findId);
-        if (userPos) {
+        // A child's photo and location never leave the device (COPPA).
+        const child = (await isChildAccount()) === true;
+        if (!child) form.append("file", file);
+        if (userPos && !child) {
           form.append("latitude", String(userPos.lat));
           form.append("longitude", String(userPos.lng));
           if (userPos.accuracy != null) form.append("accuracy", String(userPos.accuracy));

@@ -7,6 +7,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { CountUp } from "@/components/ui/count-up";
 import { ProgressSegments } from "@/components/ui/progress";
 import { PhotoPicker } from "@/components/native/photo-picker";
+import { AiPhotoCheckGate } from "@/components/play/ai-photo-check-gate";
 import { TechniqueReview } from "@/components/play/technique-review";
 import { ReportProblem } from "@/components/play/report-problem";
 import { cn } from "@/lib/utils/cn";
@@ -167,19 +168,21 @@ function ResultsActions(props: StopResultsProps) {
     return (
       <div className="flex w-full flex-col items-center gap-2">
         {/* Browser file input on the web; native camera (after the camera primer) in the iOS app. */}
-        <PhotoPicker
-          cameraOnly
-          disabled={props.uploadingPhoto}
-          onFile={props.onPhoto}
-          className={cn(
-            buttonVariants({ variant: "light", size: "xl", block: true }),
-            "focus-within:ring-2 focus-within:ring-white focus-within:ring-offset-2 focus-within:ring-offset-juniper-deep",
-            props.uploadingPhoto ? "cursor-wait opacity-60" : "cursor-pointer"
-          )}
-        >
-          <Camera className="h-5 w-5" aria-hidden="true" />
-          <span aria-live="polite">{props.uploadingPhoto ? "Uploading photo..." : "Take a geo-selfie"}</span>
-        </PhotoPicker>
+        <AiPhotoCheckGate>
+          <PhotoPicker
+            cameraOnly
+            disabled={props.uploadingPhoto}
+            onFile={props.onPhoto}
+            className={cn(
+              buttonVariants({ variant: "light", size: "xl", block: true }),
+              "focus-within:ring-2 focus-within:ring-white focus-within:ring-offset-2 focus-within:ring-offset-juniper-deep",
+              props.uploadingPhoto ? "cursor-wait opacity-60" : "cursor-pointer"
+            )}
+          >
+            <Camera className="h-5 w-5" aria-hidden="true" />
+            <span aria-live="polite">{props.uploadingPhoto ? "Uploading photo..." : "Take a geo-selfie"}</span>
+          </PhotoPicker>
+        </AiPhotoCheckGate>
         <button type="button" onClick={props.onSkipPhoto} disabled={props.uploadingPhoto} className={linkClass}>
           Skip photo
         </button>

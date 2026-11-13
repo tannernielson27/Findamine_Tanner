@@ -219,11 +219,22 @@ describe("POST /play/[huntId]/arrive", () => {
     expect((await res.json()).arrived).toBe(true);
   });
 
-  it("omits hot/cold when the stop has it disabled", async () => {
+  it("omits hot/cold and the exact distance when the stop has hot/cold disabled", async () => {
     seed({ finds: [{ id: FIND, hunt_id: HUNT, task_id: "task-1", location_id: "loc-1", hot_cold_enabled: false }] });
     const body = await (await arrive(post("/arrive", { find_id: FIND, ...FAR }), playParams)).json();
     expect(body.hot_cold).toBeNull();
     expect(body.hot_cold_enabled).toBe(false);
+    expect(body.distance).toBeNull();
+  });
+
+  it("never relabels an arrival that another request stamped first", async () => {
+    // A primer row that is already stamped by the time the update runs.
+    const db = seed({ find_completions: [arrived({ arrived_at: null, metadata: { prime_viewed_at: "x" } })] });
+    await arrive(post("/arrive", { find_id: FIND, ...AT_STOP }), playParams);
+    const first = { ...(db.table("find_completions")[0].metadata as Row) };
+    const body = await (await arrivePhoto(photoForm({ find_id: FIND }), playParams)).json();
+    expect(body.already_arrived).toBe(true);
+    expect(db.table("find_completions")[0].metadata).toEqual(first);
   });
 });
 
@@ -244,9 +255,34 @@ describe("POST /play/[huntId]/arrive-photo", () => {
     expect(row.arrived_at).toBeTruthy();
     const meta = row.metadata as Row;
     expect(meta).toMatchObject({ arrival_method: "photo", arrival_manual: true, arrival_review: "pending" });
-    const [photo] = db.table("find_photos");
-    expect(meta.arrival_photo_id).toBe(photo.id);
+    // The reviewer finds the photo through its completion.
+    expect(db.table("find_photos")[0].completion_id).toBe(row.id);
     expect(db.uploads[0].bucket).toBe("geo-selfies");
+  });
+
+  it("won't let a photo overrule a usable GPS fix that is clearly too far", async () => {
+    const db = seed({ find_photos: [] });
+    const res = await arrivePhoto(photoForm({ find_id: FIND, latitude: "40.26", longitude: "-111.65", accuracy: "10" }), playParams);
+    expect(res.status).toBe(400);
+    expect(db.table("find_completions")).toHaveLength(0);
+    expect(db.uploads).toHaveLength(0);
+  });
+
+  it("accepts a vague fix, keeping its distance for the reviewer", async () => {
+    const db = seed({ find_photos: [] });
+    const res = await arrivePhoto(photoForm({ find_id: FIND, latitude: "40.26", longitude: "-111.65", accuracy: "300" }), playParams);
+    expect(res.status).toBe(201);
+    expect((db.table("find_completions")[0].metadata as Row).arrival_distance as number).toBeGreaterThan(1000);
+  });
+
+  it("refuses a file that isn't an image, before recording anything", async () => {
+    const db = seed({ find_photos: [] });
+    const form = new FormData();
+    form.append("find_id", FIND);
+    form.append("file", new File(["hello"], "notes.txt", { type: "text/plain" }));
+    const res = await arrivePhoto(new NextRequest("http://localhost:3000/x", { method: "POST", body: form }), playParams);
+    expect(res.status).toBe(400);
+    expect(db.table("find_completions")).toHaveLength(0);
   });
 
   it("requires a photo from an adult", async () => {

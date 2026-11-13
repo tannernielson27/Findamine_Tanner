@@ -92,6 +92,9 @@ export async function POST(
     const distance = haversineDistance(latitude, longitude, loc.latitude, loc.longitude);
     const hotCold = hotColdEnabled ? getHotColdZone(distance) : null;
     const verdict: ArrivalVerdict = checkArrival({ distance, accuracy, radius });
+    // With hot/cold off the creator wants no distance hints, so none go back
+    // (exact distances from a few spots would also give the stop away).
+    const shownDistance = hotColdEnabled ? distance : null;
 
     if (verdict.kind !== "inside") {
       return Response.json({
@@ -99,7 +102,7 @@ export async function POST(
         reason: verdict.kind,
         // Too far is the player's to fix by walking; weak GPS gets the photo route.
         photo_allowed: manual && verdict.kind === "weak_gps",
-        distance,
+        distance: shownDistance,
         accuracy,
         hot_cold: hotCold,
         hot_cold_enabled: hotColdEnabled,
@@ -110,7 +113,7 @@ export async function POST(
     const recorded = await record(supabase, session.id, find_id, user.role, {
       latitude, longitude, accuracy, distance, manual,
     });
-    return arrivedResponse(recorded, distance, hotCold);
+    return arrivedResponse(recorded, shownDistance, hotCold);
   } catch (error) {
     return errorResponse(error);
   }

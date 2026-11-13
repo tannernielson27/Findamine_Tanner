@@ -2,7 +2,9 @@
 
 Status: 2026-11-13. Fix 1 (location check) is ready to ship. Fix 2 (AI landmark check)
 is built behind an off switch and **must not be turned on** until the checklist at the
-end is done.
+end is done. Code: `src/lib/services/landmark-check.ts` (service),
+`src/app/api/v1/account/ai-photo-check` (opt-in), `src/components/play/ai-photo-check-gate.tsx`
+(notice), migration `081_ai_photo_check.sql` (applied with `deploy-081.sh`).
 
 ## What changes
 
@@ -31,10 +33,12 @@ a third-party AI. So part 3 is **opt-in**.
 
 ## Rules the build follows
 
-- **R1 Opt-in only.** No photo goes to an AI service unless that player said yes in a
+- **R1 Opt-in only.** The two answers carry equal visual weight, so the notice doesn't
+  nudge either way. No photo goes to an AI service unless that player said yes in a
   clear notice shown before their first check. Their answer is stored with the notice
   version (`ai_photo_check_choices`). Saying no costs nothing: the photo is just flagged
-  for human review.
+  for human review. The check is enforced on the server, so a photo taken before the
+  notice loads is simply not checked.
 - **R2 Adults only.** Children's photos never leave the device (COPPA), so they can't be
   checked. Teens are excluded for v1 as well. Neither group ever sees the notice.
 - **R3 Minimum data.** The server shrinks the image to at most 1024 px and re-encodes

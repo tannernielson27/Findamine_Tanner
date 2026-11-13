@@ -5,7 +5,7 @@ import { Mic, RotateCcw, Square } from "lucide-react";
 import { PermissionDeniedNotice, PermissionPrimer } from "@/components/permissions/permission-primer";
 import { MAX_AUDIO_SECONDS, audioExtension } from "@/lib/play/audio-answer";
 import { Button } from "@/components/ui/button";
-import { fetchMe } from "@/lib/hooks/use-me";
+import { isChildAccount } from "@/lib/play/child-account";
 import { QuestionText, SubmitButton, TEXT_ACTION_CLASS } from "./parts";
 import { questionOf, type ChallengeFieldProps } from "./types";
 
@@ -19,17 +19,6 @@ const PREFERRED_AUDIO_TYPES = ["audio/webm;codecs=opus", "audio/mp4", "audio/ogg
 function pickRecorderType(): string | undefined {
   if (typeof MediaRecorder === "undefined" || typeof MediaRecorder.isTypeSupported !== "function") return undefined;
   return PREFERRED_AUDIO_TYPES.find((t) => MediaRecorder.isTypeSupported(t));
-}
-
-/** True/false from /auth/me, or null when it can't be told. */
-async function isChildAccount(): Promise<boolean | null> {
-  try {
-    const data = await fetchMe();
-    if (!data) return null;
-    return data.user?.role === "child";
-  } catch {
-    return null;
-  }
 }
 
 /**
