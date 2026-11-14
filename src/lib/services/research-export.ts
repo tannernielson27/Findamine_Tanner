@@ -86,8 +86,19 @@ export function participantId(index: number): string {
   return `P${String(index + 1).padStart(4, "0")}`;
 }
 
+/**
+ * Spreadsheet formula guard: a cell starting with = + - @ tab or CR is run as a
+ * formula by Excel/Sheets, and some exported fields (event names, app
+ * versions) come from clients. Such cells get a leading apostrophe, except
+ * plain numbers (negative values stay numeric). Pure.
+ */
+export function neutralizeFormula(value: string): string {
+  return /^[=+\-@\t\r]/.test(value) && !/^-?\d+(\.\d+)?$/.test(value) ? `'${value}` : value;
+}
+
 /** Escape one CSV/TSV field: quote when it contains the separator, a quote, or a newline. */
-export function escapeField(value: string, separator: string): string {
+export function escapeField(raw: string, separator: string): string {
+  const value = neutralizeFormula(raw);
   return value.includes(separator) || value.includes('"') || value.includes("\n")
     ? `"${value.replace(/"/g, '""')}"`
     : value;

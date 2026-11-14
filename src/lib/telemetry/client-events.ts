@@ -107,9 +107,22 @@ export function huntIdFromPath(pathname: string | null | undefined): string | nu
 const EMAIL_RE = /[^\s@"'<>()]+@[^\s@"'<>()]+\.[a-z]{2,}/gi;
 const QUERY_RE = /\?[^\s"')]*/g;
 
-/** Remove emails, ids and URL query strings from error text. Pure. */
+const FRAGMENT_RE = /#[^\s"')]*/g;
+const BEARER_RE = /\bBearer\s+\S+/gi;
+const JWT_RE = /\beyJ[\w-]+\.[\w-]+(?:\.[\w-]+)?/g;
+/** Long hex / base64-ish runs: tokens, keys, codes. */
+const TOKEN_RE = /\b[A-Za-z0-9+/_-]{32,}={0,2}/g;
+
+/** Remove emails, ids, tokens, URL query strings and fragments from error text. Pure. */
 export function redactErrorText(text: string): string {
-  return text.replace(EMAIL_RE, "<email>").replace(UUID_RE, ":id").replace(QUERY_RE, "?…");
+  return text
+    .replace(BEARER_RE, "Bearer <token>")
+    .replace(JWT_RE, "<token>")
+    .replace(EMAIL_RE, "<email>")
+    .replace(UUID_RE, ":id")
+    .replace(TOKEN_RE, "<token>")
+    .replace(QUERY_RE, "?…")
+    .replace(FRAGMENT_RE, "#…");
 }
 
 /**

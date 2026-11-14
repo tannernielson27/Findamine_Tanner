@@ -20,6 +20,14 @@ export interface EventRow {
  */
 export const CLIENT_EVENT_TYPES: ReadonlySet<string> = new Set(["screen_view", "app_state", "client_error"]);
 
+/** Envelope fields are short identifiers; anything else is dropped (no free text). */
+const SAFE_TEXT = /^[\w:/.\- ()+]+$/;
+
+function safeText(value: unknown, max: number): string | null {
+  const text = shortText(value, max);
+  return text && SAFE_TEXT.test(text) ? text : null;
+}
+
 const PLATFORMS = new Set(["ios", "android", "web"]);
 const MAX_PAYLOAD_BYTES = 4096;
 
@@ -45,11 +53,11 @@ export function toEventRow(userId: string, raw: unknown): EventRow | null {
   const platform = typeof e.platform === "string" && PLATFORMS.has(e.platform) ? e.platform : null;
   return {
     user_id: userId,
-    session_id: shortText(e.session_id, 64),
+    session_id: safeText(e.session_id, 64),
     event_type: e.event_type,
-    event_name: shortText(e.event_name, 200),
+    event_name: safeText(e.event_name, 200),
     payload,
     platform,
-    app_version: shortText(e.app_version, 40),
+    app_version: safeText(e.app_version, 40),
   };
 }

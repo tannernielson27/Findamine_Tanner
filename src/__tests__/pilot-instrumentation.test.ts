@@ -13,6 +13,7 @@ import { nextSession, formatAppVersion, SESSION_IDLE_MS } from "@/lib/telemetry/
 import { screenPath, huntIdFromPath, redactErrorText } from "@/lib/telemetry/client-events";
 import { toEventRow } from "@/lib/telemetry/event-row";
 import { daysBetween, qualtricsValues, QUALTRICS_COLUMN_HEADERS } from "@/lib/services/pilot-export";
+import { escapeField } from "@/lib/services/research-export";
 
 const ENROLLED = "2026-11-16T15:00:00.000Z";
 const DAY = 86_400_000;
@@ -161,6 +162,29 @@ describe("error redaction", () => {
         "Failed for jo.smith+x@byu.edu at https://x.app/api/v1/users/0f8fad5b-d9cb-469f-a165-70867728950e?code=123456"
       )
     ).toBe("Failed for <email> at https://x.app/api/v1/users/:id?…");
+  });
+});
+
+describe("export and telemetry hardening", () => {
+  it("neutralizes spreadsheet formulas but keeps negative numbers", () => {
+    expect(escapeField('=HYPERLINK("x")', ",")).toBe(`"'=HYPERLINK(""x"")"`);
+    expect(escapeField("@cmd", ",")).toBe("'@cmd");
+    expect(escapeField("-0.25", ",")).toBe("-0.25");
+    expect(escapeField("-1+1", ",")).toBe("'-1+1");
+  });
+
+  it("drops free-text envelope fields", () => {
+    const row = toEventRow("u1", { event_type: "app_state", event_name: "=1+1", session_id: "a b;c", app_version: "1.1 (2)+web.abc" });
+    expect(row?.event_name).toBeNull();
+    expect(row?.session_id).toBeNull();
+    expect(row?.app_version).toBe("1.1 (2)+web.abc");
+  });
+
+  it("redacts tokens and fragments in error text", () => {
+    expect(redactErrorText("auth Bearer abc.def failed")).toBe("auth Bearer <token> failed");
+    expect(redactErrorText("jwt eyJhbGciOi.eyJzdWIiOjF9.sig here")).toBe("jwt <token> here");
+    expect(redactErrorText(`key ${"a1".repeat(20)} end`)).toBe("key <token> end");
+    expect(redactErrorText("https://x.app/reset#access_token=zzz")).toBe("https://x.app/reset#…");
   });
 });
 
