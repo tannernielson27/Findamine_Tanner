@@ -24,6 +24,8 @@ import {
 import { loadStorylineColumns } from "@/lib/services/storyline-export";
 import { fetchAllByIds, fetchAllRows } from "@/lib/utils/paginate";
 import { preT3Index, T3_TIMEPOINT, type IndexPoint } from "@/lib/utils/pre-t3-index";
+import { IN_APP_SURVEYS_ENABLED } from "@/lib/research/study-config";
+import { loadQualtricsColumns } from "@/lib/services/pilot-export";
 
 export type ExportFormat = "csv" | "tsv" | "json";
 
@@ -75,7 +77,11 @@ export function referralPointsAt(
   );
 }
 
-/** Anonymized, sequential participant id (never derived from PII). */
+/**
+ * Legacy position-based id (P0001…). Only a fallback now: every export keys
+ * rows by the stable Study ID, study_enrollments.participant_code (migration
+ * 082), so ids no longer shift when someone withdraws.
+ */
 export function participantId(index: number): string {
   return `P${String(index + 1).padStart(4, "0")}`;
 }
@@ -151,10 +157,10 @@ export async function generateResearchExport(config: ExportConfig): Promise<stri
   // does not say so, which silently truncated the trajectory and made the
   // "final" index the earliest one (found by the H9 dry run). Reads filtered by
   // participant are also chunked, so the id list never overflows the URL.
-  const enrollments = await fetchAllRows<{ user_id: string; enrolled_at: string }>((from, to) =>
+  const enrollments = await fetchAllRows<{ user_id: string; enrolled_at: string; participant_code: string }>((from, to) =>
     supabase
       .from("study_enrollments")
-      .select("user_id, enrolled_at")
+      .select("user_id, enrolled_at, participant_code")
       .eq("study_id", config.studyId)
       .is("withdrawn_at", null)
       .order("user_id", { ascending: true })
@@ -394,7 +400,10 @@ export async function generateResearchExport(config: ExportConfig): Promise<stri
     const tp = cfg.timepoint || (cfg.offset_days !== undefined ? `d${cfg.offset_days}` : "survey");
     surveyTimepoint.set(s.survey_id, tp);
   }
-  const surveyIds = [...surveyTimepoint.keys()];
+  // In-app instruments are off for the pilot (Qualtrics is the source of
+  // record), so their always-empty survey_* columns are left out.
+  const surveyIds = IN_APP_SURVEYS_ENABLED ? [...surveyTimepoint.keys()] : [];
+  if (!IN_APP_SURVEYS_ENABLED) surveyTimepoint.clear();
 
   const questionsBySurvey = new Map<string, ScorableQuestion[]>();
   const subscalesByTp = new Map<string, Set<string>>();
@@ -512,6 +521,8 @@ export async function generateResearchExport(config: ExportConfig): Promise<stri
 
   // Cohort-2 storyline columns (C2, C3, D2, D3), only for dimensions in play.
   const storyline = await loadStorylineColumns(supabase, userIds, dimensionNames);
+  // Qualtrics schedule: subset flags, when each wave opened, launches (082).
+  const qualtrics = await loadQualtricsColumns(supabase, config.studyId);
 
   const num = (n: number | undefined, dp = 0) =>
     n === undefined ? "" : dp > 0 ? n.toFixed(dp) : String(n);
@@ -556,6 +567,7 @@ export async function generateResearchExport(config: ExportConfig): Promise<stri
     "time_to_first_change_hours",
     "total_privacy_events",
     ...surveyHeaders,
+    ...qualtrics.headers,
     ...storyline.headers,
   ];
 
@@ -564,7 +576,7 @@ export async function generateResearchExport(config: ExportConfig): Promise<stri
     const userId = userIds[i];
     const user = users?.find((u) => u.id === userId);
     const enrollment = enrollments.find((e) => e.user_id === userId);
-    const pid = participantId(i);
+    const pid = enrollment?.participant_code || participantId(i);
 
     const userAssignments = (assignments || []).filter((a) => a.user_id === userId);
     const treatmentValues = Array.from(dimensionNames).map((dimName) => {
@@ -636,6 +648,7 @@ export async function generateResearchExport(config: ExportConfig): Promise<stri
       ttfc,
       num(totalEvents.get(userId) || 0),
       ...surveyValues,
+      ...qualtrics.valuesFor(userId),
       ...storyline.valuesFor(userId),
     ]);
   }
@@ -653,10 +666,10 @@ export async function generateResearchExport(config: ExportConfig): Promise<stri
 export async function generateTrajectoryExport(config: ExportConfig): Promise<string> {
   const supabase = await createSupabaseServiceClient();
 
-  const enrollments = await fetchAllRows<{ user_id: string; enrolled_at: string }>((from, to) =>
+  const enrollments = await fetchAllRows<{ user_id: string; enrolled_at: string; participant_code: string }>((from, to) =>
     supabase
       .from("study_enrollments")
-      .select("user_id, enrolled_at")
+      .select("user_id, enrolled_at, participant_code")
       .eq("study_id", config.studyId)
       .is("withdrawn_at", null)
       .order("user_id", { ascending: true })
@@ -665,11 +678,11 @@ export async function generateTrajectoryExport(config: ExportConfig): Promise<st
 
   if (enrollments.length === 0) return "";
 
-  // Stable P#### ids matching the participant-level export (enrollment order).
+  // The stable Study ID (participant_code, migration 082), as in every dataset.
   const userIds = enrollments.map((e) => e.user_id);
   const pidByUser = new Map<string, string>();
   const enrolledAtByUser = new Map<string, string>();
-  userIds.forEach((uid, i) => pidByUser.set(uid, participantId(i)));
+  enrollments.forEach((e, i) => pidByUser.set(e.user_id, e.participant_code || participantId(i)));
   for (const e of enrollments) enrolledAtByUser.set(e.user_id, e.enrolled_at);
 
   const snapshots = await fetchAllByIds<{
@@ -781,10 +794,10 @@ export async function loadStudyDimensionNames(
 export async function generateEventsExport(config: ExportConfig): Promise<string> {
   const supabase = await createSupabaseServiceClient();
 
-  const enrollments = await fetchAllRows<{ user_id: string; enrolled_at: string }>((from, to) =>
+  const enrollments = await fetchAllRows<{ user_id: string; enrolled_at: string; participant_code: string }>((from, to) =>
     supabase
       .from("study_enrollments")
-      .select("user_id, enrolled_at")
+      .select("user_id, enrolled_at, participant_code")
       .eq("study_id", config.studyId)
       .is("withdrawn_at", null)
       .order("user_id", { ascending: true })
@@ -796,7 +809,7 @@ export async function generateEventsExport(config: ExportConfig): Promise<string
   const userIds = enrollments.map((e) => e.user_id);
   const pidByUser = new Map<string, string>();
   const enrolledAtByUser = new Map<string, string>();
-  userIds.forEach((uid, i) => pidByUser.set(uid, participantId(i)));
+  enrollments.forEach((e, i) => pidByUser.set(e.user_id, e.participant_code || participantId(i)));
   for (const e of enrollments) enrolledAtByUser.set(e.user_id, e.enrolled_at);
 
   const dimensionNames = await loadStudyDimensionNames(supabase, config.studyId);

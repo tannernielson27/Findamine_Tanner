@@ -106,8 +106,14 @@ export async function GET(request: NextRequest) {
     // Storyline S3 (migration 059): under `silent` the recruiter is never told
     // what hiding has cost them. Forfeits are still LOGGED at award time; only
     // the surfacing is suppressed, so the API omits the gate fields entirely.
+    //
+    // Forfeits are read for BOTH arms of an active participant, so the moment
+    // the notice would apply ("eligible": hidden fields + points already
+    // forfeited) is logged identically in shown and silent. That is the
+    // exposure-matched comparison point; `forfeit_notice_viewed` stays the
+    // shown-arm rendering event.
     let forfeitedPoints: number | undefined;
-    if (switches.forfeit_notice === "shown") {
+    if (studyParticipant) {
       const { data: forfeits } = await supabase
         .from("behavioral_events")
         .select("payload")
@@ -118,16 +124,25 @@ export async function GET(request: NextRequest) {
         return sum + (typeof amount === "number" ? amount : 0);
       }, 0);
 
-      // The notice is about to render (once per page load). Record the exposure
-      // so notice-to-action can be measured against later privacy changes.
       if (!disclosureEligible && forfeitedPoints > 0) {
-        runAfter("track_forfeit_notice_viewed", () =>
+        const points = forfeitedPoints;
+        runAfter("track_forfeit_notice_eligible", () =>
           trackEvent({
             userId: user.id,
-            eventType: "forfeit_notice_viewed",
-            payload: { forfeited_points: forfeitedPoints, ...switches },
+            eventType: "forfeit_notice_eligible",
+            payload: { forfeited_points: points, arm: switches.forfeit_notice, ...switches },
           })
         );
+        // The notice is about to render (once per page load) in the shown arm.
+        if (switches.forfeit_notice === "shown") {
+          runAfter("track_forfeit_notice_viewed", () =>
+            trackEvent({
+              userId: user.id,
+              eventType: "forfeit_notice_viewed",
+              payload: { forfeited_points: points, ...switches },
+            })
+          );
+        }
       }
     }
 

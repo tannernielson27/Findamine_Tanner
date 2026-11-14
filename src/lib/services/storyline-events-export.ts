@@ -107,10 +107,10 @@ export function buildStorylineEventRows(input: StorylineEventInput): string[][] 
 export async function generateStorylineEventsExport(config: ExportConfig): Promise<string> {
   const supabase = await createSupabaseServiceClient();
 
-  const enrollments = await fetchAllRows<{ user_id: string; enrolled_at: string }>((from, to) =>
+  const enrollments = await fetchAllRows<{ user_id: string; enrolled_at: string; participant_code: string }>((from, to) =>
     supabase
       .from("study_enrollments")
-      .select("user_id, enrolled_at")
+      .select("user_id, enrolled_at, participant_code")
       .eq("study_id", config.studyId)
       .is("withdrawn_at", null)
       .order("user_id", { ascending: true })
@@ -119,7 +119,8 @@ export async function generateStorylineEventsExport(config: ExportConfig): Promi
   if (enrollments.length === 0) return "";
 
   const userIds = enrollments.map((e) => e.user_id);
-  const pidByUser = new Map(userIds.map((uid, i) => [uid, participantId(i)]));
+  // Stable Study ID (migration 082), same key as every other dataset.
+  const pidByUser = new Map(enrollments.map((e, i) => [e.user_id, e.participant_code || participantId(i)]));
   const enrolledAtByUser = new Map(enrollments.map((e) => [e.user_id, e.enrolled_at]));
   const dimensionNames = await loadStudyDimensionNames(supabase, config.studyId);
 

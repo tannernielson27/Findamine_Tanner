@@ -24,6 +24,7 @@ import {
   type NormalizedSchedule,
   type PendingDelivery,
 } from "@/lib/services/survey-triggers";
+import { IN_APP_SURVEYS_ENABLED } from "@/lib/research/study-config";
 
 type ServiceClient = Awaited<ReturnType<typeof createSupabaseServiceClient>>;
 
@@ -62,6 +63,8 @@ export async function createDueDeliveriesForUser(
   userId: string,
   enrolledAt: string
 ): Promise<number> {
+  // Qualtrics is the survey source of record (study-config.ts).
+  if (!IN_APP_SURVEYS_ENABLED) return 0;
   try {
     const supabase = await createSupabaseServiceClient();
     const schedules = await getActiveSchedules(supabase);
@@ -107,6 +110,7 @@ export async function createEventDeliveriesForUser(
   eventName: string
 ): Promise<EventDeliveryResult> {
   const empty: EventDeliveryResult = { created: 0, pending: [] };
+  if (!IN_APP_SURVEYS_ENABLED) return empty;
   try {
     const supabase = await createSupabaseServiceClient();
     if (!(await isEnrolled(supabase, userId))) return empty;
@@ -163,6 +167,7 @@ const REMINDER_COOLDOWN_DAYS = 3;
  * respects a user's disabled notification types. Returns count of reminders sent.
  */
 export async function sendSurveyReminders(): Promise<number> {
+  if (!IN_APP_SURVEYS_ENABLED) return 0;
   const supabase = await createSupabaseServiceClient();
   const now = Date.now();
 

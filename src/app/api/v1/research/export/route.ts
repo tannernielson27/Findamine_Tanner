@@ -7,6 +7,11 @@ import {
   type ExportFormat,
 } from "@/lib/services/research-export";
 import { generateStorylineEventsExport } from "@/lib/services/storyline-events-export";
+import {
+  generateAppEventsExport,
+  generateQualtricsExport,
+  generateWithdrawalsExport,
+} from "@/lib/services/pilot-export";
 
 const FORMATS: ExportFormat[] = ["csv", "tsv", "json"];
 
@@ -22,6 +27,9 @@ export async function GET(request: NextRequest) {
     // privacy-index snapshot), "events" (one row per raw privacy_event —
     // for survival models and flow-level friction funnels), or "storylines"
     // (one row per S6 notice / S4 check-in — for habituation curves).
+    // Pilot (082): "qualtrics" (survey launches / finished taps), "app_events"
+    // (screen views, app state, client errors, forfeit-notice events) and
+    // "withdrawals" (Study ID + dates only). Every dataset is keyed by Study ID.
     const dataset = searchParams.get("dataset") || "participants";
 
     if (!studyId) throw new ApiError(400, "study_id required");
@@ -34,7 +42,13 @@ export async function GET(request: NextRequest) {
           ? await generateEventsExport({ studyId, format })
           : dataset === "storylines"
             ? await generateStorylineEventsExport({ studyId, format })
-            : await generateResearchExport({ studyId, format });
+            : dataset === "qualtrics"
+              ? await generateQualtricsExport({ studyId, format })
+              : dataset === "app_events"
+                ? await generateAppEventsExport({ studyId, format })
+                : dataset === "withdrawals"
+                  ? await generateWithdrawalsExport({ studyId, format })
+                  : await generateResearchExport({ studyId, format });
 
     if (!content) {
       throw new ApiError(404, "No data found for this study");

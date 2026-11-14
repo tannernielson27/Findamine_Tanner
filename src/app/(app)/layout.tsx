@@ -1,3 +1,4 @@
+import TelemetryProvider from "@/components/telemetry/telemetry-provider";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
@@ -113,6 +114,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           live in the Profile tab (showPrivacyProfileRow). */}
       <TopBar user={profile ? { ...profile, privacy_friction: privacyFriction } : null} />
       {profile && <Onboarding role={profile.role} />}
+      {/* Screen views, app foreground/background and client errors. Study
+          data: only research-eligible adults; the server also drops events
+          from anyone who is not an active, consented participant. */}
+      {profile && researchEligible && <TelemetryProvider />}
       {/* Research-consent gate: adults only. Children, teens, under-18s by date
           of birth, and staff never see it (researchEligibility). */}
       {profile && researchEligible && <ConsentGate needsDateOfBirth={needsDateOfBirth} />}

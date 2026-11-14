@@ -14,6 +14,9 @@ import {
 /** `notifications.type` written by the survey reminder cron (survey-delivery.ts). */
 const SURVEY_REMINDER_TYPE = "survey_reminder";
 const SURVEYS_PATH = "/surveys";
+/** `notifications.type` written when a Qualtrics survey opens (qualtrics-surveys.ts). */
+const STUDY_SURVEY_TYPE = "study_survey";
+const STUDY_PAGE_PATH = "/settings/study";
 
 interface Notification {
   id: string;
@@ -177,6 +180,13 @@ export default function NotificationBell() {
       if (!n.read) await handleMarkRead(n.id);
       setOpen(false);
       router.push(SURVEYS_PATH);
+      return;
+    }
+    if (n.type === STUDY_SURVEY_TYPE) {
+      // A Qualtrics survey is open: the study page has the link and Study ID.
+      if (!n.read) await handleMarkRead(n.id);
+      setOpen(false);
+      router.push(STUDY_PAGE_PATH);
       return;
     }
     if (n.type !== PRIVACY_CHECKIN_TYPE) {

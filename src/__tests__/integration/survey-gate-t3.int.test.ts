@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { installDouble, daysAgo } from "@/__tests__/support/supabase-double";
 
+// These tests exercise the in-app survey engine, which is switched off for the
+// pilot (Qualtrics is the source of record); turn it back on for them.
+vi.mock("@/lib/research/study-config", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/research/study-config")>()),
+  IN_APP_SURVEYS_ENABLED: true,
+}));
+
 vi.mock("@/lib/supabase/server", async () => {
   const m = await import("@/__tests__/support/supabase-double");
   return {

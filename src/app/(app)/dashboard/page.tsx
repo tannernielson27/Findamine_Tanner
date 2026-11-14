@@ -5,6 +5,7 @@ import { getAuthId, getViewerRow } from "@/lib/auth/viewer";
 import { HUNT_CREATOR_ROLES } from "@/components/layout/nav-links";
 import { ResumeCard } from "@/components/home/resume-card";
 import { WeeklyCard } from "@/components/home/weekly-card";
+import { StudySurveyCard } from "@/components/home/study-survey-card";
 import { NearYou, NearYouSkeleton } from "@/components/home/near-you";
 import { FriendsActivity } from "@/components/home/friends-activity";
 import { YourHunts } from "@/components/home/your-hunts";
@@ -36,6 +37,7 @@ export default async function HomePage() {
   return (
     <main className="mx-auto max-w-3xl pb-4">
       <ResumeCard />
+      <StudySurveyCard />
       <WeeklyCard />
       <Suspense fallback={<NearYouSkeleton />}>
         <NearYouSection band={band} role={profile.role} />

@@ -8,6 +8,9 @@ const DATASETS = [
   { key: "trajectory", label: "Trajectory", desc: "One row per privacy-index snapshot" },
   { key: "events", label: "Events", desc: "One row per raw privacy event" },
   { key: "storylines", label: "Storylines", desc: "One row per notice / check-in" },
+  { key: "qualtrics", label: "Qualtrics launches", desc: "One row per survey opened / finished tap" },
+  { key: "app_events", label: "App events", desc: "Screen views, app state, errors, forfeit notice" },
+  { key: "withdrawals", label: "Withdrawals", desc: "Study ID and dates only" },
 ] as const;
 
 const FORMATS = ["csv", "tsv", "json"] as const;

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { fetchMe, invalidateMe } from "@/lib/hooks/use-me";
 import Link from "next/link";
-import { Settings, RefreshCw, Shield, BookOpen, Users, Ban, FileText } from "lucide-react";
+import { Settings, RefreshCw, Shield, BookOpen, Users, Ban, FileText, ClipboardList } from "lucide-react";
 import { restartOnboardingTour } from "@/components/layout/onboarding";
 import { PRIVACY_PATH, TERMS_PATH } from "@/lib/constants/legal";
 import DeleteAccountSection from "./delete-account-section";
@@ -167,6 +167,14 @@ export default function SettingsPage() {
         >
           <Users className="w-4 h-4" />
           Join a class with a code
+        </Link>
+
+        <Link
+          href="/settings/study"
+          className="flex items-center gap-2 text-sm text-brand hover:underline font-medium"
+        >
+          <ClipboardList className="w-4 h-4" />
+          Your study: Study ID and surveys
         </Link>
 
         <Link

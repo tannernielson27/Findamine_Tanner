@@ -12,6 +12,8 @@ import {
   expireStaleDeliveries,
   sendSurveyReminders,
 } from "@/lib/services/survey-delivery";
+import { notifyOpenSurveyWaves } from "@/lib/services/qualtrics-surveys";
+import { IN_APP_SURVEYS_ENABLED } from "@/lib/research/study-config";
 
 export const maxDuration = 60;
 
@@ -29,6 +31,23 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Qualtrics waves (the pilot's source of record): one bell item per open wave.
+  let studySurveyNotices = 0;
+  let studySurveyError: string | null = null;
+  try {
+    studySurveyNotices = await notifyOpenSurveyWaves();
+  } catch (err) {
+    studySurveyError = err instanceof Error ? err.message : String(err);
+    console.error(`[cron/survey-deliveries] study survey notifications failed: ${studySurveyError}`);
+  }
+
+  if (!IN_APP_SURVEYS_ENABLED) {
+    return Response.json(
+      { in_app_surveys: "disabled", study_survey_notices: studySurveyNotices, study_survey_error: studySurveyError },
+      { status: studySurveyError ? 500 : 200 }
+    );
+  }
+
   const supabase = await createSupabaseServiceClient();
 
   const { data: enrollments } = await supabase
@@ -44,10 +63,15 @@ export async function GET(request: NextRequest) {
   const expired = await expireStaleDeliveries();
   const reminders = await sendSurveyReminders();
 
-  return Response.json({
-    participants: (enrollments || []).length,
-    deliveries_created: created,
-    deliveries_expired: expired,
-    reminders_sent: reminders,
-  });
+  return Response.json(
+    {
+      participants: (enrollments || []).length,
+      deliveries_created: created,
+      deliveries_expired: expired,
+      reminders_sent: reminders,
+      study_survey_notices: studySurveyNotices,
+      study_survey_error: studySurveyError,
+    },
+    { status: studySurveyError ? 500 : 200 }
+  );
 }

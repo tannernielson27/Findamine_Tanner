@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { Compass } from "lucide-react";
 import { logger } from "@/lib/utils/logger";
+import { logClientError } from "@/lib/telemetry/client-events";
 
 // Boundary for every signed-in page. It sits inside (app)/layout.tsx, so the
 // navbar (and with it the way to Privacy, Settings and Sign out) stays on
@@ -24,6 +25,8 @@ export default function AppError({
       digest: error.digest,
       stack: error.stack,
     });
+    // Also to the server, so crashes on participants' phones are visible.
+    logClientError("route_error", error, window.location.pathname);
   }, [error]);
 
   return (

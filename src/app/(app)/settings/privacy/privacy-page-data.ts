@@ -4,6 +4,7 @@
  */
 
 import type { Scheme, SchemeSelectionState } from "@/lib/utils/scheme-selection";
+import { IN_APP_SURVEYS_ENABLED } from "@/lib/research/study-config";
 import {
   PROFILE_FIELD_KEYS,
   isVisibilityLevel,
@@ -137,6 +138,9 @@ export function pickSurveyGate(
  * Non-participants get none.
  */
 export async function fetchSurveyGate(timepoints: readonly string[]): Promise<SurveyGate | null> {
+  // In-app surveys are off for the pilot (Qualtrics is the source of record),
+  // so Save is never gated on one.
+  if (!IN_APP_SURVEYS_ENABLED) return null;
   try {
     const res = await fetch("/api/v1/surveys/trigger", {
       method: "POST",

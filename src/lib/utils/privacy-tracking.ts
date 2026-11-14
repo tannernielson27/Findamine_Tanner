@@ -13,6 +13,7 @@ import {
   VISIBILITY_LABELS,
   type VisibilityLevel,
 } from "@/lib/utils/privacy";
+import { eventEnvelope } from "@/lib/telemetry/envelope";
 
 // Ordinal restrictiveness: higher = more private. Unset is treated as "everyone".
 const ORDINAL: Record<VisibilityLevel, number> = {
@@ -116,10 +117,24 @@ export interface PrivacyEventPayload {
 /** Fire-and-forget POST to the privacy-events endpoint. Never throws. */
 export async function logPrivacyEvent(payload: PrivacyEventPayload): Promise<void> {
   try {
+    // App session / platform / app version ride in metadata (pilot envelope);
+    // the page's own per-visit session_id is unchanged.
+    const envelope = await eventEnvelope().catch(() => null);
+    const body = envelope
+      ? {
+          ...payload,
+          metadata: {
+            ...(payload.metadata ?? {}),
+            app_session_id: envelope.session_id,
+            platform: envelope.platform,
+            app_version: envelope.app_version,
+          },
+        }
+      : payload;
     await fetch("/api/v1/research/privacy-events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
       keepalive: true, // survive page unload (abandonment events)
     });
   } catch {
