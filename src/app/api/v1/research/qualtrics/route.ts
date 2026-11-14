@@ -2,14 +2,15 @@ import { NextRequest } from "next/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { generalLimiter } from "@/lib/utils/rate-limit";
 import { isQualtricsWave } from "@/lib/research/qualtrics";
-import { getParticipantSurveys, recordQualtricsAction } from "@/lib/services/qualtrics-surveys";
+import { getParticipantSurveys, isStudyRunning, recordQualtricsAction } from "@/lib/services/qualtrics-surveys";
 
 /**
  * The CURRENT participant's Study ID and Qualtrics surveys (pilot 2026-11).
  * Self-scoped: there is no user parameter. Non-participants get
  * `{ enrolled: false }` and never see a Study ID.
  *
- * GET  → { enrolled, participant_code, waves: [{ wave, title, minutes, status, opens_at, url }] }
+ * GET  → { enrolled, study_running, participant_code, waves: [{ wave, title, minutes, status, opens_at, url }] }
+ *      study_running: any study is active (Settings hides the /debrief link then).
  * POST { wave, action: "launched" | "marked_done", platform?, app_version? }
  *      Records that a link was opened, or that the participant says they finished.
  */
@@ -27,10 +28,11 @@ export async function GET(request: NextRequest) {
     if (!user) throw new ApiError(401, "Not authenticated");
     await generalLimiter.check(request, user.id);
 
-    const surveys = await getParticipantSurveys(user.id);
-    if (!surveys) return Response.json({ enrolled: false });
+    const [surveys, studyRunning] = await Promise.all([getParticipantSurveys(user.id), isStudyRunning()]);
+    if (!surveys) return Response.json({ enrolled: false, study_running: studyRunning });
     return Response.json({
       enrolled: true,
+      study_running: studyRunning,
       participant_code: surveys.participantCode,
       waves: surveys.waves.map((w) => ({
         wave: w.wave,

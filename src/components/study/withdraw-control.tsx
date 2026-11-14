@@ -9,7 +9,7 @@ type WithdrawOutcome = "withdrawn" | "already_withdrawn" | "not_enrolled";
  * says exactly what withdrawing does: study data collection stops AND the
  * participant's crew links are removed (POST /api/v1/research/withdraw).
  *
- * Debrief-local successor to components/research/withdraw-button.tsx, which
+ * Used on /debrief and /settings/study. Successor to components/research/withdraw-button.tsx, which
  * told participants they could "keep playing normally" while the route removed
  * their crew, and stayed disabled after a network error.
  */

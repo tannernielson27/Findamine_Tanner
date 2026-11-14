@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BookOpen, ArrowLeft } from "lucide-react";
-import WithdrawControl from "./withdraw-control";
+import WithdrawControl from "@/components/study/withdraw-control";
 import { createSupabaseServerClient, createSupabaseServiceClient } from "@/lib/supabase/server";
 import {
   getParticipantConditions,

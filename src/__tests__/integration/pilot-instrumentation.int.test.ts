@@ -10,7 +10,7 @@ vi.mock("@/lib/supabase/server", async () => {
 });
 
 import { enrollParticipant } from "@/lib/services/enrollment";
-import { getParticipantSurveys, notifyOpenSurveyWaves } from "@/lib/services/qualtrics-surveys";
+import { getParticipantSurveys, isStudyRunning, notifyOpenSurveyWaves } from "@/lib/services/qualtrics-surveys";
 
 const STUDY = "study-1";
 const D_DEFAULT = "dim-default";
@@ -114,5 +114,14 @@ describe("Qualtrics surveys against the Supabase double", () => {
     const notes = db.table("notifications");
     expect(notes.every((n) => n.user_id === "u1" && n.type === "study_survey")).toBe(true);
     expect(notes.map((n) => n.title).sort()).toEqual(["First check-in is ready", "Week 2 check-in is ready"]);
+  });
+});
+
+describe("study running flag (hides the /debrief link in Settings)", () => {
+  it("is true while a study is active and false once none is", async () => {
+    installDouble({ treatment_studies: [{ id: STUDY, status: "active" }] });
+    expect(await isStudyRunning()).toBe(true);
+    installDouble({ treatment_studies: [{ id: STUDY, status: "completed" }] });
+    expect(await isStudyRunning()).toBe(false);
   });
 });

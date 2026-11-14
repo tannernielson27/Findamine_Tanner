@@ -141,6 +141,15 @@ export async function loadSurveyStates(
 }
 
 /** Survey list for the participant's study page; null for non-participants. */
+/**
+ * True while any study is running. The Settings link to /debrief is hidden
+ * then: the debrief describes the conditions and would bias participants.
+ */
+export async function isStudyRunning(): Promise<boolean> {
+  const supabase = await createSupabaseServiceClient();
+  return (await activeStudyIds(supabase)).length > 0;
+}
+
 export async function getParticipantSurveys(userId: string): Promise<ParticipantSurveys | null> {
   const supabase = await createSupabaseServiceClient();
   const enrollment = await getActiveEnrollment(supabase, userId);

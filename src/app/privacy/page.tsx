@@ -208,7 +208,7 @@ export default function PrivacyPolicyPage() {
             debrief explains this in full.</li>
           <li>Study data is used only for the research and is reported for the group as a whole,
             never in a way that identifies you.</li>
-          <li>You can withdraw at any time from the study debrief page in the app, or by contacting
+          <li>You can withdraw at any time in the app under Settings → Your study, or by contacting
             us. Study data collection stops from that point.</li>
         </ul>
         <p>If you do not consent, no study data is collected about you.</p>

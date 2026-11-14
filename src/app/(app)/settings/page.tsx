@@ -17,6 +17,21 @@ export default function SettingsPage() {
   const [loadFailed, setLoadFailed] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [tourRestarted, setTourRestarted] = useState(false);
+  // null until known: the debrief link stays hidden unless the study is known to be over.
+  const [studyRunning, setStudyRunning] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/v1/research/qualtrics")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { study_running?: unknown } | null) => {
+        if (!cancelled && typeof data?.study_running === "boolean") setStudyRunning(data.study_running);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     // A retry must not be answered from the cache.
@@ -177,13 +192,16 @@ export default function SettingsPage() {
           Your study: Study ID and surveys
         </Link>
 
-        <Link
-          href="/debrief"
-          className="flex items-center gap-2 text-sm text-brand hover:underline font-medium"
-        >
-          <BookOpen className="w-4 h-4" />
-          About this research study
-        </Link>
+        {/* Hidden while a study runs: the debrief describes the conditions. */}
+        {studyRunning === false && (
+          <Link
+            href="/debrief"
+            className="flex items-center gap-2 text-sm text-brand hover:underline font-medium"
+          >
+            <BookOpen className="w-4 h-4" />
+            About this research study
+          </Link>
+        )}
 
         <Link
           href="/settings/blocked"

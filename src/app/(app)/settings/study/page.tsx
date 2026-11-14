@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, ClipboardList, Copy, Check, ExternalLink } from "lucide-react";
 import { useStudySurveys, type StudyWave } from "@/components/study/use-study-surveys";
 import { CONTACT_EMAIL } from "@/lib/constants/legal";
+import WithdrawControl from "@/components/study/withdraw-control";
 
 /**
  * "Your study": the participant's Study ID and their Qualtrics surveys
@@ -72,6 +73,16 @@ export default function StudyPage() {
                   <WaveRow key={w.wave} wave={w} onOpen={openWave} onDone={markDone} />
                 ))}
             </ul>
+          </section>
+          <section
+            aria-labelledby="leave-heading"
+            className="rounded-2xl bg-white border border-gray-100 shadow-sm p-6 space-y-2"
+          >
+            <h2 id="leave-heading" className="font-[family-name:var(--font-display)] font-semibold text-gray-900">
+              Leaving the study
+            </h2>
+            <p className="text-sm text-gray-600">You can stop taking part at any time.</p>
+            <WithdrawControl />
           </section>
           <p className="text-xs text-gray-500">
             Questions? Email{" "}
