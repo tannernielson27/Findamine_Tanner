@@ -54,6 +54,7 @@ export function useStopFlow(
   celebration: CelebrationControls
 ): StopFlow {
   const { finds, currentIndex, setCurrentIndex, completedFinds, setCompletedFinds, setSessionScore, huntMeta, finishHunt } = session;
+  const { delivery, setClueBoardOpen } = session;
   const { celebrate } = celebration;
   const currentFind = finds[currentIndex];
 
@@ -221,8 +222,10 @@ export function useStopFlow(
   const handleCaptureSkip = useCallback(() => setStep("feedback"), []);
 
   const handleNextFind = useCallback(() => {
-    if (currentIndex < finds.length - 1) setCurrentIndex(currentIndex + 1);
-  }, [currentIndex, finds.length, setCurrentIndex]);
+    // All clues at once: back to the list to pick the next one.
+    if (delivery === "all_at_once") setClueBoardOpen(true);
+    else if (currentIndex < finds.length - 1) setCurrentIndex(currentIndex + 1);
+  }, [delivery, setClueBoardOpen, currentIndex, finds.length, setCurrentIndex]);
 
   const handlePreviousFind = useCallback(() => {
     setCurrentIndex(Math.max(0, currentIndex - 1));

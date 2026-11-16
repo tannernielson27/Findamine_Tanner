@@ -35,8 +35,12 @@ export interface HuntMetadata {
   growth_only_feedback?: boolean;
   scoring_mode?: string;
   preset?: string;
-  /** Each player gets the stops in their own random order (lib/play/stop-order). */
+  /** Legacy: each player gets their own random order. Read via lib/play/clue-delivery. */
   shuffle_stops?: boolean;
+  /** How clues are handed out (lib/play/clue-delivery). */
+  clue_delivery?: string;
+  /** assigned_order: the creator's orders of find ids. */
+  clue_orders?: string[][];
 }
 
 export interface HotCold {

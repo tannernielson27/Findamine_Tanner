@@ -1,10 +1,11 @@
 "use client";
 
-import { Lightbulb, Pause } from "lucide-react";
+import { LayoutList, Lightbulb, Pause } from "lucide-react";
 import { IconButton, IconLink } from "@/components/ui/icon-button";
 import { ProgressSegments } from "@/components/ui/progress";
 import { PlayMoreMenu } from "@/components/play/play-more-menu";
-import { ShuffleBadge } from "@/components/hunts/shuffle-badge";
+import { ClueDeliveryBadge, ShuffleBadge } from "@/components/hunts/shuffle-badge";
+import type { ClueDelivery } from "@/lib/play/clue-delivery";
 
 interface PlayHudProps {
   stopNumber: number;
@@ -12,6 +13,10 @@ interface PlayHudProps {
   completedStops: number;
   /** The hunt shuffles stop order per player: show the "Shuffled" marker. */
   shuffled?: boolean;
+  /** The hunt's clue delivery; when given it picks the marker instead of `shuffled`. */
+  delivery?: ClueDelivery;
+  /** All clues at once: opens the list of open clues (replaces the stop count). */
+  onShowClues?: (() => void) | null;
   /** Clue hint: null hides the button (steps without a clue hint). */
   hint: { available: boolean; onRequest: () => void } | null;
   /** "More" menu: Previous stop (null on the first stop) and Report a problem. */
@@ -23,7 +28,21 @@ interface PlayHudProps {
  * this is a pause, not a quit), stop progress, the clue-hint button, and the
  * "More" menu. Stays usable while a step sheet is open.
  */
-export function PlayHud({ stopNumber, totalStops, completedStops, shuffled = false, hint, more }: PlayHudProps) {
+export function PlayHud({
+  stopNumber,
+  totalStops,
+  completedStops,
+  shuffled = false,
+  delivery,
+  onShowClues = null,
+  hint,
+  more,
+}: PlayHudProps) {
+  const marker = delivery ? (
+    <ClueDeliveryBadge mode={delivery} variant="compact" />
+  ) : (
+    shuffled && <ShuffleBadge variant="compact" />
+  );
   return (
     <div className="flex items-center gap-2.5">
       <IconLink href="/dashboard" label="Pause hunt" tone="floating" size="lg" className="bg-white text-ink">
@@ -32,10 +51,21 @@ export function PlayHud({ stopNumber, totalStops, completedStops, shuffled = fal
 
       <div className="flex h-[52px] min-w-0 flex-1 flex-col justify-center gap-1.5 rounded-full bg-white px-[18px] text-ink shadow-raised">
         <span className="flex items-center justify-between gap-2">
-          <span className="text-sm font-bold tabular-nums">
-            Stop {stopNumber} of {totalStops}
-          </span>
-          {shuffled && <ShuffleBadge variant="compact" />}
+          {onShowClues ? (
+            <button
+              type="button"
+              onClick={onShowClues}
+              className="inline-flex items-center gap-1.5 text-sm font-bold tabular-nums underline-offset-2 hover:underline"
+            >
+              <LayoutList className="h-4 w-4" strokeWidth={2.4} aria-hidden="true" />
+              All clues · {completedStops} of {totalStops} found
+            </button>
+          ) : (
+            <span className="text-sm font-bold tabular-nums">
+              Stop {stopNumber} of {totalStops}
+            </span>
+          )}
+          {!onShowClues && marker}
         </span>
         <ProgressSegments total={totalStops} done={completedStops} current={stopNumber} height={5} className="gap-[3px]" />
       </div>

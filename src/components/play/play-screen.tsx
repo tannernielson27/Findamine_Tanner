@@ -11,6 +11,7 @@ import { ThumbZone } from "@/components/play/thumb-zone";
 import { ChallengeSheet } from "@/components/play/challenge-sheet";
 import { StopResults } from "@/components/play/stop-results";
 import { PrimeStep, ReadingCheckStep } from "@/components/play/steps/prime-step";
+import { ClueBoard } from "@/components/play/clue-board";
 import { useWakeLock } from "@/lib/play/use-wake-lock";
 import { useHeatHaptics, useOnlineStatus } from "@/lib/play/use-play-feedback";
 import type { PlaySession } from "@/lib/play/use-play-session";
@@ -30,7 +31,7 @@ interface PlayScreenProps {
  * No app chrome; the screen stays awake while it is mounted.
  */
 export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps) {
-  const { finds, currentIndex, completedFinds, huntMeta } = session;
+  const { finds, currentIndex, completedFinds, huntMeta, delivery, clueBoardOpen, setClueBoardOpen } = session;
   const { step, hotCold, gpsStatus, userPos, locationConsent, error, setError, hints } = flow;
   const currentFind = finds[currentIndex];
   const stopNumber = currentIndex + 1;
@@ -41,6 +42,20 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
   const gpsOk = gpsStatus === "waiting" || gpsStatus === "active";
   const sheetOpen = step === "prime" || step === "reading_check" || step === "challenge";
   const resultsOpen = step === "capture" || step === "feedback";
+  // All clues at once: the player picks the active clue from a list, and the
+  // last stop is whichever one finishes the set.
+  const allAtOnce = delivery === "all_at_once";
+  const boardOpen = allAtOnce && clueBoardOpen;
+  const currentOpen = !!currentFind && !completedFinds.has(currentFind.id);
+  const isLastStop = allAtOnce
+    ? finds.every((f) => f.id === currentFind?.id || completedFinds.has(f.id))
+    : currentIndex === finds.length - 1;
+  const onPrevious = !allAtOnce && currentIndex > 0 ? flow.handlePreviousFind : null;
+  const pickClue = (findId: string) => {
+    const index = finds.findIndex((f) => f.id === findId);
+    if (index >= 0) session.setCurrentIndex(index);
+    setClueBoardOpen(false);
+  };
   const target = currentFind?.locations
     ? { lat: currentFind.locations.latitude, lng: currentFind.locations.longitude }
     : null;
@@ -68,10 +83,11 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
           stopNumber={stopNumber}
           totalStops={finds.length}
           completedStops={completedFinds.size}
-          shuffled={huntMeta.shuffle_stops === true}
+          delivery={delivery}
+          onShowClues={allAtOnce ? () => setClueBoardOpen(true) : null}
           hint={hudHint}
           more={{
-            onPrevious: currentIndex > 0 ? flow.handlePreviousFind : null,
+            onPrevious,
             reportTargetId: currentFind?.id || String(huntId),
             resetKey: `${currentFind?.id ?? currentIndex}:${step}`,
           }}
@@ -91,7 +107,17 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
         )}
       </div>
 
-      {(step === "clue" || navigating) && <ThumbZone find={currentFind} flow={flow} />}
+      {(step === "clue" || navigating) && !boardOpen && <ThumbZone find={currentFind} flow={flow} />}
+
+      {boardOpen && (
+        <ClueBoard
+          finds={finds}
+          completedFinds={completedFinds}
+          activeId={currentOpen ? currentFind?.id ?? null : null}
+          onPick={pickClue}
+          onClose={currentOpen ? () => setClueBoardOpen(false) : null}
+        />
+      )}
 
       {step === "prime" && currentFind?.primers && (
         <PrimeStep stopNumber={stopNumber} primer={currentFind.primers} onReady={flow.handlePrimeViewed} errorSlot={sheetBanners} />
@@ -117,7 +143,7 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
           stopNumber={stopNumber}
           totalStops={finds.length}
           completedStops={completedFinds.size}
-          isLastStop={currentIndex === finds.length - 1}
+          isLastStop={isLastStop}
           phase={step === "capture" ? "capture" : "feedback"}
           score={flow.score}
           hideScores={!!huntMeta.hide_scores}
@@ -132,7 +158,7 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
           onSkipPhoto={flow.handleCaptureSkip}
           onNext={flow.handleNextFind}
           onFinish={flow.handleFinishHunt}
-          onPrevious={currentIndex > 0 ? flow.handlePreviousFind : null}
+          onPrevious={onPrevious}
           onDismissError={() => setError(null)}
           onError={setError}
         />

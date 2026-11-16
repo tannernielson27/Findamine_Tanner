@@ -14,8 +14,8 @@ import { IconLink } from "@/components/ui/icon-button";
 import { Tag } from "@/components/ui/chip";
 import { ShareButton } from "@/components/explore/share-button";
 import { StatRow } from "@/components/explore/stat-row";
-import { ShuffleBadge } from "@/components/hunts/shuffle-badge";
-import { isShuffled } from "@/lib/play/stop-order";
+import { ClueDeliveryBadge } from "@/components/hunts/shuffle-badge";
+import { readClueDelivery } from "@/lib/play/clue-delivery";
 import { StartMapPreview } from "@/components/explore/start-map-preview";
 import { ChallengeChips, DetailSection, subjectLabel } from "@/components/explore/hunt-detail-parts";
 import { isPubliclyAvailable, isReviewer } from "@/lib/hunts/review";
@@ -79,7 +79,9 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
   const canSeeStops = !!viewer && (viewer.id === hunt.created_by || isReviewer(viewer.role));
 
   const finds = liveFinds(hunt.finds as DetailFind[] | null);
-  const shuffled = isShuffled(hunt.metadata as Record<string, unknown> | null);
+  const delivery = readClueDelivery(hunt.metadata as Record<string, unknown> | null);
+  // Only the creator's fixed order has one starting stop for everyone.
+  const shuffled = delivery !== "fixed_order";
   const start = startArea(finds, hunt.center_latitude, hunt.center_longitude, { shuffled });
   const tags = [
     audienceLabel(hunt.target_audience),
@@ -129,7 +131,7 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
               ))}
               {shuffled && (
                 <li>
-                  <ShuffleBadge />
+                  <ClueDeliveryBadge mode={delivery} />
                 </li>
               )}
             </ul>
@@ -182,8 +184,10 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
             title={shuffled ? "Where it takes place" : "Where it starts"}
             note={
               <p className="text-sm text-themed-muted">
-                {shuffled
-                  ? "Stops come in a random order for each player and stay hidden until you reach them."
+                {delivery === "all_at_once"
+                  ? "Every clue is open from the start, and you choose which stop to work on."
+                  : shuffled
+                  ? "Stops come in a different order for different players and stay hidden until you reach them."
                   : "Later stops stay hidden until you reach them."}
               </p>
             }
@@ -205,7 +209,9 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
             note={
               <p className="text-sm text-themed-muted">
                 Only you and reviewers see the route and clues. Players see the start area.
-                {shuffled && " Shuffled: each player gets these stops in a random order."}
+                {delivery === "random_order" && " Shuffled: each player gets these stops in a random order."}
+                {delivery === "assigned_order" && " Each player is assigned one of your clue orders."}
+                {delivery === "all_at_once" && " Players see every clue at once and pick their own order."}
               </p>
             }
           >

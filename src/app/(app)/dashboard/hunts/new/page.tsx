@@ -6,8 +6,9 @@ import Link from "next/link";
 import LocationPicker from "@/components/maps/location-picker";
 import { HUNT_PRESETS, type HuntPreset } from "@/lib/utils/hunt-presets";
 import { GRADE_BANDS, DEFAULT_GRADE_BAND, gradeBandFor } from "@/lib/utils/grade-bands";
-import { SHUFFLE_STOPS_KEY } from "@/lib/play/stop-order";
-import { ShuffleBadge } from "@/components/hunts/shuffle-badge";
+import { withClueDelivery, type ClueDelivery } from "@/lib/play/clue-delivery";
+import { ClueDeliveryBadge } from "@/components/hunts/shuffle-badge";
+import { ClueDeliveryPicker } from "@/components/hunts/clue-delivery-picker";
 import { DEFAULT_STOP_RADIUS_M } from "@/lib/play/arrival-check";
 
 const SUBJECTS = [
@@ -47,28 +48,17 @@ function placeholderPosition(centerLat: number, centerLng: number, index: number
   };
 }
 
-/** "Shuffle stops" checkbox, shared by the manual and AI forms. */
-function ShuffleToggle({ checked, onChange, id }: { checked: boolean; onChange: (on: boolean) => void; id: string }) {
+/** How clues are given (lib/play/clue-delivery), shared by the manual and AI forms. */
+function ClueDeliveryField({ value, onChange, name }: { value: ClueDelivery; onChange: (mode: ClueDelivery) => void; name: string }) {
   return (
     <div className="rounded-lg border border-gray-200 p-3">
-      <label htmlFor={id} className="flex items-start gap-2 cursor-pointer">
-        <input
-          id={id}
-          type="checkbox"
-          checked={checked}
-          onChange={(e) => onChange(e.target.checked)}
-          className="mt-0.5 rounded accent-sky-600"
-        />
-        <span className="flex-1">
-          <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
-            Shuffle stops
-            {checked && <ShuffleBadge />}
-          </span>
-          <span className="block text-xs text-gray-500 mt-0.5">
-            Each player gets the stops in their own random order. You can change this later in Hunt Settings.
-          </span>
-        </span>
-      </label>
+      <ClueDeliveryPicker name={name} value={value} onChange={onChange} />
+      <p className="text-xs text-gray-500 mt-2">
+        {value === "assigned_order"
+          ? "After adding stops, define the orders under Clue delivery on the hunt page. "
+          : ""}
+        You can change this until the hunt is published or first played; then it is locked.
+      </p>
     </div>
   );
 }
@@ -108,8 +98,8 @@ export default function NewHuntPage() {
   const [audience, setAudience] = useState("all");
   const [playMode, setPlayMode] = useState("solo");
   const [identityMode, setIdentityMode] = useState("codename_assigned");
-  // Each player gets the stops in their own random order (hunt metadata).
-  const [shuffleStops, setShuffleStops] = useState(false);
+  // How clues are handed out (hunt metadata clue_delivery).
+  const [clueDelivery, setClueDelivery] = useState<ClueDelivery>("fixed_order");
   // Set when the AI hunt was created but some of its stops could not be.
   const [partialHuntId, setPartialHuntId] = useState<string | null>(null);
 
@@ -149,10 +139,7 @@ export default function NewHuntPage() {
         estimated_duration_min: form.get("duration") ? parseInt(form.get("duration") as string) : null,
         center_latitude: centerLat,
         center_longitude: centerLng,
-        metadata: {
-          ...(selectedPreset?.settings.metadata ?? {}),
-          ...(shuffleStops ? { [SHUFFLE_STOPS_KEY]: true } : {}),
-        },
+        metadata: withClueDelivery(selectedPreset?.settings.metadata ?? {}, clueDelivery),
       }),
     }).catch(() => null);
 
@@ -234,7 +221,7 @@ export default function NewHuntPage() {
         theme_narrative: aiResult.theme_narrative || null,
         difficulty_progression: aiDifficulty,
         subject_domains: aiSubjects,
-        ...(shuffleStops ? { metadata: { [SHUFFLE_STOPS_KEY]: true } } : {}),
+        metadata: withClueDelivery({}, clueDelivery),
       }, "Failed to create hunt");
       if (!huntData?.hunt?.id) throw new Error("Failed to create hunt: the server returned no hunt");
       huntId = huntData.hunt.id as string;
@@ -401,7 +388,7 @@ export default function NewHuntPage() {
             <label htmlFor="duration" className="block text-sm font-medium text-gray-700">Estimated Duration (minutes)</label>
             <input id="duration" name="duration" type="number" min={5} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500" placeholder="30" />
           </div>
-          <ShuffleToggle id="shuffle_stops" checked={shuffleStops} onChange={setShuffleStops} />
+          <ClueDeliveryField name="clue_delivery" value={clueDelivery} onChange={setClueDelivery} />
           <div>
             <button
               type="button"
@@ -511,7 +498,7 @@ export default function NewHuntPage() {
             <input value={aiTheme} onChange={(e) => setAiTheme(e.target.value)} placeholder="e.g. campus history mystery, heist, nature detective..." className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500" />
           </div>
 
-          <ShuffleToggle id="ai_shuffle_stops" checked={shuffleStops} onChange={setShuffleStops} />
+          <ClueDeliveryField name="ai_clue_delivery" value={clueDelivery} onChange={setClueDelivery} />
 
           <div className="flex gap-3 pt-2">
             <button onClick={handleAIGenerate} disabled={loading || aiSubjects.length === 0} className="rounded-md bg-violet-600 px-6 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50">
@@ -552,7 +539,7 @@ export default function NewHuntPage() {
 
           <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900">
             {aiResult.stops.length} Stops
-            {shuffleStops && <ShuffleBadge />}
+            <ClueDeliveryBadge mode={clueDelivery} />
           </h3>
 
           <div className="space-y-3">

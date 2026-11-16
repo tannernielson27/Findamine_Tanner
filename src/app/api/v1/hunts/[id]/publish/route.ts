@@ -103,7 +103,7 @@ export async function POST(
 
     // Clue delivery locks at publish: assigned orders must each list every stop.
     const delivery = validateClueDelivery(existing.metadata as Record<string, unknown> | null, finds.map((f) => f.id as string));
-    if (!delivery.ok) throw new ApiError(400, `Can't publish yet: ${delivery.error}`);
+    if (!delivery.ok) throw new ApiError(400, `Can't publish yet: ${delivery.error} Check the orders under Clue Delivery and save them.`);
 
     // Screen the author's text before anything goes to a reviewer or a player.
     // PostgREST returns a to-one embed as an object; normalise defensively.

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } 
 import { HttpError, safeFetch } from "@/lib/play/play-api";
 import type { CelebrationControls } from "@/lib/play/use-celebration-state";
 import type { Find, HuntMetadata, HuntSummaryData, StartOptions } from "@/lib/play/play-types";
-import { isShuffled, orderStops } from "@/lib/play/stop-order";
+import { readClueDelivery, sessionStopOrder, type ClueDelivery } from "@/lib/play/clue-delivery";
 
 export interface FinishOptions {
   findsCompleted: number;
@@ -15,6 +15,11 @@ export interface FinishOptions {
 export interface PlaySession {
   finds: Find[];
   huntMeta: HuntMetadata;
+  /** How this hunt hands out clues. */
+  delivery: ClueDelivery;
+  /** all_at_once: the list of open clues, where the player picks one. */
+  clueBoardOpen: boolean;
+  setClueBoardOpen: Dispatch<SetStateAction<boolean>>;
   currentIndex: number;
   setCurrentIndex: Dispatch<SetStateAction<number>>;
   completedFinds: Set<string>;
@@ -47,6 +52,7 @@ function markFirstHuntStarted(): void {
 export function usePlaySession(huntId: string | string[] | undefined, celebration: CelebrationControls): PlaySession {
   const [finds, setFinds] = useState<Find[]>([]);
   const [huntMeta, setHuntMeta] = useState<HuntMetadata>({});
+  const [clueBoardOpen, setClueBoardOpen] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [completedFinds, setCompletedFinds] = useState<Set<string>>(new Set());
   const [sessionScore, setSessionScore] = useState(0);
@@ -114,7 +120,10 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
           throw new HttpError(startRes.status, startBody.error || `HTTP ${startRes.status}`);
         }
         setNeedsCodename(false);
-        const startBody = (await startRes.json().catch(() => ({}))) as { session?: { id?: string } };
+        const startBody = (await startRes.json().catch(() => ({}))) as {
+          session?: { id?: string };
+          clue_order_index?: number | null;
+        };
 
         // Drives the next-steps funnel surfaced after onboarding.
         markFirstHuntStarted();
@@ -131,10 +140,12 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
 
         const findsData = await findsRes.json();
         const progressData = await progressRes.json();
-        // Shuffled hunts: this session's own order, stable across reloads.
-        const allFinds: Find[] = orderStops((findsData.finds || []) as Find[], {
-          shuffle: isShuffled(meta as Record<string, unknown>),
-          seed: startBody.session?.id ?? progressData.session?.id,
+        // This session's order (random or assigned orders differ per player),
+        // stable across reloads. The server enforces the same order.
+        const allFinds: Find[] = sessionStopOrder((findsData.finds || []) as Find[], {
+          huntMetadata: meta as Record<string, unknown>,
+          sessionId: startBody.session?.id ?? progressData.session?.id,
+          orderIndex: startBody.clue_order_index ?? progressData.session?.metadata?.clue_order_index ?? null,
         });
 
         const doneCompletions = (progressData.completions || []).filter(
@@ -160,6 +171,9 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
         const nextIdx = allFinds.findIndex((f: Find) => !completed.has(f.id));
         if (nextIdx >= 0) {
           setCurrentIndex(nextIdx);
+          // All clues at once: start on the list of open clues when there is a choice.
+          const openCount = allFinds.filter((f) => !completed.has(f.id)).length;
+          setClueBoardOpen(readClueDelivery(meta as Record<string, unknown>) === "all_at_once" && openCount > 1);
         } else if (allFinds.length > 0) {
           // Every stop is done but the hunt was never finished (the page was
           // reloaded before "Finish Hunt"). Finish it now so the session is
@@ -195,6 +209,9 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
   return {
     finds,
     huntMeta,
+    delivery: readClueDelivery(huntMeta as Record<string, unknown>),
+    clueBoardOpen,
+    setClueBoardOpen,
     currentIndex,
     setCurrentIndex,
     completedFinds,

@@ -18,6 +18,7 @@ import {
   withClueDelivery,
 } from "@/lib/play/clue-delivery";
 import { orderStops, SHUFFLE_STOPS_KEY } from "@/lib/play/stop-order";
+import { buildActiveHunt } from "@/lib/play/active-hunt-builder";
 
 const stops = Array.from({ length: 5 }, (_, i) => ({ id: `f${i}`, sort_order: i }));
 const findIds = stops.map((f) => f.id);
@@ -229,6 +230,31 @@ describe("sessionStopOrder", () => {
     const input = [...unsorted];
     sessionStopOrder(input, { huntMetadata: { clue_delivery: "random_order" }, sessionId: "s", orderIndex: null });
     expect(ids(input)).toEqual(ids(unsorted));
+  });
+});
+
+describe("active hunt builder with clue delivery", () => {
+  const done = (findId: string) => ({
+    play_session_id: "s1",
+    find_id: findId,
+    arrived_at: null,
+    completed_at: "2026-01-01T00:00:00Z",
+    created_at: null,
+  });
+
+  it("all_at_once: the current stop is the number found plus one", () => {
+    const hunt = { id: "h", title: "T", metadata: { clue_delivery: "all_at_once" } };
+    expect(buildActiveHunt(hunt, "s1", stops, [done("f3")], null).currentStop).toBe(2);
+  });
+
+  it("assigned_order: resumes at the first unfinished stop of the session's group", () => {
+    const hunt = {
+      id: "h",
+      title: "T",
+      metadata: { clue_delivery: "assigned_order", clue_orders: [findIds, ["f4", "f3", "f2", "f1", "f0"]] },
+    };
+    expect(buildActiveHunt(hunt, "s1", stops, [done("f4")], null, 1).currentStop).toBe(2);
+    expect(buildActiveHunt(hunt, "s1", stops, [done("f4")], null, 0).currentStop).toBe(1);
   });
 });
 

@@ -9,8 +9,9 @@ import LocationPicker from "@/components/maps/location-picker";
 import { PublishSafetyCheck } from "@/components/hunts/publish-safety-check";
 import { ReviewStatusNotice } from "@/components/hunts/review-status-notice";
 import { CoverImagePicker } from "@/components/hunts/cover-image-picker";
-import { ShuffleBadge } from "@/components/hunts/shuffle-badge";
-import { isShuffled, SHUFFLE_STOPS_KEY } from "@/lib/play/stop-order";
+import { ClueDeliveryBadge } from "@/components/hunts/shuffle-badge";
+import { ClueDeliverySettings } from "@/components/hunts/clue-delivery-settings";
+import { readClueDelivery, readClueOrders } from "@/lib/play/clue-delivery";
 
 interface HuntDetail {
   id: string;
@@ -29,6 +30,8 @@ interface HuntDetail {
   /** Publish review (migration 073): only "approved" hunts are listed in Discover. */
   review_status?: "not_submitted" | "pending" | "approved" | "rejected";
   review_reason?: string | null;
+  /** Clue delivery can no longer change: the hunt was published or played. */
+  delivery_locked?: boolean;
   finds: FindItem[];
 }
 
@@ -263,7 +266,9 @@ export default function HuntDetailPage() {
   const finds = hunt.finds || [];
   const showEditor = editor.mode !== "closed";
   const unplacedCount = finds.filter((f) => f.metadata?.needs_placement === true).length;
-  const shuffled = isShuffled(hunt.metadata);
+  const delivery = readClueDelivery(hunt.metadata);
+  const deliveryStops = finds.map((f, i) => ({ id: f.id, label: `${i + 1}. ${f.locations?.name || `Stop ${i + 1}`}` }));
+  const deliveryKey = JSON.stringify([delivery, readClueOrders(hunt.metadata), deliveryStops, !!hunt.delivery_locked]);
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-4">
@@ -460,25 +465,6 @@ export default function HuntDetailPage() {
               <span className="text-[11px] text-gray-400">(hides scores, leaderboards, timers)</span>
             </label>
 
-            {/* Shuffle stops */}
-            <label className="flex items-start gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={shuffled}
-                disabled={actionLoading}
-                onChange={(e) => {
-                  const on = e.target.checked;
-                  const metadata = { ...(hunt.metadata || {}), [SHUFFLE_STOPS_KEY]: on };
-                  saveHunt({ metadata }, on ? "Stops will be shuffled for each player." : "Stops will play in your order.");
-                }}
-                className="mt-0.5 rounded accent-sky-600"
-              />
-              <span>
-                <span className="text-sm text-gray-700">Shuffle stops</span>
-                <span className="block text-[11px] text-gray-400">Each player gets the stops in their own random order.</span>
-              </span>
-            </label>
-
             {/* Scoring Mode */}
             <div>
               <label className="block text-xs text-gray-500 mb-1" htmlFor="scoring-mode">Scoring Mode</label>
@@ -501,6 +487,24 @@ export default function HuntDetailPage() {
           </div>
         </details>
       )}
+
+      {/* Clue delivery: shown read-only once the hunt is published or played */}
+      <details className="mb-4">
+        <summary className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer hover:text-gray-900">
+          Clue Delivery
+          <ClueDeliveryBadge mode={delivery} />
+        </summary>
+        <div className="mt-2 rounded-lg border border-gray-200 p-3">
+          <ClueDeliverySettings
+            key={deliveryKey}
+            metadata={hunt.metadata}
+            stops={deliveryStops}
+            locked={!isDraft || !!hunt.delivery_locked}
+            busy={actionLoading}
+            onSave={saveHunt}
+          />
+        </div>
+      </details>
 
       {/* Hunt center point */}
       {isDraft && (
@@ -527,7 +531,7 @@ export default function HuntDetailPage() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="flex items-center gap-2 text-base font-semibold text-gray-900">
             Stops ({finds.length})
-            {shuffled && <ShuffleBadge />}
+            <ClueDeliveryBadge mode={delivery} />
           </h2>
           {isDraft && !showEditor && (
             <button
@@ -539,9 +543,13 @@ export default function HuntDetailPage() {
           )}
         </div>
 
-        {shuffled && finds.length > 1 && (
+        {delivery !== "fixed_order" && finds.length > 1 && (
           <p className="text-xs text-gray-500 mb-3">
-            Players get these stops in a random order. The numbers below are your order, used when shuffle is off.
+            {delivery === "all_at_once"
+              ? "Players see all of these clues at once and choose their own order."
+              : delivery === "assigned_order"
+              ? "Players get one of the orders under Clue Delivery. The numbers below are your order."
+              : "Players get these stops in a random order. The numbers below are your order."}
           </p>
         )}
 
