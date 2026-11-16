@@ -35,19 +35,20 @@ export async function loadClueOrders(
 }
 
 /**
- * The hunt's metadata with its stored orders merged in (assigned_order only;
- * other hunts come back unchanged, without a query). Falls back to orders
- * still sitting in metadata from before the table existed.
+ * The hunt's metadata with its stored orders merged in. The table is the only
+ * source: any stray `clue_orders` left in hunts.metadata (migration 083 moves
+ * and strips them) is dropped, never served. Non-assigned hunts come back
+ * without the key and without a query.
  */
 export async function fullDeliveryMetadata(
   supabase: SupabaseClient,
   hunt: { id: string; metadata?: unknown },
   route: string
 ): Promise<Meta> {
-  const metadata = (hunt.metadata as Meta) ?? null;
+  const metadata = withoutClueOrders((hunt.metadata as Meta) ?? null);
   if (readClueDelivery(metadata) !== "assigned_order") return metadata;
   const stored = await loadClueOrders(supabase, hunt.id, route);
-  return { ...(metadata ?? {}), [CLUE_ORDERS_KEY]: stored ?? readClueOrders(metadata) };
+  return { ...(metadata ?? {}), [CLUE_ORDERS_KEY]: stored ?? [] };
 }
 
 /**

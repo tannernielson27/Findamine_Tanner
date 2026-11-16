@@ -46,6 +46,22 @@ create trigger set_hunt_clue_orders_updated_at
   before update on public.hunt_clue_orders
   for each row execute function public.set_updated_at();
 
+-- Move any orders already saved in hunts.metadata (pre-083 builds of this
+-- feature) into the table, then strip the key so the publicly readable
+-- metadata never carries them. Runs before the lock triggers below exist, so
+-- played or published hunts are moved too. No hunt in production is expected
+-- to have the key; this closes the gap regardless.
+insert into public.hunt_clue_orders (hunt_id, orders)
+select h.id, h.metadata->'clue_orders'
+  from public.hunts h
+ where h.metadata ? 'clue_orders'
+   and jsonb_typeof(h.metadata->'clue_orders') = 'array'
+on conflict (hunt_id) do nothing;
+
+update public.hunts
+   set metadata = metadata - 'clue_orders'
+ where metadata ? 'clue_orders';
+
 -- ── 2. Lock helpers ────────────────────────────────────────────
 create or replace function private.hunt_is_locked(p_hunt_id uuid)
 returns boolean

@@ -169,6 +169,15 @@ describe("start route records clue delivery on the session", () => {
     expect(db.table("play_sessions")[0].metadata).toEqual({ clue_delivery: "assigned_order", clue_order_index: expected });
   });
 
+  it("player never receives clue_orders from /play/start, even with stray ones in metadata", async () => {
+    const orders = [STOPS, ["f2", "f1", "f0"]];
+    seed({ clue_delivery: "assigned_order", clue_orders: [["f1", "f2", "f0"], ["f0", "f2", "f1"]] }, { sessions: [], orders });
+    const body = await (await startHunt(req("POST", "/start", {}), playParams)).json();
+    expect(JSON.stringify(body)).not.toContain("clue_orders");
+    // Only the player's own order, from the table (the stray metadata copy is ignored).
+    expect(body.clue_order).toEqual(orders[body.clue_order_index]);
+  });
+
   it("records only the mode for other modes", async () => {
     const db = seed({ shuffle_stops: true }, { sessions: [] });
     const body = await (await startHunt(req("POST", "/start", {}), playParams)).json();

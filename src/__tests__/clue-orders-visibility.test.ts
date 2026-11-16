@@ -99,6 +99,42 @@ describe("GET /hunts/{id} and assigned clue orders", () => {
   });
 });
 
+describe("player never receives clue_orders", () => {
+  const playerRoles = ["adult", "child", "teen", "teacher", "hunt_creator"];
+
+  it.each(playerRoles)("GET /hunts/{id} as a %s who does not own the hunt", async (role) => {
+    h.user = { id: "someone-else", role };
+    // Worst case: orders in the table AND stray legacy orders in metadata.
+    h.results.hunts = { data: huntRow({ clue_delivery: "assigned_order", clue_orders: ORDERS }), error: null };
+    const res = await get();
+    const text = await res.text();
+    expect(text).not.toContain("clue_orders");
+    expect(text).not.toContain('["f1","f0"]');
+    expect(h.tables).not.toContain("hunt_clue_orders");
+  });
+
+  it("GET /hunts/{id} signed out", async () => {
+    h.user = null;
+    h.results.hunts = { data: huntRow({ clue_delivery: "assigned_order", clue_orders: ORDERS }), error: null };
+    expect(await (await get()).text()).not.toContain("clue_orders");
+  });
+
+  it("GET /hunts catalogue", async () => {
+    h.user = null;
+    h.results.hunts = { data: [huntRow({ clue_delivery: "assigned_order", clue_orders: ORDERS })], error: null };
+    const text = await (await listHunts(new NextRequest("http://localhost:3000/api/v1/hunts"))).text();
+    expect(text).not.toContain("clue_orders");
+  });
+
+  it("even the owner is never served stray orders from metadata: only the table counts", async () => {
+    h.user = { id: "creator", role: "teacher" };
+    h.results.hunts = { data: huntRow({ clue_delivery: "assigned_order", clue_orders: ORDERS }), error: null };
+    h.results.hunt_clue_orders = { data: null, error: null };
+    const body = await (await get()).json();
+    expect(body.hunt.metadata.clue_orders).toEqual([]);
+  });
+});
+
 describe("GET /hunts (catalogue)", () => {
   it("strips legacy orders from catalogue rows", async () => {
     h.results.hunts = { data: [huntRow({ clue_delivery: "assigned_order", clue_orders: ORDERS })], error: null };
