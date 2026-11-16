@@ -49,13 +49,13 @@ export async function assertDeliveryEditAllowed(
   if (!result.ok) throw new ApiError(locked ? 409 : 400, result.error);
 }
 
-/** 409 when stops can no longer be added or removed (locked assigned orders). */
+/** 409 when stops can no longer be added, removed or reordered (locked hunt). */
 export async function assertStopSetEditable(
   supabase: SupabaseClient,
-  input: { hunt: { id: string; status: string; metadata: Meta }; route: string }
+  input: { hunt: { id: string; status: string }; route: string }
 ): Promise<void> {
   const { hunt, route } = input;
   const locked = await deliveryLocked(supabase, hunt, route);
-  const result = checkStopSetChange({ locked, metadata: hunt.metadata });
+  const result = checkStopSetChange({ locked });
   if (!result.ok) throw new ApiError(409, result.error);
 }

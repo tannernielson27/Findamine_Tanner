@@ -7,17 +7,19 @@
  * both are checked: a played-then-unpublished draft stays locked. To run a
  * different setting, clone the hunt (the copy is a fresh draft).
  *
- * After the lock, on an assigned_order hunt the set of stops is frozen too
- * (adding or removing a stop would break every order). Other modes keep the
- * app's existing behaviour for stop edits.
+ * After the lock the stops are frozen too, in every mode: no stop can be
+ * added, removed or moved, since any of those changes the order players get
+ * (and would break assigned orders). A stop's own content (clue text, hints,
+ * challenge) can still be edited.
  *
- * The database enforces the same rule for the setting itself (migration 083).
+ * The database enforces the same rules (migration 083).
  *
  * Pure: no I/O, unit tested directly.
  */
 
 import {
   CLUE_DELIVERY_KEY,
+  CLUE_ORDERS_KEY,
   readClueDelivery,
   readClueOrders,
   validateClueDelivery,
@@ -30,7 +32,7 @@ export const DELIVERY_LOCKED_MESSAGE =
   "Clue delivery is locked because this hunt has been published or played. Clone the hunt to use a different setting.";
 
 export const STOPS_LOCKED_MESSAGE =
-  "This hunt uses assigned orders and has been published or played, so stops can't be added or removed. Clone the hunt to change its stops.";
+  "This hunt has been published or played, so its stops can't be added, removed or reordered. Clone the hunt to change its stops.";
 
 export function isDeliveryLocked(hunt: { status: string; hasPlaySessions: boolean }): boolean {
   return hunt.status !== "draft" || hunt.hasPlaySessions;
@@ -67,10 +69,18 @@ export function checkDeliveryEdit(input: {
 }
 
 /** May a stop be added to or removed from this hunt? */
-export function checkStopSetChange(input: { locked: boolean; metadata: Meta }): Check {
-  return input.locked && readClueDelivery(input.metadata) === "assigned_order"
-    ? { ok: false, error: STOPS_LOCKED_MESSAGE }
-    : { ok: true };
+export function checkStopSetChange(input: { locked: boolean }): Check {
+  return input.locked ? { ok: false, error: STOPS_LOCKED_MESSAGE } : { ok: true };
+}
+
+/**
+ * An update that names assigned_order but leaves `clue_orders` out (a client
+ * that never saw them) keeps the stored orders. Returns `after` unchanged
+ * otherwise; never mutates.
+ */
+export function inheritClueOrders<T extends Meta>(before: Meta, after: T): T | Record<string, unknown> {
+  if (!after || readClueDelivery(after) !== "assigned_order" || CLUE_ORDERS_KEY in after) return after;
+  return { ...after, [CLUE_ORDERS_KEY]: readClueOrders(before) };
 }
 
 /** Orders rewritten for a cloned hunt's new stop ids; unknown ids dropped. */

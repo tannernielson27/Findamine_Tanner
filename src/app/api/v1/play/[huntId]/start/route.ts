@@ -13,9 +13,12 @@ import {
   readClueDelivery,
   readClueOrders,
   sessionDeliveryMetadata,
+  type ClueDelivery,
 } from "@/lib/play/clue-delivery";
+import { fullDeliveryMetadata } from "@/lib/hunts/clue-orders-store";
 
 const PLAYABLE_STATUSES = ["published", "enrollment_open", "in_progress"];
+const ROUTE = "/api/v1/play/[huntId]/start";
 
 export async function POST(
   request: NextRequest,
@@ -79,15 +82,14 @@ export async function POST(
 
     // Clue delivery is locked once a hunt is published, so the mode and the
     // player's order group (assigned orders) are fixed for every session.
-    const delivery = deliveryFor(hunt.metadata, huntId, user.id);
+    const delivery = deliveryFor(await fullDeliveryMetadata(supabase, hunt, ROUTE), huntId, user.id);
 
     if (existing) {
       return Response.json({
         session: existing,
         resumed: true,
         identity_mode: hunt.identity_mode,
-        clue_delivery: delivery.mode,
-        clue_order_index: delivery.orderIndex === null ? null : orderIndexFor(existing.metadata, delivery.assignment),
+        ...playerDelivery(delivery, existing.metadata),
       });
     }
 
@@ -186,8 +188,7 @@ export async function POST(
             session: raced,
             resumed: true,
             identity_mode: hunt.identity_mode,
-            clue_delivery: delivery.mode,
-            clue_order_index: delivery.orderIndex,
+            ...playerDelivery(delivery, null),
           });
         }
       }
@@ -201,8 +202,7 @@ export async function POST(
         session,
         resumed: false,
         identity_mode: hunt.identity_mode,
-        clue_delivery: delivery.mode,
-        clue_order_index: delivery.orderIndex,
+        ...playerDelivery(delivery, null),
       },
       { status: 201 }
     );
@@ -212,11 +212,31 @@ export async function POST(
   }
 }
 
+interface Delivery {
+  mode: ClueDelivery;
+  orders: string[][];
+  orderIndex: number | null;
+  assignment: { userId: string; huntId: string; orderCount: number };
+}
+
 /** The hunt's clue delivery mode and this player's assigned order group. */
-function deliveryFor(metadata: unknown, huntId: string, userId: string) {
-  const huntMetadata = (metadata as Record<string, unknown> | null) ?? null;
+function deliveryFor(huntMetadata: Record<string, unknown> | null, huntId: string, userId: string): Delivery {
   const mode = readClueDelivery(huntMetadata);
-  const assignment = { userId, huntId, orderCount: readClueOrders(huntMetadata).length };
-  const orderIndex = mode === "assigned_order" && assignment.orderCount > 0 ? orderIndexFor(null, assignment) : null;
-  return { mode, orderIndex, assignment };
+  const orders = readClueOrders(huntMetadata);
+  const assignment = { userId, huntId, orderCount: orders.length };
+  const orderIndex = mode === "assigned_order" && orders.length > 0 ? orderIndexFor(null, assignment) : null;
+  return { mode, orders, orderIndex, assignment };
+}
+
+/**
+ * What the player is told: the mode and, for assigned orders, their own group
+ * and its order. The hunt's other orders never leave the server.
+ */
+function playerDelivery(delivery: Delivery, sessionMetadata: Record<string, unknown> | null) {
+  const orderIndex = delivery.orderIndex === null ? null : orderIndexFor(sessionMetadata, delivery.assignment);
+  return {
+    clue_delivery: delivery.mode,
+    clue_order_index: orderIndex,
+    clue_order: orderIndex === null ? null : delivery.orders[orderIndex] ?? null,
+  };
 }

@@ -8,8 +8,10 @@ import {
 } from "@/lib/utils/api-auth";
 import { canAccessHunt } from "@/lib/hunts/review";
 import { logger } from "@/lib/utils/logger";
-import { CLUE_ORDERS_KEY, readClueOrders } from "@/lib/play/clue-delivery";
+import { CLUE_ORDERS_KEY, readClueOrders, withoutClueOrders } from "@/lib/play/clue-delivery";
 import { remapClueOrders } from "@/lib/hunts/delivery-lock";
+import { fullDeliveryMetadata, saveClueOrders } from "@/lib/hunts/clue-orders-store";
+import { isReviewer } from "@/lib/hunts/review";
 
 type Row = Record<string, unknown>;
 
@@ -65,6 +67,13 @@ export async function POST(
 
     const { finds, ...sourceHunt } = source as Row & { finds: Row[] | null };
     const huntData = omit(sourceHunt, [...SERVER_MANAGED, ...HUNT_GENERATED, ...HUNT_REVIEW, ...HUNT_MEDIA]);
+    // Assigned clue orders live in their own table and are only for the
+    // source's owner and reviewers: anyone else's copy starts without them.
+    const canSeeOrders = source.created_by === user.id || isReviewer(user.role);
+    const sourceOrders = canSeeOrders
+      ? readClueOrders(await fullDeliveryMetadata(supabase, source as Row & { id: string }, "/api/v1/hunts/[id]/clone"))
+      : [];
+    huntData.metadata = withoutClueOrders((huntData.metadata as Record<string, unknown> | null) ?? null);
 
     const { data: newHunt, error: huntError } = await supabase
       .from("hunts")
@@ -173,7 +182,7 @@ export async function POST(
         }
       }
 
-      await remapClonedOrders(supabase, newHunt as Row, findIdMap, id);
+      await copyClueOrders(supabase, newHunt as Row, sourceOrders, findIdMap);
     } catch (copyError) {
       // Don't leave a half-copied hunt behind looking like a finished clone.
       await supabase.from("hunts").delete().eq("id", newHunt.id);
@@ -186,22 +195,15 @@ export async function POST(
   }
 }
 
-/** Assigned clue orders name stop ids: point the copy's orders at its own stops. */
-async function remapClonedOrders(
+/** Assigned clue orders name stop ids: give the copy the same orders over its own stops. */
+async function copyClueOrders(
   supabase: Awaited<ReturnType<typeof createSupabaseServiceClient>>,
   newHunt: Row,
-  findIdMap: ReadonlyMap<string, string>,
-  sourceId: string
+  orders: string[][],
+  findIdMap: ReadonlyMap<string, string>
 ): Promise<void> {
-  const metadata = (newHunt.metadata as Record<string, unknown> | null) ?? null;
-  const orders = readClueOrders(metadata);
   if (orders.length === 0) return;
-  const { error } = await supabase
-    .from("hunts")
-    .update({ metadata: { ...metadata, [CLUE_ORDERS_KEY]: remapClueOrders(orders, findIdMap) } })
-    .eq("id", newHunt.id as string);
-  if (error) {
-    logger.error("hunt.clone.orders_failed", { huntId: sourceId, error: error.message });
-    throw new ApiError(500, "Couldn't copy the hunt's clue orders. Please try again.");
-  }
+  const metadata = (newHunt.metadata as Record<string, unknown> | null) ?? null;
+  const after = { ...(metadata ?? {}), [CLUE_ORDERS_KEY]: remapClueOrders(orders, findIdMap) };
+  await saveClueOrders(supabase, { huntId: newHunt.id as string, before: null, after, route: "/api/v1/hunts/[id]/clone" });
 }

@@ -12,12 +12,20 @@ import { botGuard } from "@/lib/utils/bot-guard";
 import { internalError } from "@/lib/utils/internal-error";
 import { withoutInternalReviewFields } from "@/lib/hunts/review";
 import { logger } from "@/lib/utils/logger";
+import { withoutClueOrders } from "@/lib/play/clue-delivery";
 
-/** Catalogue rows without review bookkeeping (who reviewed/affirmed, notes). */
+/** Catalogue rows without review bookkeeping (who reviewed/affirmed, notes) or assigned clue orders. */
 function publicRows(rows: unknown): unknown {
   return Array.isArray(rows)
-    ? rows.map((row) => (row && typeof row === "object" ? withoutInternalReviewFields(row as Record<string, unknown>) : row))
+    ? rows.map((row) => (row && typeof row === "object" ? publicRow(row as Record<string, unknown>) : row))
     : rows;
+}
+
+function publicRow(row: Record<string, unknown>): Record<string, unknown> {
+  const clean = withoutInternalReviewFields(row);
+  return "metadata" in clean
+    ? { ...clean, metadata: withoutClueOrders((clean.metadata as Record<string, unknown> | null) ?? null) }
+    : clean;
 }
 
 /**
@@ -156,7 +164,8 @@ export async function POST(request: NextRequest) {
         max_team_size: body.max_team_size || 6,
         identity_mode: body.identity_mode || "codename_assigned",
         is_template: body.is_template || false,
-        metadata: body.metadata || {},
+        // Assigned clue orders are saved on the hunt page (they need stops), never in metadata.
+        metadata: withoutClueOrders(body.metadata || {}),
         theme: body.theme || null,
         theme_narrative: body.theme_narrative || null,
         // Column has a CHECK constraint; anything else falls back to the DB default.

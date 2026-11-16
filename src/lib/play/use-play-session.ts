@@ -123,6 +123,8 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
         const startBody = (await startRes.json().catch(() => ({}))) as {
           session?: { id?: string };
           clue_order_index?: number | null;
+          /** Assigned orders: this player's own order (the hunt's orders stay on the server). */
+          clue_order?: string[] | null;
         };
 
         // Drives the next-steps funnel surfaced after onboarding.
@@ -146,6 +148,7 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
           huntMetadata: meta as Record<string, unknown>,
           sessionId: startBody.session?.id ?? progressData.session?.id,
           orderIndex: startBody.clue_order_index ?? progressData.session?.metadata?.clue_order_index ?? null,
+          ownOrder: startBody.clue_order ?? null,
         });
 
         const doneCompletions = (progressData.completions || []).filter(

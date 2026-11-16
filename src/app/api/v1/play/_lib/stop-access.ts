@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/utils/api-auth";
 import { internalError } from "@/lib/utils/internal-error";
+import { fullDeliveryMetadata } from "@/lib/hunts/clue-orders-store";
 import {
   checkStopAccess,
   orderIndexFor,
@@ -53,7 +54,7 @@ export async function assertStopOpen(supabase: SupabaseClient, input: StopAccess
     if (res.error) throw internalError(route, res.error);
   }
 
-  const huntMetadata = (huntRes.data?.metadata as Record<string, unknown> | null) ?? null;
+  const huntMetadata = await fullDeliveryMetadata(supabase, { id: huntId, metadata: huntRes.data?.metadata }, route);
   const mode = readClueDelivery(huntMetadata);
   const orderCount = readClueOrders(huntMetadata).length;
   const orderIndex = mode === "assigned_order" ? orderIndexFor(sessionMetadata, { userId, huntId, orderCount }) : null;

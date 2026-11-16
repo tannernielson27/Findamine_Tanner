@@ -3,6 +3,7 @@ import {
   checkDeliveryEdit,
   checkStopSetChange,
   deliverySettingsChanged,
+  inheritClueOrders,
   isDeliveryLocked,
   remapClueOrders,
 } from "@/lib/hunts/delivery-lock";
@@ -77,14 +78,35 @@ describe("checkDeliveryEdit", () => {
 });
 
 describe("checkStopSetChange", () => {
-  it("blocks adding or removing stops on a locked assigned_order hunt", () => {
-    const result = checkStopSetChange({ locked: true, metadata: { clue_delivery: "assigned_order", clue_orders: twoOrders } });
-    expect(result.ok).toBe(false);
+  it("freezes the stops of a locked hunt in every mode", () => {
+    for (const clue_delivery of ["all_at_once", "fixed_order", "assigned_order", "random_order"]) {
+      const result = checkStopSetChange({ locked: true });
+      expect(result.ok, clue_delivery).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/published or played/);
+    }
   });
 
-  it("allows it in other modes, or before the lock", () => {
-    expect(checkStopSetChange({ locked: true, metadata: { clue_delivery: "random_order" } }).ok).toBe(true);
-    expect(checkStopSetChange({ locked: false, metadata: { clue_delivery: "assigned_order" } }).ok).toBe(true);
+  it("allows adding, removing and reordering stops before the lock", () => {
+    expect(checkStopSetChange({ locked: false }).ok).toBe(true);
+  });
+});
+
+describe("inheritClueOrders", () => {
+  it("keeps the stored orders when an update leaves clue_orders out", () => {
+    const before = { clue_delivery: "assigned_order", clue_orders: twoOrders };
+    expect(inheritClueOrders(before, { clue_delivery: "assigned_order", hide_scores: true })).toEqual({
+      clue_delivery: "assigned_order",
+      hide_scores: true,
+      clue_orders: twoOrders,
+    });
+  });
+
+  it("leaves explicit orders, and other modes, alone", () => {
+    const after = { clue_delivery: "assigned_order", clue_orders: [["b", "a"], ["a", "b"]] };
+    expect(inheritClueOrders({ clue_orders: twoOrders }, after)).toBe(after);
+    const fixed = { clue_delivery: "fixed_order" };
+    expect(inheritClueOrders({ clue_orders: twoOrders }, fixed)).toBe(fixed);
+    expect(inheritClueOrders({}, null)).toBeNull();
   });
 });
 

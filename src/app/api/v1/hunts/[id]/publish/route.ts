@@ -13,6 +13,7 @@ import { publishLimiter } from "@/lib/utils/rate-limit";
 import { assertTrustedOrigin } from "@/lib/utils/origin";
 import { logger } from "@/lib/utils/logger";
 import { validateClueDelivery } from "@/lib/play/clue-delivery";
+import { fullDeliveryMetadata } from "@/lib/hunts/clue-orders-store";
 
 /**
  * Publish a hunt. For teachers and hunt creators this makes the hunt playable
@@ -102,7 +103,8 @@ export async function POST(
     }
 
     // Clue delivery locks at publish: assigned orders must each list every stop.
-    const delivery = validateClueDelivery(existing.metadata as Record<string, unknown> | null, finds.map((f) => f.id as string));
+    const deliveryMetadata = await fullDeliveryMetadata(supabase, existing, "/api/v1/hunts/[id]/publish");
+    const delivery = validateClueDelivery(deliveryMetadata, finds.map((f) => f.id as string));
     if (!delivery.ok) throw new ApiError(400, `Can't publish yet: ${delivery.error} Check the orders under Clue Delivery and save them.`);
 
     // Screen the author's text before anything goes to a reviewer or a player.

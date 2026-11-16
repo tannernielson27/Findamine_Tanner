@@ -16,6 +16,7 @@ import {
   validateClueDelivery,
   validateClueOrders,
   withClueDelivery,
+  withoutClueOrders,
 } from "@/lib/play/clue-delivery";
 import { orderStops, SHUFFLE_STOPS_KEY } from "@/lib/play/stop-order";
 import { buildActiveHunt } from "@/lib/play/active-hunt-builder";
@@ -91,6 +92,15 @@ describe("withClueDelivery", () => {
     const out = withClueDelivery({}, "assigned_order", orders);
     (out[CLUE_ORDERS_KEY] as string[][])[0].push("x");
     expect(orders).toEqual([["f0", "f1"]]);
+  });
+});
+
+describe("withoutClueOrders", () => {
+  it("drops the creator's orders and keeps everything else, without mutating", () => {
+    const meta = Object.freeze({ clue_delivery: "assigned_order", clue_orders: [["a"]], hide_scores: true });
+    expect(withoutClueOrders(meta)).toEqual({ clue_delivery: "assigned_order", hide_scores: true });
+    expect(meta.clue_orders).toEqual([["a"]]);
+    expect(withoutClueOrders(null)).toBeNull();
   });
 });
 
@@ -224,6 +234,17 @@ describe("sessionStopOrder", () => {
   it("falls back to the creator's order when the assigned group is unusable", () => {
     const meta = { clue_delivery: "assigned_order", clue_orders: [] };
     expect(ids(sessionStopOrder(stops, { huntMetadata: meta, sessionId: "s", orderIndex: 3 }))).toEqual(findIds);
+  });
+
+  it("uses the player's own resolved order when the hunt's orders are hidden", () => {
+    const meta = { clue_delivery: "assigned_order" };
+    const out = sessionStopOrder(stops, { huntMetadata: meta, sessionId: "s", orderIndex: 1, ownOrder: ["f3", "f1", "f0", "f2", "f4"] });
+    expect(ids(out)).toEqual(["f3", "f1", "f0", "f2", "f4"]);
+  });
+
+  it("ignores an own order outside assigned_order", () => {
+    const out = sessionStopOrder(stops, { huntMetadata: {}, sessionId: "s", orderIndex: null, ownOrder: ["f4", "f3"] });
+    expect(ids(out)).toEqual(findIds);
   });
 
   it("never mutates the input", () => {

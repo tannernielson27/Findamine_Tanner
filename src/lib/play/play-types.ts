@@ -39,8 +39,6 @@ export interface HuntMetadata {
   shuffle_stops?: boolean;
   /** How clues are handed out (lib/play/clue-delivery). */
   clue_delivery?: string;
-  /** assigned_order: the creator's orders of find ids. */
-  clue_orders?: string[][];
 }
 
 export interface HotCold {

@@ -19,7 +19,13 @@ import {
 } from "@/lib/hunts/review";
 import { firstFlagged } from "@/lib/hunts/text-filter";
 import { logger } from "@/lib/utils/logger";
-import { assertDeliveryEditAllowed, deliveryLocked } from "../delivery-guard";
+import { assertDeliveryEditAllowed, huntHasPlaySessions } from "../delivery-guard";
+import { inheritClueOrders, isDeliveryLocked } from "@/lib/hunts/delivery-lock";
+import { fullDeliveryMetadata, saveClueOrders, storedMetadata } from "@/lib/hunts/clue-orders-store";
+import { withoutClueOrders } from "@/lib/play/clue-delivery";
+
+const ROUTE = "/api/v1/hunts/[id]";
+type Meta = Record<string, unknown> | null;
 
 export async function GET(
   request: NextRequest,
@@ -59,10 +65,19 @@ export async function GET(
     }
 
     const insider = !!user && (user.id === hunt.created_by || isReviewer(user.role));
-    if (!insider) return Response.json({ hunt: withoutInternalReviewFields(hunt) });
-    // The editor shows clue delivery read-only once it is locked.
-    const delivery_locked = await deliveryLocked(supabase, hunt, "/api/v1/hunts/[id]");
-    return Response.json({ hunt: { ...hunt, delivery_locked } });
+    if (!insider) {
+      // Players never see the creator's assigned orders, only their own (via /play/start).
+      return Response.json({
+        hunt: { ...withoutInternalReviewFields(hunt), metadata: withoutClueOrders(hunt.metadata ?? null) },
+      });
+    }
+    // The editor shows clue delivery and the stop list read-only once locked.
+    const [has_play_sessions, metadata] = await Promise.all([
+      huntHasPlaySessions(supabase, hunt.id, ROUTE),
+      fullDeliveryMetadata(supabase, hunt, ROUTE),
+    ]);
+    const delivery_locked = isDeliveryLocked({ status: hunt.status, hasPlaySessions: has_play_sessions });
+    return Response.json({ hunt: { ...hunt, metadata, delivery_locked, has_play_sessions } });
   } catch (error) {
     return errorResponse(error);
   }
@@ -122,17 +137,18 @@ export async function PUT(
     if (Object.keys(updates).length === 0) {
       throw new ApiError(400, "No editable fields provided");
     }
+    // Clue delivery (and its assigned orders, kept in their own table) is
+    // locked once the hunt is published or played.
+    let delivery: { before: Meta; after: Meta } | null = null;
     if (updates.metadata !== undefined) {
       if (updates.metadata !== null && (typeof updates.metadata !== "object" || Array.isArray(updates.metadata))) {
         throw new ApiError(400, "Hunt settings must be an object");
       }
-      // Clue delivery is locked once the hunt is published or played.
-      await assertDeliveryEditAllowed(supabase, {
-        hunt: { id, status: existing.status },
-        before: existing.metadata as Record<string, unknown> | null,
-        after: updates.metadata as Record<string, unknown> | null,
-        route: "/api/v1/hunts/[id]",
-      });
+      const before = await fullDeliveryMetadata(supabase, { id, metadata: existing.metadata }, ROUTE);
+      const after = inheritClueOrders(before, updates.metadata as Meta) as Meta;
+      await assertDeliveryEditAllowed(supabase, { hunt: { id, status: existing.status }, before, after, route: ROUTE });
+      delivery = { before, after };
+      updates.metadata = storedMetadata(after);
     }
 
     const before: Record<string, unknown> = existing;
@@ -159,6 +175,10 @@ export async function PUT(
     if (error) {
       logger.error("hunt.update_failed", { huntId: id, error: error.message });
       throw new ApiError(500, "Couldn't save the hunt. Please try again.");
+    }
+    if (delivery) {
+      await saveClueOrders(supabase, { huntId: id, before: delivery.before, after: delivery.after, route: ROUTE });
+      hunt.metadata = delivery.after;
     }
 
     // Reviewers approved the old wording and settings (audience, play mode,

@@ -207,7 +207,7 @@ describe("POST /hunts/{id}/clone", () => {
 describe("POST /hunts/{id}/finds", () => {
   it("saves scaffolding_level + clue_hints and orders the stop after the current last one", async () => {
     const made = install({
-      hunts: [ok({ created_by: "teacher-1" })],
+      hunts: [ok({ created_by: "teacher-1", status: "draft" })],
       // Two live stops remain after a delete, but the last one sits at sort_order 5.
       finds: [ok([{ sort_order: 5 }]), ok({ id: "new-find" })],
     });
@@ -233,7 +233,7 @@ describe("POST /hunts/{id}/finds", () => {
 
 describe("DELETE /hunts/{id}/finds/{findId}", () => {
   it("says so when the stop is not part of this hunt", async () => {
-    install({ hunts: [ok({ created_by: "teacher-1" })], finds: [ok([])] });
+    install({ hunts: [ok({ created_by: "teacher-1", status: "draft" })], finds: [ok([])] });
     const res = await deleteFind(req("DELETE", `/api/v1/hunts/${HUNT_ID}/finds/f9`), {
       params: Promise.resolve({ id: HUNT_ID, findId: "f9" }),
     });

@@ -33,14 +33,17 @@ import { POST as clueHint } from "@/app/api/v1/play/[huntId]/clue-hint/route";
 import { POST as startHunt } from "@/app/api/v1/play/[huntId]/start/route";
 import { PUT as updateHunt } from "@/app/api/v1/hunts/[id]/route";
 import { POST as addFind } from "@/app/api/v1/hunts/[id]/finds/route";
-import { DELETE as deleteFind } from "@/app/api/v1/hunts/[id]/finds/[findId]/route";
+import { DELETE as deleteFind, PUT as updateFind } from "@/app/api/v1/hunts/[id]/finds/[findId]/route";
 import { assignOrderIndex } from "@/lib/play/clue-delivery";
 
 const HUNT = "hunt-1";
 const SESSION = "sess-1";
 const STOPS = ["f0", "f1", "f2"];
 
-function seed(huntMetadata: Row, opts: { status?: string; sessions?: Row[]; completions?: Row[] } = {}): SupabaseDouble {
+function seed(
+  huntMetadata: Row,
+  opts: { status?: string; sessions?: Row[]; completions?: Row[]; orders?: string[][] } = {}
+): SupabaseDouble {
   return installDouble({
     hunts: [
       {
@@ -58,10 +61,26 @@ function seed(huntMetadata: Row, opts: { status?: string; sessions?: Row[]; comp
     play_sessions: opts.sessions ?? [
       { id: SESSION, hunt_id: HUNT, user_id: "u1", status: "active", started_at: new Date().toISOString(), metadata: {} },
     ],
-    finds: STOPS.map((id, i) => ({ id, hunt_id: HUNT, sort_order: i, deleted_at: null, clue_hints: ["warmer"] })),
+    finds: STOPS.map((id, i) => ({
+      id, hunt_id: HUNT, sort_order: i, deleted_at: null, clue_hints: ["warmer"],
+      location_id: null, task_id: null, primer_id: null,
+    })),
     find_completions: opts.completions ?? [],
-  });
+    locations: [],
+    tasks: [],
+    primers: [],
+    // Assigned orders live in their own service-role table (migration 083).
+    hunt_clue_orders: opts.orders ? [{ hunt_id: HUNT, orders: opts.orders }] : [],
+  }, { embeds: FIND_EMBEDS, unique: { hunt_clue_orders: [["hunt_id"]] } });
 }
+
+const FIND_EMBEDS = {
+  finds: {
+    locations: { table: "locations", localKey: "location_id" },
+    tasks: { table: "tasks", localKey: "task_id" },
+    primers: { table: "primers", localKey: "primer_id" },
+  },
+};
 
 const done = (findId: string): Row => ({
   id: `c-${findId}`,
@@ -118,8 +137,8 @@ describe("play routes enforce the clue order", () => {
   it("assigned_order: follows the group recorded on the session", async () => {
     const orders = [STOPS, ["f2", "f0", "f1"]];
     seed(
-      { clue_delivery: "assigned_order", clue_orders: orders },
-      { sessions: [{ id: SESSION, hunt_id: HUNT, user_id: "u1", status: "active", started_at: new Date().toISOString(), metadata: { clue_order_index: 1 } }] }
+      { clue_delivery: "assigned_order" },
+      { orders, sessions: [{ id: SESSION, hunt_id: HUNT, user_id: "u1", status: "active", started_at: new Date().toISOString(), metadata: { clue_order_index: 1 } }] }
     );
     expect((await prime("f0")).status).toBe(409);
     expect((await prime("f2")).status).toBe(201);
@@ -136,14 +155,17 @@ describe("play routes enforce the clue order", () => {
 });
 
 describe("start route records clue delivery on the session", () => {
-  it("stores the mode and the player's deterministic order group", async () => {
-    const db = seed({ clue_delivery: "assigned_order", clue_orders: [STOPS, ["f2", "f1", "f0"], ["f1", "f0", "f2"]] }, { sessions: [] });
+  it("stores the mode and the player's deterministic order group, and sends only their own order", async () => {
+    const orders = [STOPS, ["f2", "f1", "f0"], ["f1", "f0", "f2"]];
+    const db = seed({ clue_delivery: "assigned_order" }, { sessions: [], orders });
     const res = await startHunt(req("POST", "/start", {}), playParams);
     expect(res.status).toBe(201);
     const body = await res.json();
     const expected = assignOrderIndex("u1", HUNT, 3);
     expect(body.clue_delivery).toBe("assigned_order");
     expect(body.clue_order_index).toBe(expected);
+    expect(body.clue_order).toEqual(orders[expected]);
+    expect(JSON.stringify(body)).not.toContain("clue_orders");
     expect(db.table("play_sessions")[0].metadata).toEqual({ clue_delivery: "assigned_order", clue_order_index: expected });
   });
 
@@ -151,6 +173,7 @@ describe("start route records clue delivery on the session", () => {
     const db = seed({ shuffle_stops: true }, { sessions: [] });
     const body = await (await startHunt(req("POST", "/start", {}), playParams)).json();
     expect(body.clue_order_index).toBeNull();
+    expect(body.clue_order).toBeNull();
     expect(db.table("play_sessions")[0].metadata).toEqual({ clue_delivery: "random_order" });
   });
 });
@@ -183,7 +206,7 @@ describe("hunt routes lock clue delivery once the hunt begins", () => {
   });
 
   it("allows a valid change on an unplayed draft, and rejects incomplete orders", async () => {
-    seed({}, { status: "draft", sessions: [] });
+    const db = seed({}, { status: "draft", sessions: [] });
     const bad = await updateHunt(
       req("PUT", `/hunts/${HUNT}`, { metadata: { clue_delivery: "assigned_order", clue_orders: [STOPS, ["f0"]] } }),
       huntParams
@@ -194,16 +217,49 @@ describe("hunt routes lock clue delivery once the hunt begins", () => {
       huntParams
     );
     expect(good.status).toBe(200);
+    // The orders go to their own table, never into the publicly readable metadata.
+    expect(db.table("hunts")[0].metadata).toEqual({ clue_delivery: "assigned_order" });
+    expect(db.table("hunt_clue_orders")).toEqual([
+      expect.objectContaining({ hunt_id: HUNT, orders: [STOPS, ["f2", "f1", "f0"]] }),
+    ]);
+    expect((await good.json()).hunt.metadata.clue_orders).toEqual([STOPS, ["f2", "f1", "f0"]]);
   });
 
-  it("blocks adding or removing stops on a locked assigned_order hunt", async () => {
-    seed({ clue_delivery: "assigned_order", clue_orders: [STOPS, ["f2", "f1", "f0"]] }, { status: "draft" });
-    const added = await addFind(req("POST", `/hunts/${HUNT}/finds`, { clue_text: "New" }), huntParams);
-    expect(added.status).toBe(409);
-    expect((await added.json()).error).toMatch(/assigned orders/);
-    const removed = await deleteFind(req("DELETE", `/hunts/${HUNT}/finds/f1`), {
-      params: Promise.resolve({ id: HUNT, findId: "f1" }),
-    });
-    expect(removed.status).toBe(409);
+  it("keeps a locked hunt's orders when an unrelated setting is saved without them", async () => {
+    const orders = [STOPS, ["f2", "f1", "f0"]];
+    const db = seed({ clue_delivery: "assigned_order" }, { status: "draft", orders });
+    const res = await updateHunt(
+      req("PUT", `/hunts/${HUNT}`, { metadata: { clue_delivery: "assigned_order", hide_scores: true } }),
+      huntParams
+    );
+    expect(res.status).toBe(200);
+    expect(db.table("hunt_clue_orders")[0].orders).toEqual(orders);
+  });
+
+  it.each(["fixed_order", "random_order", "assigned_order", "all_at_once"])(
+    "freezes stops on a locked %s hunt: no add, delete or reorder",
+    async (clue_delivery) => {
+      seed({ clue_delivery, clue_orders: [STOPS, ["f2", "f1", "f0"]] }, { status: "draft" });
+      const findParams = { params: Promise.resolve({ id: HUNT, findId: "f1" }) };
+      const added = await addFind(req("POST", `/hunts/${HUNT}/finds`, { clue_text: "New" }), huntParams);
+      expect(added.status).toBe(409);
+      expect((await added.json()).error).toMatch(/published or played/);
+      expect((await deleteFind(req("DELETE", `/hunts/${HUNT}/finds/f1`), findParams)).status).toBe(409);
+      expect((await updateFind(req("PUT", `/hunts/${HUNT}/finds/f1`, { sort_order: 2 }), findParams)).status).toBe(409);
+    }
+  );
+
+  it("still allows editing a stop's text on a locked hunt, and keeping its position", async () => {
+    seed({ clue_delivery: "fixed_order" }, { status: "draft" });
+    const findParams = { params: Promise.resolve({ id: HUNT, findId: "f1" }) };
+    expect((await updateFind(req("PUT", `/hunts/${HUNT}/finds/f1`, { clue_text: "Clearer clue" }), findParams)).status).toBe(200);
+    expect((await updateFind(req("PUT", `/hunts/${HUNT}/finds/f1`, { sort_order: 1 }), findParams)).status).toBe(200);
+  });
+
+  it("allows stop changes on an unplayed draft", async () => {
+    seed({ clue_delivery: "fixed_order" }, { status: "draft", sessions: [] });
+    const findParams = { params: Promise.resolve({ id: HUNT, findId: "f1" }) };
+    expect((await updateFind(req("PUT", `/hunts/${HUNT}/finds/f1`, { sort_order: 0 }), findParams)).status).toBe(200);
+    expect((await deleteFind(req("DELETE", `/hunts/${HUNT}/finds/f1`), findParams)).status).toBe(200);
   });
 });

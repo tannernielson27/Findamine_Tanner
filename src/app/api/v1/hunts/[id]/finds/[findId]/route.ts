@@ -17,6 +17,8 @@ import {
 import { internalError } from "@/lib/utils/internal-error";
 import { assertStopSetEditable } from "../../../delivery-guard";
 
+const ROUTE = "/api/v1/hunts/[id]/finds/[findId]";
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; findId: string }> }
@@ -47,6 +49,21 @@ export async function PUT(
       throw new ApiError(400, "No editable fields provided");
     }
     assertCleanFindText(updates);
+
+    // Moving a stop is a stop-set change: frozen once the hunt is locked.
+    // Re-saving a stop at its current position (the editor does) is fine.
+    if (updates.sort_order !== undefined) {
+      const { data: current } = await supabase
+        .from("finds")
+        .select("sort_order")
+        .eq("id", findId)
+        .eq("hunt_id", id)
+        .is("deleted_at", null)
+        .maybeSingle();
+      if (current && current.sort_order !== updates.sort_order) {
+        await assertStopSetEditable(supabase, { hunt: { id, status: hunt.status }, route: ROUTE });
+      }
+    }
 
     // On a listed hunt, note whether this edit changes what reviewers approved
     // (the finds trigger applies the same rule in the database, and moves a
@@ -99,7 +116,7 @@ export async function DELETE(
     // Verify hunt ownership
     const { data: hunt } = await supabase
       .from("hunts")
-      .select("created_by, status, review_status, metadata")
+      .select("created_by, status, review_status")
       .eq("id", id)
       .is("deleted_at", null)
       .single();
@@ -108,11 +125,8 @@ export async function DELETE(
     if (hunt.created_by !== user.id && !["admin", "researcher"].includes(user.role)) {
       throw new ApiError(403, "You can only delete finds in your own hunts");
     }
-    // Assigned orders list every stop: once the hunt is locked, its stops are too.
-    await assertStopSetEditable(supabase, {
-      hunt: { id, status: hunt.status, metadata: hunt.metadata as Record<string, unknown> | null },
-      route: "/api/v1/hunts/[id]/finds/[findId]",
-    });
+    // Once the hunt is published or played, its stops are frozen.
+    await assertStopSetEditable(supabase, { hunt: { id, status: hunt.status }, route: ROUTE });
 
     const { data: removed, error } = await supabase
       .from("finds")

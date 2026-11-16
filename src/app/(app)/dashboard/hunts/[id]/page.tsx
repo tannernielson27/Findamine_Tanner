@@ -32,6 +32,8 @@ interface HuntDetail {
   review_reason?: string | null;
   /** Clue delivery can no longer change: the hunt was published or played. */
   delivery_locked?: boolean;
+  /** Someone has played it: stops stay frozen even after unpublishing. */
+  has_play_sessions?: boolean;
   finds: FindItem[];
 }
 
@@ -263,6 +265,9 @@ export default function HuntDetailPage() {
   }
 
   const isDraft = hunt.status === "draft";
+  // Published or played: stops can't be added, removed or reordered (the API
+  // rejects it too). A played-then-unpublished draft can still edit stop content.
+  const stopsFrozen = !isDraft || !!hunt.delivery_locked;
   const finds = hunt.finds || [];
   const showEditor = editor.mode !== "closed";
   const unplacedCount = finds.filter((f) => f.metadata?.needs_placement === true).length;
@@ -374,6 +379,7 @@ export default function HuntDetailPage() {
           <strong>This hunt is {hunt.status.replace(/_/g, " ")}, so its stops and settings are locked.</strong>{" "}
           To add, edit, reorder or remove stops, click <em>Unpublish</em> first, make your changes, then submit it again (it goes back through review).
           Unpublishing takes the hunt offline: nobody can start it, and anyone in the middle of playing may be cut off.
+          {hunt.has_play_sessions && " Once anyone has played it, stops can't be added, removed or reordered even after unpublishing; clone the hunt instead."}
         </div>
       )}
 
@@ -533,7 +539,7 @@ export default function HuntDetailPage() {
             Stops ({finds.length})
             <ClueDeliveryBadge mode={delivery} />
           </h2>
-          {isDraft && !showEditor && (
+          {!stopsFrozen && !showEditor && (
             <button
               onClick={() => setEditor({ mode: "add" })}
               className="rounded-md bg-sky-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-sky-700"
@@ -560,14 +566,21 @@ export default function HuntDetailPage() {
           </div>
         )}
 
+        {isDraft && stopsFrozen && (
+          <p className="text-xs text-gray-500 mb-3" role="note">
+            This hunt has been played, so its stops are locked in place: you can edit a stop&apos;s content, but not add,
+            remove or reorder stops. Clone the hunt to change its stops.
+          </p>
+        )}
+
         {finds.length === 0 && !showEditor && (
           <div className="rounded-lg border-2 border-dashed border-gray-200 p-8 text-center">
             <p className="text-gray-500 mb-3">
-              {isDraft
+              {!stopsFrozen
                 ? "No stops yet. Add your first stop to start building the hunt."
                 : "This hunt has no stops."}
             </p>
-            {isDraft && (
+            {!stopsFrozen && (
               <button
                 onClick={() => setEditor({ mode: "add" })}
                 className="bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors px-5 py-2 text-sm font-medium"
@@ -626,6 +639,8 @@ export default function HuntDetailPage() {
                 {/* Actions */}
                 {isDraft && (
                   <div className="flex flex-col gap-1 shrink-0 items-center">
+                    {!stopsFrozen && (
+                    <>
                     <button
                       type="button"
                       onClick={() => handleMoveFind(find.id, "up")}
@@ -644,6 +659,8 @@ export default function HuntDetailPage() {
                     >
                       ▼
                     </button>
+                    </>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
@@ -656,6 +673,7 @@ export default function HuntDetailPage() {
                     >
                       Edit
                     </button>
+                    {!stopsFrozen && (
                     <button
                       type="button"
                       onClick={() => handleDeleteFind(find.id)}
@@ -665,6 +683,7 @@ export default function HuntDetailPage() {
                     >
                       &times;
                     </button>
+                    )}
                   </div>
                 )}
               </div>

@@ -13,6 +13,7 @@ import {
   type SessionRow,
 } from "@/lib/play/active-hunt-builder";
 import { orderIndexFor, readClueDelivery, readClueOrders } from "@/lib/play/clue-delivery";
+import { fullDeliveryMetadata } from "@/lib/hunts/clue-orders-store";
 
 /** Active sessions considered; a player rarely has more than a couple. */
 const MAX_SESSIONS = 20;
@@ -126,12 +127,21 @@ export async function GET(request: NextRequest) {
     const finds = ((findData || []) as (FindRow & { hunt_id: string })[]).filter(
       (f) => f.hunt_id === hunt.id
     );
-    const orderCount = readClueOrders(hunt.metadata).length;
+    // Assigned orders are stored apart from the hunt (migration 083).
+    const metadata = await fullDeliveryMetadata(supabase, hunt, "/api/v1/play/active");
+    const orderCount = readClueOrders(metadata).length;
     const orderIndex =
-      readClueDelivery(hunt.metadata) === "assigned_order"
+      readClueDelivery(metadata) === "assigned_order"
         ? orderIndexFor(session.metadata, { userId: user.id, huntId: hunt.id, orderCount })
         : null;
-    const active: ActiveHunt = buildActiveHunt(hunt, session.id, finds, completions, session.lastActiveAt, orderIndex);
+    const active: ActiveHunt = buildActiveHunt(
+      { ...hunt, metadata },
+      session.id,
+      finds,
+      completions,
+      session.lastActiveAt,
+      orderIndex
+    );
     return Response.json({ data: active }, { headers: NO_STORE });
   } catch (error) {
     return errorResponse(error);

@@ -536,7 +536,7 @@ describe("edit after approval", () => {
     expect(made.hunts).toHaveLength(1);
   });
 
-  it("requeues when a stop's clue changes, not when it is only reordered", async () => {
+  it("requeues when a stop's clue changes; reordering a published hunt's stops is refused", async () => {
     let made = install({
       hunts: [ok(approved), ok([{ id: HUNT_ID }]), ok({ review_status: "pending" })],
       finds: [ok({ clue_text: "old clue", clue_hints: [], task_id: "t1", primer_id: null }), ok({ id: "f1" })],
@@ -546,15 +546,17 @@ describe("edit after approval", () => {
     expect((await res.json()).review_status).toBe("pending");
     expect(made.hunts[1].update.mock.calls[0][0]).toMatchObject({ review_status: "pending" });
 
+    // Once published, stops are frozen (clue delivery lock, migration 083):
+    // moving one is a 409 and nothing is written or requeued.
     made = install({
-      hunts: [ok(approved), ok({ review_status: "approved" })],
-      finds: [ok({ clue_text: "old clue", clue_hints: [], task_id: "t1", primer_id: null }), ok({ id: "f1" })],
+      hunts: [ok(approved)],
+      finds: [ok({ sort_order: 1 })],
     });
     res = await putFind(req("PUT", `/api/v1/hunts/${HUNT_ID}/finds/f1`, { sort_order: 3 }), findParams);
-    expect(res.status).toBe(200);
-    expect((await res.json()).review_status).toBeUndefined();
-    expect(made.hunts).toHaveLength(2);
-    expect(made.hunts[1].update).not.toHaveBeenCalled();
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/can't be added, removed or reordered/);
+    expect(made.finds).toHaveLength(1);
+    expect(made.finds[0].update).not.toHaveBeenCalled();
   });
 
   it("filters a stop's clue on edit", async () => {
@@ -563,15 +565,14 @@ describe("edit after approval", () => {
     expect(res.status).toBe(400);
   });
 
-  it("requeues when a stop is added to a listed hunt", async () => {
+  it("refuses to add a stop to a listed hunt (stops are frozen once published)", async () => {
     const made = install({
-      hunts: [ok(approved), ok([{ id: HUNT_ID }]), ok({ review_status: "pending" })],
+      hunts: [ok(approved)],
       finds: [ok([]), ok({ id: "new" })],
     });
     const res = await addFind(req("POST", `/api/v1/hunts/${HUNT_ID}/finds`, { clue_text: "Find the fountain" }), huntParams);
-    expect(res.status).toBe(201);
-    expect((await res.json()).review_status).toBe("pending");
-    expect(made.hunts[1].update.mock.calls[0][0]).toMatchObject({ review_status: "pending", is_public: false });
+    expect(res.status).toBe(409);
+    expect((made.finds ?? []).every((q) => !q.insert.mock.calls.length)).toBe(true);
   });
 });
 

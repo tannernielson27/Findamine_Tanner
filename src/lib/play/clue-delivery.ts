@@ -63,6 +63,16 @@ export function readClueOrders(metadata: Meta): string[][] {
 }
 
 /**
+ * Metadata without the creator's orders. The orders are stored in their own
+ * table (migration 083) and only owners and reviewers may see them; this is
+ * the shape kept in hunts.metadata and handed to players. Never mutates.
+ */
+export function withoutClueOrders<T extends Meta>(metadata: T): T {
+  if (!metadata) return metadata;
+  return Object.fromEntries(Object.entries(metadata).filter(([key]) => key !== CLUE_ORDERS_KEY)) as T;
+}
+
+/**
  * New metadata with the delivery mode set. Orders are stored only for
  * assigned_order (and removed otherwise). Never mutates the input.
  */
@@ -71,7 +81,7 @@ export function withClueDelivery(
   mode: ClueDelivery,
   orders: ReadonlyArray<ReadonlyArray<string>> = []
 ): Record<string, unknown> {
-  const rest = Object.fromEntries(Object.entries(metadata ?? {}).filter(([key]) => key !== CLUE_ORDERS_KEY));
+  const rest = withoutClueOrders(metadata ?? {});
   const base = { ...rest, [CLUE_DELIVERY_KEY]: mode, [SHUFFLE_STOPS_KEY]: mode === "random_order" };
   return mode === "assigned_order" ? { ...base, [CLUE_ORDERS_KEY]: orders.map((o) => [...o]) } : base;
 }
@@ -163,6 +173,11 @@ export interface SessionOrderContext {
   sessionId: string | null | undefined;
   /** assigned_order group for this session (null when unknown or not relevant). */
   orderIndex: number | null | undefined;
+  /**
+   * assigned_order on the player's device: the hunt's orders are hidden, so
+   * the start route sends this session's own order instead.
+   */
+  ownOrder?: ReadonlyArray<string> | null;
 }
 
 /**
@@ -175,7 +190,7 @@ export function sessionStopOrder<T extends Stop>(finds: ReadonlyArray<T>, ctx: S
   if (mode !== "assigned_order") return byCreator;
 
   const orders = readClueOrders(ctx.huntMetadata);
-  const order = ctx.orderIndex != null ? orders[ctx.orderIndex] : undefined;
+  const order = ctx.ownOrder ?? (ctx.orderIndex != null ? orders[ctx.orderIndex] : undefined);
   if (!order) return byCreator;
   const byId = new Map(byCreator.map((f) => [f.id, f]));
   return normalizeOrder(order, byCreator.map((f) => f.id)).flatMap((id) => {
