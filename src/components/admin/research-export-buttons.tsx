@@ -10,6 +10,7 @@ const DATASETS = [
   { key: "storylines", label: "Storylines", desc: "One row per notice / check-in" },
   { key: "qualtrics", label: "Qualtrics launches", desc: "One row per survey opened / finished tap" },
   { key: "app_events", label: "App events", desc: "Screen views, app state, errors, forfeit notice" },
+  { key: "play_sessions", label: "Play sessions", desc: "One row per hunt played, with clue delivery and order group" },
   { key: "withdrawals", label: "Withdrawals", desc: "Study ID and dates only" },
 ] as const;
 

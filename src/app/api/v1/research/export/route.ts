@@ -12,6 +12,7 @@ import {
   generateQualtricsExport,
   generateWithdrawalsExport,
 } from "@/lib/services/pilot-export";
+import { generatePlaySessionsExport } from "@/lib/services/play-sessions-export";
 
 const FORMATS: ExportFormat[] = ["csv", "tsv", "json"];
 
@@ -29,7 +30,9 @@ export async function GET(request: NextRequest) {
     // (one row per S6 notice / S4 check-in — for habituation curves).
     // Pilot (082): "qualtrics" (survey launches / finished taps), "app_events"
     // (screen views, app state, client errors, forfeit-notice events) and
-    // "withdrawals" (Study ID + dates only). Every dataset is keyed by Study ID.
+    // "withdrawals" (Study ID + dates only). "play_sessions": one row per hunt
+    // played, with its clue delivery mode and assigned order group (083).
+    // Every dataset is keyed by Study ID.
     const dataset = searchParams.get("dataset") || "participants";
 
     if (!studyId) throw new ApiError(400, "study_id required");
@@ -46,6 +49,8 @@ export async function GET(request: NextRequest) {
               ? await generateQualtricsExport({ studyId, format })
               : dataset === "app_events"
                 ? await generateAppEventsExport({ studyId, format })
+                : dataset === "play_sessions"
+                  ? await generatePlaySessionsExport({ studyId, format })
                 : dataset === "withdrawals"
                   ? await generateWithdrawalsExport({ studyId, format })
                   : await generateResearchExport({ studyId, format });
