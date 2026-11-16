@@ -189,7 +189,7 @@ export default function SettingsPage() {
           className="flex items-center gap-2 text-sm text-brand hover:underline font-medium"
         >
           <ClipboardList className="w-4 h-4" />
-          Your study: Study ID and surveys
+          Research participation: Study ID and surveys
         </Link>
 
         {/* Hidden while a study runs: the debrief describes the conditions. */}

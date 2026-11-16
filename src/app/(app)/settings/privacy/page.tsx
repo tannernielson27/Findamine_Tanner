@@ -657,8 +657,8 @@ export default function PrivacySettingsPage() {
           </p>
           <p className="text-xs text-violet-800 mb-3">
             {gateTimepoint === "T3"
-              ? "Before you change your privacy options, answer a short end-of-study check-in."
-              : "Before you set your privacy options, answer a short questionnaire about them."}{" "}
+              ? "Before you save, answer a short check-in."
+              : "Before you save, answer a short questionnaire."}{" "}
             It takes a couple of minutes, and your answers are private. Saving is turned on
             as soon as you finish.
           </p>
