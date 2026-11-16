@@ -23,7 +23,7 @@ export function isShuffled(metadata: Readonly<Record<string, unknown>> | null | 
 }
 
 /** 32-bit FNV-1a hash of a string, used as the shuffle seed. */
-function hashSeed(seed: string): number {
+export function hashSeed(seed: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < seed.length; i++) {
     h ^= seed.charCodeAt(i);

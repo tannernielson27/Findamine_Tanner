@@ -8,6 +8,7 @@ import { landmarkCheckApplies, runLandmarkCheck } from "@/lib/services/landmark-
 import { getCompletion } from "../../_lib/completions";
 import { recordArrival } from "../../_lib/arrival";
 import { insertFindPhotoRow, photoFromForm, uploadFindPhoto } from "../../_lib/photos";
+import { assertStopOpen } from "../../_lib/stop-access";
 
 const ROUTE = "/api/v1/play/[huntId]/arrive-photo";
 
@@ -47,12 +48,14 @@ export async function POST(
 
     const { data: session } = await supabase
       .from("play_sessions")
-      .select("id")
+      .select("id, metadata")
       .eq("hunt_id", huntId)
       .eq("user_id", user.id)
       .eq("status", "active")
       .single();
     if (!session) throw new ApiError(404, "No active play session");
+    // Clue delivery: only the player's current stop (any stop in all-at-once mode).
+    await assertStopOpen(supabase, { huntId, userId: user.id, session, findId, route: ROUTE });
 
     const { data: find } = await supabase
       .from("finds")

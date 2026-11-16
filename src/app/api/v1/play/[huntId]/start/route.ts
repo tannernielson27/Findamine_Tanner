@@ -8,6 +8,12 @@ import { runAfter } from "@/lib/utils/run-after";
 import { activeTeamIdsInHunt, teamModeOf } from "../../../teams/team-rules";
 import { canAccessHunt } from "@/lib/hunts/review";
 import { internalError } from "@/lib/utils/internal-error";
+import {
+  orderIndexFor,
+  readClueDelivery,
+  readClueOrders,
+  sessionDeliveryMetadata,
+} from "@/lib/play/clue-delivery";
 
 const PLAYABLE_STATUSES = ["published", "enrollment_open", "in_progress"];
 
@@ -35,7 +41,7 @@ export async function POST(
     // Check hunt exists and is playable
     const { data: hunt } = await supabase
       .from("hunts")
-      .select("id, status, identity_mode, created_by, play_mode, review_status")
+      .select("id, status, identity_mode, created_by, play_mode, review_status, metadata")
       .eq("id", huntId)
       .maybeSingle();
 
@@ -65,17 +71,23 @@ export async function POST(
     // Check for existing active session
     const { data: existing } = await supabase
       .from("play_sessions")
-      .select("id, codename")
+      .select("id, codename, metadata")
       .eq("hunt_id", huntId)
       .eq("user_id", user.id)
       .eq("status", "active")
       .maybeSingle();
+
+    // Clue delivery is locked once a hunt is published, so the mode and the
+    // player's order group (assigned orders) are fixed for every session.
+    const delivery = deliveryFor(hunt.metadata, huntId, user.id);
 
     if (existing) {
       return Response.json({
         session: existing,
         resumed: true,
         identity_mode: hunt.identity_mode,
+        clue_delivery: delivery.mode,
+        clue_order_index: delivery.orderIndex === null ? null : orderIndexFor(existing.metadata, delivery.assignment),
       });
     }
 
@@ -152,6 +164,8 @@ export async function POST(
         user_id: user.id,
         team_id: teamId,
         codename,
+        // Recorded for researchers: the mode and, for assigned orders, the group.
+        metadata: sessionDeliveryMetadata(delivery.mode, delivery.orderIndex),
       })
       .select()
       .single();
@@ -172,6 +186,8 @@ export async function POST(
             session: raced,
             resumed: true,
             identity_mode: hunt.identity_mode,
+            clue_delivery: delivery.mode,
+            clue_order_index: delivery.orderIndex,
           });
         }
       }
@@ -181,11 +197,26 @@ export async function POST(
     logger.info("play.started", { userId: user.id, huntId, durationMs: Math.round(performance.now() - start) });
 
     return Response.json(
-      { session, resumed: false, identity_mode: hunt.identity_mode },
+      {
+        session,
+        resumed: false,
+        identity_mode: hunt.identity_mode,
+        clue_delivery: delivery.mode,
+        clue_order_index: delivery.orderIndex,
+      },
       { status: 201 }
     );
   } catch (error) {
     logger.error("play.start.error", { durationMs: Math.round(performance.now() - start), error: error instanceof Error ? error.message : String(error) });
     return errorResponse(error);
   }
+}
+
+/** The hunt's clue delivery mode and this player's assigned order group. */
+function deliveryFor(metadata: unknown, huntId: string, userId: string) {
+  const huntMetadata = (metadata as Record<string, unknown> | null) ?? null;
+  const mode = readClueDelivery(huntMetadata);
+  const assignment = { userId, huntId, orderCount: readClueOrders(huntMetadata).length };
+  const orderIndex = mode === "assigned_order" && assignment.orderCount > 0 ? orderIndexFor(null, assignment) : null;
+  return { mode, orderIndex, assignment };
 }

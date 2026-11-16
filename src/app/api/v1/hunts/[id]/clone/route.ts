@@ -8,6 +8,8 @@ import {
 } from "@/lib/utils/api-auth";
 import { canAccessHunt } from "@/lib/hunts/review";
 import { logger } from "@/lib/utils/logger";
+import { CLUE_ORDERS_KEY, readClueOrders } from "@/lib/play/clue-delivery";
+import { remapClueOrders } from "@/lib/hunts/delivery-lock";
 
 type Row = Record<string, unknown>;
 
@@ -103,6 +105,8 @@ export async function POST(
         tasks: new Map<string, string>(),
         primers: new Map<string, string>(),
       };
+      // Old stop id → the copy's id, to rewrite assigned clue orders.
+      const findIdMap = new Map<string, string>();
 
       const cloneResource = async (
         table: "locations" | "tasks" | "primers",
@@ -150,19 +154,26 @@ export async function POST(
           primerId = await cloneResource("primers", primerId, primers);
         }
 
-        const { error: findError } = await supabase.from("finds").insert({
-          ...findData,
-          hunt_id: newHunt.id,
-          location_id: locationId,
-          task_id: taskId,
-          primer_id: primerId,
-          sort_order: index,
-        });
+        const { data: copiedFind, error: findError } = await supabase
+          .from("finds")
+          .insert({
+            ...findData,
+            hunt_id: newHunt.id,
+            location_id: locationId,
+            task_id: taskId,
+            primer_id: primerId,
+            sort_order: index,
+          })
+          .select("id")
+          .single();
+        if (!findError && copiedFind) findIdMap.set(f.id as string, copiedFind.id as string);
         if (findError) {
           logger.error("hunt.clone.find_failed", { huntId: id, stop: index + 1, error: findError.message });
           throw new ApiError(500, `Couldn't copy stop ${index + 1}. Please try again.`);
         }
       }
+
+      await remapClonedOrders(supabase, newHunt as Row, findIdMap, id);
     } catch (copyError) {
       // Don't leave a half-copied hunt behind looking like a finished clone.
       await supabase.from("hunts").delete().eq("id", newHunt.id);
@@ -172,5 +183,25 @@ export async function POST(
     return Response.json({ hunt: newHunt, deep, stops_copied: liveFinds.length }, { status: 201 });
   } catch (error) {
     return errorResponse(error);
+  }
+}
+
+/** Assigned clue orders name stop ids: point the copy's orders at its own stops. */
+async function remapClonedOrders(
+  supabase: Awaited<ReturnType<typeof createSupabaseServiceClient>>,
+  newHunt: Row,
+  findIdMap: ReadonlyMap<string, string>,
+  sourceId: string
+): Promise<void> {
+  const metadata = (newHunt.metadata as Record<string, unknown> | null) ?? null;
+  const orders = readClueOrders(metadata);
+  if (orders.length === 0) return;
+  const { error } = await supabase
+    .from("hunts")
+    .update({ metadata: { ...metadata, [CLUE_ORDERS_KEY]: remapClueOrders(orders, findIdMap) } })
+    .eq("id", newHunt.id as string);
+  if (error) {
+    logger.error("hunt.clone.orders_failed", { huntId: sourceId, error: error.message });
+    throw new ApiError(500, "Couldn't copy the hunt's clue orders. Please try again.");
   }
 }

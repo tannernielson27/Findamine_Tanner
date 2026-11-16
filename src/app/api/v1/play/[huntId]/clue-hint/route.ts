@@ -4,6 +4,7 @@ import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { playLimiter } from "@/lib/utils/rate-limit";
 import { getCompletion, insertCompletion } from "../../_lib/completions";
 import { internalError } from "@/lib/utils/internal-error";
+import { assertStopOpen } from "../../_lib/stop-access";
 
 export async function POST(
   request: NextRequest,
@@ -26,13 +27,16 @@ export async function POST(
     // Verify user has an active session in this hunt
     const { data: session } = await supabase
       .from("play_sessions")
-      .select("id")
+      .select("id, metadata")
       .eq("hunt_id", huntId)
       .eq("user_id", user.id)
       .eq("status", "active")
       .maybeSingle();
 
     if (!session) throw new ApiError(403, "Not a participant in this hunt");
+
+    // Clue delivery: only the player's current stop (any stop in all-at-once mode).
+    await assertStopOpen(supabase, { huntId, userId: user.id, session, findId: find_id, route: "/api/v1/play/[huntId]/clue-hint" });
 
     // Get the find's clue hints
     const { data: find } = await supabase

@@ -15,6 +15,7 @@ import {
   settleRequeue,
 } from "@/lib/hunts/review";
 import { internalError } from "@/lib/utils/internal-error";
+import { assertStopSetEditable } from "../../../delivery-guard";
 
 export async function PUT(
   request: NextRequest,
@@ -98,7 +99,7 @@ export async function DELETE(
     // Verify hunt ownership
     const { data: hunt } = await supabase
       .from("hunts")
-      .select("created_by, status, review_status")
+      .select("created_by, status, review_status, metadata")
       .eq("id", id)
       .is("deleted_at", null)
       .single();
@@ -107,6 +108,11 @@ export async function DELETE(
     if (hunt.created_by !== user.id && !["admin", "researcher"].includes(user.role)) {
       throw new ApiError(403, "You can only delete finds in your own hunts");
     }
+    // Assigned orders list every stop: once the hunt is locked, its stops are too.
+    await assertStopSetEditable(supabase, {
+      hunt: { id, status: hunt.status, metadata: hunt.metadata as Record<string, unknown> | null },
+      route: "/api/v1/hunts/[id]/finds/[findId]",
+    });
 
     const { data: removed, error } = await supabase
       .from("finds")

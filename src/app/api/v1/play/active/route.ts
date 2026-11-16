@@ -12,6 +12,7 @@ import {
   type FindRow,
   type SessionRow,
 } from "@/lib/play/active-hunt-builder";
+import { orderIndexFor, readClueDelivery, readClueOrders } from "@/lib/play/clue-delivery";
 
 /** Active sessions considered; a player rarely has more than a couple. */
 const MAX_SESSIONS = 20;
@@ -59,7 +60,7 @@ export async function GET(request: NextRequest) {
 
     const { data: sessionData, error: sessionError } = await supabase
       .from("play_sessions")
-      .select("id, hunt_id, started_at, updated_at")
+      .select("id, hunt_id, started_at, updated_at, metadata")
       .eq("user_id", user.id)
       .eq("status", "active")
       .order("updated_at", { ascending: false })
@@ -125,7 +126,12 @@ export async function GET(request: NextRequest) {
     const finds = ((findData || []) as (FindRow & { hunt_id: string })[]).filter(
       (f) => f.hunt_id === hunt.id
     );
-    const active: ActiveHunt = buildActiveHunt(hunt, session.id, finds, completions, session.lastActiveAt);
+    const orderCount = readClueOrders(hunt.metadata).length;
+    const orderIndex =
+      readClueDelivery(hunt.metadata) === "assigned_order"
+        ? orderIndexFor(session.metadata, { userId: user.id, huntId: hunt.id, orderCount })
+        : null;
+    const active: ActiveHunt = buildActiveHunt(hunt, session.id, finds, completions, session.lastActiveAt, orderIndex);
     return Response.json({ data: active }, { headers: NO_STORE });
   } catch (error) {
     return errorResponse(error);

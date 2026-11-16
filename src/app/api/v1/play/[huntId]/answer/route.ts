@@ -13,6 +13,7 @@ import { bandForUser } from "@/lib/utils/age-band";
 import { isOwnAudioPath, parseAudioAnswer } from "@/lib/play/audio-answer";
 import { internalError } from "@/lib/utils/internal-error";
 import { runAfter } from "@/lib/utils/run-after";
+import { assertStopOpen } from "../../_lib/stop-access";
 
 export async function POST(
   request: NextRequest,
@@ -40,7 +41,7 @@ export async function POST(
       await Promise.all([
         supabase
           .from("play_sessions")
-          .select("id, started_at")
+          .select("id, metadata, started_at")
           .eq("hunt_id", huntId)
           .eq("user_id", user.id)
           .eq("status", "active")
@@ -51,6 +52,9 @@ export async function POST(
       ]);
 
     if (!session) throw new ApiError(404, "No active play session");
+
+    // Clue delivery: only the player's current stop (any stop in all-at-once mode).
+    await assertStopOpen(supabase, { huntId, userId: user.id, session, findId: find_id, route: "/api/v1/play/[huntId]/answer" });
 
     // Get completion record (may already exist from prime-viewed/arrive steps)
     const completion = await getCompletion(supabase, session.id, find_id);

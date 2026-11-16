@@ -19,6 +19,7 @@ import {
 } from "@/lib/hunts/review";
 import { firstFlagged } from "@/lib/hunts/text-filter";
 import { logger } from "@/lib/utils/logger";
+import { assertDeliveryEditAllowed, deliveryLocked } from "../delivery-guard";
 
 export async function GET(
   request: NextRequest,
@@ -58,7 +59,10 @@ export async function GET(
     }
 
     const insider = !!user && (user.id === hunt.created_by || isReviewer(user.role));
-    return Response.json({ hunt: insider ? hunt : withoutInternalReviewFields(hunt) });
+    if (!insider) return Response.json({ hunt: withoutInternalReviewFields(hunt) });
+    // The editor shows clue delivery read-only once it is locked.
+    const delivery_locked = await deliveryLocked(supabase, hunt, "/api/v1/hunts/[id]");
+    return Response.json({ hunt: { ...hunt, delivery_locked } });
   } catch (error) {
     return errorResponse(error);
   }
@@ -79,7 +83,7 @@ export async function PUT(
     // Verify ownership
     const { data: existingRow } = await supabase
       .from("hunts")
-      .select(`created_by, status, review_status, ${REVIEWED_HUNT_FIELDS.join(", ")}`)
+      .select(`created_by, status, review_status, metadata, ${REVIEWED_HUNT_FIELDS.join(", ")}`)
       .eq("id", id)
       .is("deleted_at", null)
       .single();
@@ -117,6 +121,18 @@ export async function PUT(
     }
     if (Object.keys(updates).length === 0) {
       throw new ApiError(400, "No editable fields provided");
+    }
+    if (updates.metadata !== undefined) {
+      if (updates.metadata !== null && (typeof updates.metadata !== "object" || Array.isArray(updates.metadata))) {
+        throw new ApiError(400, "Hunt settings must be an object");
+      }
+      // Clue delivery is locked once the hunt is published or played.
+      await assertDeliveryEditAllowed(supabase, {
+        hunt: { id, status: existing.status },
+        before: existing.metadata as Record<string, unknown> | null,
+        after: updates.metadata as Record<string, unknown> | null,
+        route: "/api/v1/hunts/[id]",
+      });
     }
 
     const before: Record<string, unknown> = existing;

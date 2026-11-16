@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { getCompletion, insertCompletion } from "../../_lib/completions";
+import { assertStopOpen } from "../../_lib/stop-access";
 
 export async function POST(
   request: NextRequest,
@@ -21,13 +22,16 @@ export async function POST(
     // Get active session
     const { data: session } = await supabase
       .from("play_sessions")
-      .select("id")
+      .select("id, metadata")
       .eq("hunt_id", huntId)
       .eq("user_id", user.id)
       .eq("status", "active")
       .single();
 
     if (!session) throw new ApiError(404, "No active play session");
+
+    // Clue delivery: only the player's current stop (any stop in all-at-once mode).
+    await assertStopOpen(supabase, { huntId, userId: user.id, session, findId: find_id, route: "/api/v1/play/[huntId]/prime-viewed" });
 
     // Get or create completion record
     const existing = await getCompletion(supabase, session.id, find_id);

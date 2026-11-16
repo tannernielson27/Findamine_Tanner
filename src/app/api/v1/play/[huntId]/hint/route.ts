@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { playLimiter } from "@/lib/utils/rate-limit";
+import { assertStopOpen } from "../../_lib/stop-access";
 
 /**
  * 4-level hint system:
@@ -31,13 +32,16 @@ export async function POST(
     // Get active session
     const { data: session } = await supabase
       .from("play_sessions")
-      .select("id")
+      .select("id, metadata")
       .eq("hunt_id", huntId)
       .eq("user_id", user.id)
       .eq("status", "active")
       .single();
 
     if (!session) throw new ApiError(404, "No active play session");
+
+    // Clue delivery: only the player's current stop (any stop in all-at-once mode).
+    await assertStopOpen(supabase, { huntId, userId: user.id, session, findId: find_id, route: "/api/v1/play/[huntId]/hint" });
 
     // Get task content for this find
     const { data: find } = await supabase
