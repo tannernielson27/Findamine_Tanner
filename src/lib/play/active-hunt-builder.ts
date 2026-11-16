@@ -14,6 +14,9 @@
 import type { ActiveHunt } from "@/lib/play/active-hunt";
 import { isShuffled, orderStops } from "@/lib/play/stop-order";
 
+/** Hunt statuses the start route lets a player resume (mirrors play/[huntId]/start). */
+export const PLAYABLE_HUNT_STATUSES: readonly string[] = ["published", "enrollment_open", "in_progress"];
+
 export interface SessionRow {
   id: string;
   hunt_id: string;

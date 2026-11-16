@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   decideReengagement,
+  pickResumeHuntId,
+  reengagementHref,
+  reengagementLink,
+  REENGAGEMENT_FALLBACK_PATH,
+  REENGAGEMENT_HUNT_ENTITY,
   reengagementMessage,
   DEFAULT_REENGAGEMENT_CONFIG,
   REENGAGEMENT_TYPE,
@@ -93,5 +98,47 @@ describe("reengagementMessage", () => {
   it("exposes the default config", () => {
     expect(DEFAULT_REENGAGEMENT_CONFIG.inactivityDays).toBeGreaterThan(0);
     expect(DEFAULT_REENGAGEMENT_CONFIG.cooldownDays).toBeGreaterThan(0);
+  });
+});
+
+describe("nudge link", () => {
+  const live = (id: string, status = "published") => ({ id, status, deleted_at: null });
+
+  it("opens the most recently active hunt that can still be played", () => {
+    expect(pickResumeHuntId(["h2", "h1"], [live("h1"), live("h2")])).toBe("h2");
+  });
+
+  it("skips deleted, unplayable and unknown hunts", () => {
+    const hunts = [
+      { id: "gone", status: "published", deleted_at: "2026-06-01T00:00:00Z" },
+      live("draft", "draft"),
+      live("ok", "in_progress"),
+    ];
+    expect(pickResumeHuntId(["gone", "draft", "missing", "ok"], hunts)).toBe("ok");
+  });
+
+  it("returns null with no hunt in progress", () => {
+    expect(pickResumeHuntId([], [])).toBeNull();
+    expect(pickResumeHuntId(["draft"], [live("draft", "draft")])).toBeNull();
+  });
+
+  it("stores the hunt on the existing entity columns", () => {
+    expect(reengagementLink("h1")).toEqual({ entity_type: REENGAGEMENT_HUNT_ENTITY, entity_id: "h1" });
+    expect(reengagementLink(null)).toEqual({ entity_type: null, entity_id: null });
+  });
+
+  it("links to the hunt's play map, else browse", () => {
+    expect(REENGAGEMENT_FALLBACK_PATH).toBe("/browse");
+    expect(reengagementHref(REENGAGEMENT_HUNT_ENTITY, "h1")).toBe("/play/h1");
+    expect(reengagementHref(null, null)).toBe("/browse");
+    expect(reengagementHref("other", "h1")).toBe("/browse");
+    expect(reengagementHref(REENGAGEMENT_HUNT_ENTITY, null)).toBe("/browse");
+  });
+
+  it("round-trips: what the cron stores is what the bell opens", () => {
+    const stored = reengagementLink("abc");
+    expect(reengagementHref(stored.entity_type, stored.entity_id)).toBe("/play/abc");
+    const none = reengagementLink(null);
+    expect(reengagementHref(none.entity_type, none.entity_id)).toBe("/browse");
   });
 });

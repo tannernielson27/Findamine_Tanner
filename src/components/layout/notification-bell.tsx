@@ -1,28 +1,20 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { AnimatePresence, m } from "framer-motion";
 import { popover, SPRING_SNAPPY } from "@/lib/motion";
 import { Bell } from "lucide-react";
-import {
-  PRIVACY_CHECKIN_TYPE,
-  CHECKIN_TARGET_PATH,
-  type CheckinResponseAction,
-} from "@/lib/services/privacy-checkin";
-
-/** `notifications.type` written by the survey reminder cron (survey-delivery.ts). */
-const SURVEY_REMINDER_TYPE = "survey_reminder";
-const SURVEYS_PATH = "/surveys";
-/** `notifications.type` written when a Qualtrics survey opens (qualtrics-surveys.ts). */
-const STUDY_SURVEY_TYPE = "study_survey";
-const STUDY_PAGE_PATH = "/settings/study";
+import { PRIVACY_CHECKIN_TYPE, type CheckinResponseAction } from "@/lib/services/privacy-checkin";
+import { notificationHref } from "@/lib/services/notification-href";
 
 interface Notification {
   id: string;
   type: string;
   title: string;
   body: string | null;
+  entity_type?: string | null;
+  entity_id?: string | null;
   /** Column name on public.notifications (the API returns rows as stored). */
   read: boolean;
   created_at: string;
@@ -50,7 +42,6 @@ function logCheckinResponse(
 }
 
 export default function NotificationBell() {
-  const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -174,30 +165,20 @@ export default function NotificationBell() {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   }
 
+  /** A notification without a link: tapping only marks it read. */
   async function handleSelect(n: Notification) {
-    if (n.type === SURVEY_REMINDER_TYPE) {
-      // A survey reminder opens the surveys list.
-      if (!n.read) await handleMarkRead(n.id);
-      setOpen(false);
-      router.push(SURVEYS_PATH);
-      return;
-    }
-    if (n.type === STUDY_SURVEY_TYPE) {
-      // A Qualtrics survey is open: the study page has the link and Study ID.
-      if (!n.read) await handleMarkRead(n.id);
-      setOpen(false);
-      router.push(STUDY_PAGE_PATH);
-      return;
-    }
-    if (n.type !== PRIVACY_CHECKIN_TYPE) {
-      if (!n.read) await handleMarkRead(n.id);
-      return;
-    }
-    // A privacy check-in opens the privacy page (storyline S4).
-    logCheckinResponse(n.id, "opened");
     if (!n.read) await handleMarkRead(n.id);
+  }
+
+  /**
+   * A linked notification (see notificationHref): the <Link> navigates, this
+   * records the open. Mark-read uses keepalive, so it isn't awaited.
+   */
+  function handleOpenLink(n: Notification) {
+    // A privacy check-in open is study telemetry (storyline S4).
+    if (n.type === PRIVACY_CHECKIN_TYPE) logCheckinResponse(n.id, "opened");
+    if (!n.read) void handleMarkRead(n.id);
     setOpen(false);
-    router.push(CHECKIN_TARGET_PATH);
   }
 
   async function handleDismiss(n: Notification) {
@@ -268,32 +249,40 @@ export default function NotificationBell() {
             ) : (
               notifications.map((n) => {
                 const isCheckin = n.type === PRIVACY_CHECKIN_TYPE;
+                const href = notificationHref(n);
+                const itemClass = "block min-w-0 flex-1 text-left px-4 py-3 hover:bg-gray-50 transition-colors";
+                const content = (
+                  <div className="flex items-start gap-2">
+                    {!n.read && (
+                      <span className="mt-1.5 w-2 h-2 rounded-full bg-sky-500 shrink-0" />
+                    )}
+                    <div className="min-w-0">
+                      <p className={`text-sm ${!n.read ? "font-medium text-gray-900" : "text-gray-700"}`}>
+                        {n.title}
+                      </p>
+                      {n.body && (
+                        <p className="text-xs text-gray-500 mt-0.5 truncate">{n.body}</p>
+                      )}
+                      <p className="text-[10px] text-gray-500 mt-1">
+                        {formatTimeAgo(n.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                );
                 return (
                   <div
                     key={n.id}
                     className={`flex items-start border-b border-gray-50 ${!n.read ? "bg-sky-50/50" : ""}`}
                   >
-                    <button
-                      onClick={() => void handleSelect(n)}
-                      className="min-w-0 flex-1 text-left px-4 py-3 hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex items-start gap-2">
-                        {!n.read && (
-                          <span className="mt-1.5 w-2 h-2 rounded-full bg-sky-500 shrink-0" />
-                        )}
-                        <div className="min-w-0">
-                          <p className={`text-sm ${!n.read ? "font-medium text-gray-900" : "text-gray-700"}`}>
-                            {n.title}
-                          </p>
-                          {n.body && (
-                            <p className="text-xs text-gray-500 mt-0.5 truncate">{n.body}</p>
-                          )}
-                          <p className="text-[10px] text-gray-500 mt-1">
-                            {formatTimeAgo(n.created_at)}
-                          </p>
-                        </div>
-                      </div>
-                    </button>
+                    {href ? (
+                      <Link href={href} onClick={() => handleOpenLink(n)} className={itemClass}>
+                        {content}
+                      </Link>
+                    ) : (
+                      <button onClick={() => void handleSelect(n)} className={itemClass}>
+                        {content}
+                      </button>
+                    )}
                     {isCheckin && !n.read && (
                       <button
                         onClick={() => void handleDismiss(n)}

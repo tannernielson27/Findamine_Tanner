@@ -378,4 +378,31 @@ describe("GET /api/cron/reengagement", () => {
     expect(await res.json()).toMatchObject({ participants_considered: 2, nudges_sent: 1 });
     expect(db.table("notifications").map((n) => n.user_id)).toEqual(["idle"]);
   });
+
+  it("links the nudge to the player's in-progress hunt, or to browse when there is none", async () => {
+    const db = install({
+      study_enrollments: [
+        { id: "e1", study_id: "s1", user_id: "mid-hunt", enrolled_at: daysAgo(30), withdrawn_at: null },
+        { id: "e2", study_id: "s1", user_id: "no-hunt", enrolled_at: daysAgo(30), withdrawn_at: null },
+      ],
+      play_sessions: [
+        { id: "ps1", user_id: "mid-hunt", hunt_id: "old", status: "active", started_at: daysAgo(20), updated_at: daysAgo(20) },
+        { id: "ps2", user_id: "mid-hunt", hunt_id: "recent", status: "active", started_at: daysAgo(8), updated_at: daysAgo(8) },
+        { id: "ps3", user_id: "no-hunt", hunt_id: "old", status: "completed", started_at: daysAgo(9), updated_at: daysAgo(9) },
+      ],
+      find_completions: [],
+      hunts: [
+        { id: "old", status: "published", deleted_at: null },
+        { id: "recent", status: "published", deleted_at: null },
+      ],
+    });
+
+    const res = await reengagementCron(
+      new NextRequest("http://localhost/api/cron/reengagement", { headers: { authorization: `Bearer ${SECRET}` } })
+    );
+    expect(res.status).toBe(200);
+    const byUser = Object.fromEntries(db.table("notifications").map((n) => [n.user_id, n]));
+    expect(byUser["mid-hunt"]).toMatchObject({ entity_type: "hunt", entity_id: "recent" });
+    expect(byUser["no-hunt"]).toMatchObject({ entity_type: null, entity_id: null });
+  });
 });

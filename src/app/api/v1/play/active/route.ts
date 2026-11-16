@@ -6,14 +6,13 @@ import { logger } from "@/lib/utils/logger";
 import type { ActiveHunt } from "@/lib/play/active-hunt";
 import {
   buildActiveHunt,
+  PLAYABLE_HUNT_STATUSES as PLAYABLE_STATUSES,
   rankSessions,
   type CompletionRow,
   type FindRow,
   type SessionRow,
 } from "@/lib/play/active-hunt-builder";
 
-/** Hunt statuses the start route lets a player resume (mirrors play/[huntId]/start). */
-const PLAYABLE_STATUSES = ["published", "enrollment_open", "in_progress"];
 /** Active sessions considered; a player rarely has more than a couple. */
 const MAX_SESSIONS = 20;
 

@@ -15,10 +15,14 @@ import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import {
   decideReengagement,
+  pickResumeHuntId,
+  reengagementLink,
   reengagementMessage,
   REENGAGEMENT_TYPE,
   type ParticipantEngagement,
+  type ResumableHunt,
 } from "@/lib/services/reengagement";
+import { rankSessions, type CompletionRow, type SessionRow } from "@/lib/play/active-hunt-builder";
 import { fetchAllRows, ID_CHUNK } from "@/lib/utils/paginate";
 
 export const maxDuration = 60;
@@ -72,6 +76,44 @@ async function lastGameplay(
   }
 
   return { lastSession, lastFind };
+}
+
+/** Active sessions considered when choosing the hunt a nudge opens. */
+const MAX_RESUME_SESSIONS = 20;
+
+/**
+ * The hunt the nudge should open: the player's unfinished hunt with the most
+ * recent activity that can still be played (same ranking as GET
+ * /api/v1/play/active). Null means no hunt in progress, so the nudge opens browse.
+ */
+async function resumeHuntId(supabase: ServiceClient, userId: string): Promise<string | null> {
+  const { data: sessionData, error: sessionError } = await supabase
+    .from("play_sessions")
+    .select("id, hunt_id, started_at, updated_at")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .order("updated_at", { ascending: false })
+    .limit(MAX_RESUME_SESSIONS);
+  if (sessionError) throw new Error(`play_sessions read failed: ${sessionError.message}`);
+  const sessions = (sessionData || []) as SessionRow[];
+  if (sessions.length === 0) return null;
+
+  const [{ data: completionData, error: completionError }, { data: huntData, error: huntError }] =
+    await Promise.all([
+      supabase
+        .from("find_completions")
+        .select("play_session_id, find_id, arrived_at, completed_at, created_at")
+        .in("play_session_id", sessions.map((s) => s.id)),
+      supabase
+        .from("hunts")
+        .select("id, status, deleted_at")
+        .in("id", [...new Set(sessions.map((s) => s.hunt_id))]),
+    ]);
+  if (completionError) throw new Error(`find_completions read failed: ${completionError.message}`);
+  if (huntError) throw new Error(`hunts read failed: ${huntError.message}`);
+
+  const ranked = rankSessions(sessions, (completionData || []) as CompletionRow[]).map((s) => s.hunt_id);
+  return pickResumeHuntId(ranked, (huntData || []) as ResumableHunt[]);
 }
 
 function maxIso(a: string | null, b: string | null): string | null {
@@ -152,11 +194,20 @@ export async function GET(request: NextRequest) {
     if (!decision.shouldNudge || decision.daysInactive == null) continue;
 
     const msg = reengagementMessage(decision.daysInactive);
+    // Tapping the nudge opens this hunt's play map, or browse when there is
+    // none. A failed read still sends the nudge, linked to browse.
+    let huntId: string | null = null;
+    try {
+      huntId = await resumeHuntId(supabase, userId);
+    } catch (err) {
+      console.error("reengagement: resume-hunt read failed, linking to browse:", err);
+    }
     const { error } = await supabase.from("notifications").insert({
       user_id: userId,
       type: REENGAGEMENT_TYPE,
       title: msg.title,
       body: msg.body,
+      ...reengagementLink(huntId),
     });
     if (!error) nudged++;
   }

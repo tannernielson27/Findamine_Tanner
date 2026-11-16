@@ -13,6 +13,8 @@
  * Pure + deterministic so the uniformity property is unit-testable.
  */
 
+import { PLAYABLE_HUNT_STATUSES } from "@/lib/play/active-hunt-builder";
+
 export const REENGAGEMENT_TYPE = "reengagement";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -106,4 +108,57 @@ export function reengagementMessage(daysInactive: number): ReengagementMessage {
     title: "Your next find is waiting",
     body: "Jump back into a hunt — points and badges are up for grabs.",
   };
+}
+
+// ── Where tapping the nudge goes ─────────────────────────────────────────────
+// The link is chosen from the participant's OWN play sessions (no condition
+// input), so it keeps the uniformity guardrail above. It is stored on the
+// notification row as entity_type/entity_id (existing columns, no migration).
+
+/** `notifications.entity_type` for a nudge that resumes a hunt. */
+export const REENGAGEMENT_HUNT_ENTITY = "hunt";
+/** Where a nudge goes when the player has no hunt in progress. */
+export const REENGAGEMENT_FALLBACK_PATH = "/browse";
+
+export interface ResumableHunt {
+  id: string;
+  status: string;
+  deleted_at: string | null;
+}
+
+/**
+ * The hunt a nudge should open: the first hunt, in most-recent-activity order,
+ * that can still be played. `rankedHuntIds` comes from rankSessions over the
+ * player's active sessions. Null when none qualifies.
+ */
+export function pickResumeHuntId(
+  rankedHuntIds: readonly string[],
+  hunts: readonly ResumableHunt[]
+): string | null {
+  const byId = new Map(hunts.map((h) => [h.id, h]));
+  for (const id of rankedHuntIds) {
+    const hunt = byId.get(id);
+    if (hunt && !hunt.deleted_at && PLAYABLE_HUNT_STATUSES.includes(hunt.status)) return id;
+  }
+  return null;
+}
+
+export interface ReengagementLink {
+  entity_type: string | null;
+  entity_id: string | null;
+}
+
+/** Columns to store on the nudge row for the chosen hunt (or none → browse). */
+export function reengagementLink(huntId: string | null): ReengagementLink {
+  return huntId
+    ? { entity_type: REENGAGEMENT_HUNT_ENTITY, entity_id: huntId }
+    : { entity_type: null, entity_id: null };
+}
+
+/** The in-app path a stored nudge opens: the hunt's play map, else browse. */
+export function reengagementHref(entityType: string | null, entityId: string | null): string {
+  if (entityType === REENGAGEMENT_HUNT_ENTITY && entityId) {
+    return `/play/${encodeURIComponent(entityId)}`;
+  }
+  return REENGAGEMENT_FALLBACK_PATH;
 }
