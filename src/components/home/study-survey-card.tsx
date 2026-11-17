@@ -6,7 +6,7 @@ import { useStudySurveys } from "@/components/study/use-study-surveys";
 
 /**
  * Home card shown only while a study survey (Qualtrics) is open and not yet
- * finished. Links to "Your study", which has the Study ID and the link.
+ * finished. Links to "Research participation", which has the Study ID and the link.
  * Renders nothing for non-participants or when nothing is open.
  */
 export function StudySurveyCard() {
@@ -26,7 +26,7 @@ export function StudySurveyCard() {
       </span>
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="font-semibold text-themed-text">
-          {open.length > 1 ? `${open.length} study surveys are ready` : `${first.title} is ready`}
+          {open.length > 1 ? `${open.length} surveys are ready` : `${first.title} is ready`}
         </span>
         <span className="text-sm text-themed-muted">About {first.minutes} min. Tap to start.</span>
       </span>

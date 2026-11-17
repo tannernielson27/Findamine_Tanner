@@ -188,7 +188,7 @@ export async function recordQualtricsAction(opts: {
 export function openWaveNotification(wave: WaveView): { title: string; body: string } {
   return {
     title: `${wave.title} is ready`,
-    body: `It takes about ${wave.minutes} minute${wave.minutes === 1 ? "" : "s"}. Open "Your study" to start it.`,
+    body: `It takes about ${wave.minutes} minute${wave.minutes === 1 ? "" : "s"}. Tap to start it.`,
   };
 }
 

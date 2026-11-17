@@ -41,6 +41,8 @@ describe.each([
 describe("privacy policy content", () => {
   it("covers the disclosures App Review and COPPA need", () => {
     expect(privacyHtml).toContain("Settings → Delete account");
+    // Withdrawal path names the Settings row as it is labelled in the app.
+    expect(privacyHtml).toContain("Settings → Research participation");
     expect(privacyHtml).toContain("COPPA");
     expect(privacyHtml).toMatch(/do not sell/i);
     for (const provider of ["Supabase", "Vercel", "Anthropic", "OpenAI", "Google Maps", "Resend", "Upstash"]) {

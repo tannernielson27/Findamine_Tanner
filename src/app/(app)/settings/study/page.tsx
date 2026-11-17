@@ -8,7 +8,7 @@ import { CONTACT_EMAIL } from "@/lib/constants/legal";
 import WithdrawControl from "@/components/study/withdraw-control";
 
 /**
- * "Your study": the participant's Study ID and their Qualtrics surveys
+ * "Research participation": the participant's Study ID and their Qualtrics surveys
  * (pilot 2026-11). Deliberately separate from /debrief, which describes the
  * study's conditions. Wording stays neutral: nothing here says what the
  * study measures.
@@ -28,7 +28,7 @@ export default function StudyPage() {
 
       <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold text-gray-900 flex items-center gap-2 mb-4">
         <ClipboardList aria-hidden="true" className="w-6 h-6 shrink-0 text-brand" />
-        Your study
+        Research participation
       </h1>
 
       {state.kind === "loading" && (
@@ -39,7 +39,7 @@ export default function StudyPage() {
 
       {state.kind === "error" && (
         <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-6 text-sm text-gray-600 space-y-3">
-          <p>We couldn’t load your study details. Check your connection and try again.</p>
+          <p>We couldn’t load your Study ID and surveys. Check your connection and try again.</p>
           <button onClick={reload} className="min-h-11 text-brand font-medium hover:underline">
             Try again
           </button>
