@@ -12,7 +12,32 @@ import { ClueBoard } from "@/components/play/clue-board";
 import { PlayHud } from "@/components/play/play-hud";
 import { ClueDeliverySettings } from "@/components/hunts/clue-delivery-settings";
 import { ClueDeliveryBadge } from "@/components/hunts/shuffle-badge";
+import { StudyHuntSetting } from "@/components/hunts/study-hunt-setting";
 import type { Find } from "@/lib/play/play-types";
+
+describe("StudyHuntSetting", () => {
+  const base = { busy: false, onChange: () => {} };
+
+  it("shows admins and researchers a toggle with the explanation", () => {
+    const html = renderToStaticMarkup(createElement(StudyHuntSetting, { ...base, studyHunt: false, canSet: true, locked: false }));
+    expect(html).toContain('type="checkbox"');
+    expect(html).toContain("Study hunt");
+    expect(html).toContain("same stops for every participant");
+  });
+
+  it("won't let a locked study hunt be unmarked", () => {
+    const html = renderToStaticMarkup(createElement(StudyHuntSetting, { ...base, studyHunt: true, canSet: true, locked: true }));
+    expect(html).toMatch(/disabled=""/);
+    expect(html).toContain("stays a study hunt");
+  });
+
+  it("shows owners the flag read-only, and nothing when it is off", () => {
+    const on = renderToStaticMarkup(createElement(StudyHuntSetting, { ...base, studyHunt: true, canSet: false, locked: false }));
+    expect(on).toContain("Only admins and researchers can change this");
+    expect(on).not.toContain('type="checkbox"');
+    expect(renderToStaticMarkup(createElement(StudyHuntSetting, { ...base, studyHunt: false, canSet: false, locked: false }))).toBe("");
+  });
+});
 
 const noop = () => {};
 const render = (el: ReturnType<typeof createElement>) =>

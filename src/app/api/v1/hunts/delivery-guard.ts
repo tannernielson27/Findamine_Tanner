@@ -1,7 +1,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/utils/api-auth";
 import { internalError } from "@/lib/utils/internal-error";
-import { checkDeliveryEdit, checkStopSetChange, isDeliveryLocked } from "@/lib/hunts/delivery-lock";
+import {
+  checkDeliveryEdit,
+  checkStopSetChange,
+  freezesStops,
+  inheritClueOrders,
+  isDeliveryLocked,
+  resolveStudyFlag,
+} from "@/lib/hunts/delivery-lock";
+import { fullDeliveryMetadata } from "@/lib/hunts/clue-orders-store";
 
 /**
  * Hunt-editing routes' side of the clue delivery lock (lib/hunts/delivery-lock.ts).
@@ -49,13 +57,39 @@ export async function assertDeliveryEditAllowed(
   if (!result.ok) throw new ApiError(locked ? 409 : 400, result.error);
 }
 
-/** 409 when stops can no longer be added, removed or reordered (locked hunt). */
+/**
+ * Settles a hunt metadata update against the stored hunt: keeps stored
+ * assigned orders the update leaves out, applies the clue delivery lock (409 /
+ * 400) and the study-flag rules (403 for non-reviewers, 409 for clearing a
+ * locked study hunt). Returns full metadata before and after (orders merged in).
+ */
+export async function prepareMetadataUpdate(
+  supabase: SupabaseClient,
+  input: { hunt: { id: string; status: string; metadata: Meta }; incoming: Meta; canSetStudyFlag: boolean; route: string }
+): Promise<{ before: Record<string, unknown> | null; after: Record<string, unknown> | null }> {
+  const { hunt, incoming, canSetStudyFlag, route } = input;
+  const before = await fullDeliveryMetadata(supabase, hunt, route);
+  const withOrders = inheritClueOrders(before, incoming ?? null) as Record<string, unknown> | null;
+  const locked = await deliveryLocked(supabase, hunt, route);
+  const flag = resolveStudyFlag({ before, after: withOrders, canSetStudyFlag, locked });
+  if (!flag.ok) throw new ApiError(flag.status, flag.error);
+  await assertDeliveryEditAllowed(supabase, { hunt, before, after: flag.metadata, route });
+  return { before, after: flag.metadata };
+}
+
+/**
+ * 409 when stops can no longer be added, removed or reordered: a locked study
+ * hunt, or a locked hunt with assigned orders. Other hunts never freeze, so
+ * they skip the lock lookup entirely.
+ */
 export async function assertStopSetEditable(
   supabase: SupabaseClient,
-  input: { hunt: { id: string; status: string }; route: string }
+  input: { hunt: { id: string; status: string; metadata?: unknown }; route: string }
 ): Promise<void> {
   const { hunt, route } = input;
+  const metadata = (hunt.metadata as Meta) ?? null;
+  if (!freezesStops(metadata)) return;
   const locked = await deliveryLocked(supabase, hunt, route);
-  const result = checkStopSetChange({ locked });
+  const result = checkStopSetChange({ locked, metadata });
   if (!result.ok) throw new ApiError(409, result.error);
 }

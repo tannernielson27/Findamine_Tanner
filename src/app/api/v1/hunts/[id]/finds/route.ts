@@ -69,7 +69,7 @@ export async function POST(
     // Verify hunt ownership
     const { data: hunt } = await supabase
       .from("hunts")
-      .select("created_by, status, review_status")
+      .select("created_by, status, review_status, metadata")
       .eq("id", id)
       .is("deleted_at", null)
       .single();
@@ -78,8 +78,8 @@ export async function POST(
     if (hunt.created_by !== user.id && !["admin", "researcher"].includes(user.role)) {
       throw new ApiError(403, "You can only add finds to your own hunts");
     }
-    // Once the hunt is published or played, its stops are frozen.
-    await assertStopSetEditable(supabase, { hunt: { id, status: hunt.status }, route: "/api/v1/hunts/[id]/finds" });
+    // A locked study hunt (or one with assigned orders) has frozen stops.
+    await assertStopSetEditable(supabase, { hunt: { id, status: hunt.status, metadata: hunt.metadata }, route: "/api/v1/hunts/[id]/finds" });
 
     // Next sort order goes after the current last stop. (Counting live stops
     // instead would collide with an existing sort_order after any delete.)

@@ -5,7 +5,11 @@ import {
   deliverySettingsChanged,
   inheritClueOrders,
   isDeliveryLocked,
+  readStudyHunt,
   remapClueOrders,
+  resolveStudyFlag,
+  stopsFrozen,
+  withStudyFlagFor,
 } from "@/lib/hunts/delivery-lock";
 
 const twoOrders = [["a", "b"], ["b", "a"]];
@@ -77,17 +81,88 @@ describe("checkDeliveryEdit", () => {
   });
 });
 
-describe("checkStopSetChange", () => {
-  it("freezes the stops of a locked hunt in every mode", () => {
-    for (const clue_delivery of ["all_at_once", "fixed_order", "assigned_order", "random_order"]) {
-      const result = checkStopSetChange({ locked: true });
-      expect(result.ok, clue_delivery).toBe(false);
-      if (!result.ok) expect(result.error).toMatch(/published or played/);
+describe("readStudyHunt", () => {
+  it("is true only for an explicit true flag", () => {
+    expect(readStudyHunt({ study_hunt: true })).toBe(true);
+    expect(readStudyHunt({ study_hunt: "true" })).toBe(false);
+    expect(readStudyHunt({})).toBe(false);
+    expect(readStudyHunt(null)).toBe(false);
+  });
+});
+
+describe("stopsFrozen / checkStopSetChange", () => {
+  const modes = ["all_at_once", "fixed_order", "assigned_order", "random_order"];
+
+  it("freezes a locked study hunt's stops in every mode", () => {
+    for (const clue_delivery of modes) {
+      const metadata = { clue_delivery, study_hunt: true };
+      expect(stopsFrozen({ locked: true, metadata }), clue_delivery).toBe(true);
+      const result = checkStopSetChange({ locked: true, metadata });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/study hunt/);
     }
   });
 
-  it("allows adding, removing and reordering stops before the lock", () => {
-    expect(checkStopSetChange({ locked: false }).ok).toBe(true);
+  it("leaves a locked non-study hunt's stops editable, except with assigned orders", () => {
+    for (const clue_delivery of ["all_at_once", "fixed_order", "random_order"]) {
+      expect(stopsFrozen({ locked: true, metadata: { clue_delivery } }), clue_delivery).toBe(false);
+    }
+    expect(stopsFrozen({ locked: true, metadata: { clue_delivery: "assigned_order" } })).toBe(true);
+    const result = checkStopSetChange({ locked: true, metadata: { clue_delivery: "assigned_order" } });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/assigned orders/);
+  });
+
+  it("never freezes before the lock", () => {
+    for (const clue_delivery of modes) {
+      expect(stopsFrozen({ locked: false, metadata: { clue_delivery, study_hunt: true } })).toBe(false);
+    }
+  });
+});
+
+describe("withStudyFlagFor", () => {
+  it("keeps the flag for admins and researchers only, without mutating", () => {
+    const meta = Object.freeze({ study_hunt: true, hide_scores: true });
+    expect(withStudyFlagFor("admin", meta)).toBe(meta);
+    expect(withStudyFlagFor("researcher", meta)).toBe(meta);
+    for (const role of ["teacher", "hunt_creator", "adult", undefined]) {
+      expect(withStudyFlagFor(role, meta)).toEqual({ hide_scores: true });
+    }
+    expect(meta.study_hunt).toBe(true);
+    expect(withStudyFlagFor("teacher", null)).toBeNull();
+  });
+});
+
+describe("resolveStudyFlag", () => {
+  const study = { study_hunt: true, hide_scores: false };
+
+  it("keeps the stored flag when an update leaves it out (any role)", () => {
+    const out = resolveStudyFlag({ before: study, after: { hide_scores: true }, canSetStudyFlag: false, locked: true });
+    expect(out).toEqual({ ok: true, metadata: { hide_scores: true, study_hunt: true } });
+    const none = resolveStudyFlag({ before: {}, after: { hide_scores: true }, canSetStudyFlag: false, locked: false });
+    expect(none).toEqual({ ok: true, metadata: { hide_scores: true } });
+  });
+
+  it("refuses a creator setting or clearing the flag", () => {
+    const set = resolveStudyFlag({ before: {}, after: { study_hunt: true }, canSetStudyFlag: false, locked: false });
+    expect(set).toMatchObject({ ok: false, status: 403 });
+    const clear = resolveStudyFlag({ before: study, after: { study_hunt: false }, canSetStudyFlag: false, locked: false });
+    expect(clear).toMatchObject({ ok: false, status: 403 });
+  });
+
+  it("lets admins and researchers set it, and clear it before the lock", () => {
+    expect(resolveStudyFlag({ before: {}, after: { study_hunt: true }, canSetStudyFlag: true, locked: true }).ok).toBe(true);
+    expect(resolveStudyFlag({ before: study, after: { study_hunt: false }, canSetStudyFlag: true, locked: false }).ok).toBe(true);
+  });
+
+  it("never clears it once the study hunt is locked, even for admins", () => {
+    const out = resolveStudyFlag({ before: study, after: { study_hunt: false }, canSetStudyFlag: true, locked: true });
+    expect(out).toMatchObject({ ok: false, status: 409 });
+  });
+
+  it("passes a re-sent unchanged flag through for creators", () => {
+    const out = resolveStudyFlag({ before: study, after: { study_hunt: true, hide_scores: true }, canSetStudyFlag: false, locked: true });
+    expect(out.ok).toBe(true);
   });
 });
 

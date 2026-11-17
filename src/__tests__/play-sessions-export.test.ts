@@ -42,7 +42,7 @@ describe("sessionDeliveryColumns", () => {
 
 describe("playSessionRows", () => {
   it("keys each session by Study ID with the clue delivery columns", () => {
-    const rows = playSessionRows([enrollment], [session()]);
+    const rows = playSessionRows([enrollment], [session(), session({ id: "s3", hunt_id: "h2" })], new Set(["h1"]));
     expect(PLAY_SESSION_HEADERS).toEqual([
       "participant_id",
       "session_id",
@@ -53,9 +53,11 @@ describe("playSessionRows", () => {
       "days_since_enrollment",
       "clue_delivery",
       "clue_order_index",
+      "study_hunt",
     ]);
     expect(rows).toEqual([
-      ["FM-ABC234", "s1", "h1", "completed", "2026-11-02T00:00:00.000Z", "2026-11-02T01:00:00.000Z", "1.0000", "assigned_order", "2"],
+      ["FM-ABC234", "s1", "h1", "completed", "2026-11-02T00:00:00.000Z", "2026-11-02T01:00:00.000Z", "1.0000", "assigned_order", "2", "1"],
+      ["FM-ABC234", "s3", "h2", "completed", "2026-11-02T00:00:00.000Z", "2026-11-02T01:00:00.000Z", "1.0000", "assigned_order", "2", "0"],
     ]);
   });
 
@@ -63,12 +65,12 @@ describe("playSessionRows", () => {
     const rows = playSessionRows([enrollment], [
       session({ id: "early", started_at: "2026-10-30T00:00:00.000Z" }),
       session({ id: "other", user_id: "stranger" }),
-    ]);
+    ], new Set());
     expect(rows).toEqual([]);
   });
 
   it("serializes through the shared formula guard", () => {
-    const rows = playSessionRows([enrollment], [session({ status: "=cmd" })]);
+    const rows = playSessionRows([enrollment], [session({ status: "=cmd" })], new Set());
     expect(serialize(PLAY_SESSION_HEADERS, rows, "csv")).toContain("'=cmd");
   });
 });
@@ -81,19 +83,22 @@ describe("generatePlaySessionsExport", () => {
         { study_id: "st1", user_id: "u2", participant_code: "FM-WDRAWN", enrolled_at: "2026-11-01T00:00:00.000Z", withdrawn_at: "2026-11-03T00:00:00.000Z" },
       ],
       play_sessions: [session(), session({ id: "s2", user_id: "u2" })],
+      hunts: [{ id: "h1", metadata: { study_hunt: true, clue_orders: [["x"]] } }],
     });
     const csv = await generatePlaySessionsExport({ studyId: "st1", format: "csv" });
     const lines = csv.split("\n");
     expect(lines[0]).toBe(PLAY_SESSION_HEADERS.join(","));
     expect(lines).toHaveLength(2);
     expect(lines[1]).toContain("FM-ABC234,s1,h1");
-    expect(lines[1].endsWith(",assigned_order,2")).toBe(true);
+    expect(lines[1].endsWith(",assigned_order,2,1")).toBe(true);
+    // Only the flag is read from hunt metadata.
+    expect(csv).not.toContain("clue_orders");
     expect(csv).not.toContain("u1");
     expect(csv).not.toContain("FM-WDRAWN");
   });
 
   it("returns nothing when the study has no participants", async () => {
-    installDouble({ study_enrollments: [], play_sessions: [] });
+    installDouble({ study_enrollments: [], play_sessions: [], hunts: [] });
     expect(await generatePlaySessionsExport({ studyId: "st1", format: "csv" })).toBe("");
   });
 });

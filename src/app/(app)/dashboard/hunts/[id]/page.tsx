@@ -11,6 +11,8 @@ import { ReviewStatusNotice } from "@/components/hunts/review-status-notice";
 import { CoverImagePicker } from "@/components/hunts/cover-image-picker";
 import { ClueDeliveryBadge } from "@/components/hunts/shuffle-badge";
 import { ClueDeliverySettings } from "@/components/hunts/clue-delivery-settings";
+import { StudyHuntSetting } from "@/components/hunts/study-hunt-setting";
+import { STUDY_HUNT_KEY } from "@/lib/hunts/delivery-lock";
 import { readClueDelivery, readClueOrders } from "@/lib/play/clue-delivery";
 
 interface HuntDetail {
@@ -32,6 +34,10 @@ interface HuntDetail {
   review_reason?: string | null;
   /** Clue delivery can no longer change: the hunt was published or played. */
   delivery_locked?: boolean;
+  /** Stops can't be added, removed or reordered (locked study hunt or assigned orders). */
+  stops_frozen?: boolean;
+  /** Admins and researchers may mark or unmark a study hunt. */
+  viewer_can_set_study_hunt?: boolean;
   /** Someone has played it: stops stay frozen even after unpublishing. */
   has_play_sessions?: boolean;
   finds: FindItem[];
@@ -265,9 +271,11 @@ export default function HuntDetailPage() {
   }
 
   const isDraft = hunt.status === "draft";
-  // Published or played: stops can't be added, removed or reordered (the API
-  // rejects it too). A played-then-unpublished draft can still edit stop content.
-  const stopsFrozen = !isDraft || !!hunt.delivery_locked;
+  // Stops are edited on drafts only, as before. A locked study hunt (or one
+  // with assigned orders) also freezes them on a played-then-unpublished
+  // draft (the API rejects it too); stop content can still be edited.
+  const stopsFrozen = !isDraft || !!hunt.stops_frozen;
+  const studyHunt = hunt.metadata?.[STUDY_HUNT_KEY] === true;
   const finds = hunt.finds || [];
   const showEditor = editor.mode !== "closed";
   const unplacedCount = finds.filter((f) => f.metadata?.needs_placement === true).length;
@@ -379,7 +387,8 @@ export default function HuntDetailPage() {
           <strong>This hunt is {hunt.status.replace(/_/g, " ")}, so its stops and settings are locked.</strong>{" "}
           To add, edit, reorder or remove stops, click <em>Unpublish</em> first, make your changes, then submit it again (it goes back through review).
           Unpublishing takes the hunt offline: nobody can start it, and anyone in the middle of playing may be cut off.
-          {hunt.has_play_sessions && " Once anyone has played it, stops can't be added, removed or reordered even after unpublishing; clone the hunt instead."}
+          {hunt.stops_frozen && hunt.has_play_sessions &&
+            ` This ${studyHunt ? "study hunt" : "hunt"} has been played, so its stops can't be added, removed or reordered even after unpublishing; clone the hunt instead.`}
         </div>
       )}
 
@@ -512,6 +521,19 @@ export default function HuntDetailPage() {
         </div>
       </details>
 
+      <StudyHuntSetting
+        studyHunt={studyHunt}
+        canSet={!!hunt.viewer_can_set_study_hunt}
+        locked={!!hunt.delivery_locked}
+        busy={actionLoading}
+        onChange={(on) =>
+          saveHunt(
+            { metadata: { ...(hunt.metadata || {}), [STUDY_HUNT_KEY]: on } },
+            on ? "Marked as a study hunt." : "No longer a study hunt."
+          )
+        }
+      />
+
       {/* Hunt center point */}
       {isDraft && (
         <details className="mb-4">
@@ -568,8 +590,9 @@ export default function HuntDetailPage() {
 
         {isDraft && stopsFrozen && (
           <p className="text-xs text-gray-500 mb-3" role="note">
-            This hunt has been played, so its stops are locked in place: you can edit a stop&apos;s content, but not add,
-            remove or reorder stops. Clone the hunt to change its stops.
+            This {studyHunt ? "study hunt" : "hunt uses assigned orders and"} has been played, so its stops are locked in
+            place: you can edit a stop&apos;s content, but not add, remove or reorder stops. Clone the hunt to change its
+            stops.
           </p>
         )}
 

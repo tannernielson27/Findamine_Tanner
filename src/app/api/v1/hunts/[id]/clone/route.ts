@@ -9,7 +9,7 @@ import {
 import { canAccessHunt } from "@/lib/hunts/review";
 import { logger } from "@/lib/utils/logger";
 import { CLUE_ORDERS_KEY, readClueOrders, withoutClueOrders } from "@/lib/play/clue-delivery";
-import { remapClueOrders } from "@/lib/hunts/delivery-lock";
+import { remapClueOrders, withStudyFlagFor } from "@/lib/hunts/delivery-lock";
 import { fullDeliveryMetadata, saveClueOrders } from "@/lib/hunts/clue-orders-store";
 import { isReviewer } from "@/lib/hunts/review";
 
@@ -73,7 +73,11 @@ export async function POST(
     const sourceOrders = canSeeOrders
       ? readClueOrders(await fullDeliveryMetadata(supabase, source as Row & { id: string }, "/api/v1/hunts/[id]/clone"))
       : [];
-    huntData.metadata = withoutClueOrders((huntData.metadata as Record<string, unknown> | null) ?? null);
+    // A copy is a study hunt only when an admin or researcher makes it.
+    huntData.metadata = withStudyFlagFor(
+      user.role,
+      withoutClueOrders((huntData.metadata as Record<string, unknown> | null) ?? null)
+    );
 
     const { data: newHunt, error: huntError } = await supabase
       .from("hunts")

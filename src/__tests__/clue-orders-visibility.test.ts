@@ -83,12 +83,24 @@ describe("GET /hunts/{id} and assigned clue orders", () => {
     expect(body.hunt.metadata.clue_orders).toEqual(ORDERS);
     expect(body.hunt.delivery_locked).toBe(true);
     expect(body.hunt.has_play_sessions).toBe(true);
+    // Assigned orders freeze stops once locked, study hunt or not.
+    expect(body.hunt.stops_frozen).toBe(true);
+    expect(body.hunt.viewer_can_set_study_hunt).toBe(false);
   });
 
-  it("gives reviewers the orders too", async () => {
+  it("gives reviewers the orders too, and the study-hunt toggle", async () => {
     h.user = { id: "rev", role: "researcher" };
     const body = await (await get()).json();
     expect(body.hunt.metadata.clue_orders).toEqual(ORDERS);
+    expect(body.hunt.viewer_can_set_study_hunt).toBe(true);
+  });
+
+  it("reports stops as frozen only for a locked study hunt (or assigned orders)", async () => {
+    h.user = { id: "creator", role: "teacher" };
+    h.results.hunts = { data: huntRow({ clue_delivery: "fixed_order" }), error: null };
+    expect((await (await get()).json()).hunt.stops_frozen).toBe(false);
+    h.results.hunts = { data: huntRow({ clue_delivery: "fixed_order", study_hunt: true }), error: null };
+    expect((await (await get()).json()).hunt.stops_frozen).toBe(true);
   });
 
   it("does not query the orders table for other modes", async () => {

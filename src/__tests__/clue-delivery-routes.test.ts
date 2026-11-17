@@ -245,30 +245,93 @@ describe("hunt routes lock clue delivery once the hunt begins", () => {
     expect(db.table("hunt_clue_orders")[0].orders).toEqual(orders);
   });
 
+  const findParams = { params: Promise.resolve({ id: HUNT, findId: "f1" }) };
+  const tryStopChanges = async () => ({
+    added: await addFind(req("POST", `/hunts/${HUNT}/finds`, { clue_text: "New" }), huntParams),
+    moved: await updateFind(req("PUT", `/hunts/${HUNT}/finds/f1`, { sort_order: 2 }), findParams),
+    removed: await deleteFind(req("DELETE", `/hunts/${HUNT}/finds/f1`), findParams),
+  });
+
   it.each(["fixed_order", "random_order", "assigned_order", "all_at_once"])(
-    "freezes stops on a locked %s hunt: no add, delete or reorder",
+    "freezes a locked study hunt's stops (%s): no add, delete or reorder",
     async (clue_delivery) => {
-      seed({ clue_delivery, clue_orders: [STOPS, ["f2", "f1", "f0"]] }, { status: "draft" });
-      const findParams = { params: Promise.resolve({ id: HUNT, findId: "f1" }) };
-      const added = await addFind(req("POST", `/hunts/${HUNT}/finds`, { clue_text: "New" }), huntParams);
+      seed({ clue_delivery, study_hunt: true }, { status: "draft", orders: [STOPS, ["f2", "f1", "f0"]] });
+      const { added, moved, removed } = await tryStopChanges();
       expect(added.status).toBe(409);
-      expect((await added.json()).error).toMatch(/published or played/);
-      expect((await deleteFind(req("DELETE", `/hunts/${HUNT}/finds/f1`), findParams)).status).toBe(409);
-      expect((await updateFind(req("PUT", `/hunts/${HUNT}/finds/f1`, { sort_order: 2 }), findParams)).status).toBe(409);
+      expect((await added.json()).error).toMatch(/study hunt/);
+      expect(moved.status).toBe(409);
+      expect(removed.status).toBe(409);
     }
   );
 
-  it("still allows editing a stop's text on a locked hunt, and keeping its position", async () => {
-    seed({ clue_delivery: "fixed_order" }, { status: "draft" });
-    const findParams = { params: Promise.resolve({ id: HUNT, findId: "f1" }) };
+  it.each(["fixed_order", "random_order", "all_at_once"])(
+    "leaves a locked non-study %s hunt's stops editable",
+    async (clue_delivery) => {
+      seed({ clue_delivery }, { status: "draft" });
+      const { added, moved, removed } = await tryStopChanges();
+      expect(added.status).toBe(201);
+      expect(moved.status).toBe(200);
+      expect(removed.status).toBe(200);
+    }
+  );
+
+  it("still freezes a locked assigned-orders hunt that is not a study hunt", async () => {
+    seed({ clue_delivery: "assigned_order" }, { status: "draft", orders: [STOPS, ["f2", "f1", "f0"]] });
+    const { added, moved, removed } = await tryStopChanges();
+    expect(added.status).toBe(409);
+    expect((await added.json()).error).toMatch(/assigned orders/);
+    expect(moved.status).toBe(409);
+    expect(removed.status).toBe(409);
+  });
+
+  it("still allows editing a locked study hunt's stop text, and keeping its position", async () => {
+    seed({ clue_delivery: "fixed_order", study_hunt: true }, { status: "draft" });
     expect((await updateFind(req("PUT", `/hunts/${HUNT}/finds/f1`, { clue_text: "Clearer clue" }), findParams)).status).toBe(200);
     expect((await updateFind(req("PUT", `/hunts/${HUNT}/finds/f1`, { sort_order: 1 }), findParams)).status).toBe(200);
   });
 
-  it("allows stop changes on an unplayed draft", async () => {
-    seed({ clue_delivery: "fixed_order" }, { status: "draft", sessions: [] });
-    const findParams = { params: Promise.resolve({ id: HUNT, findId: "f1" }) };
+  it("allows stop changes on an unplayed study draft", async () => {
+    seed({ clue_delivery: "fixed_order", study_hunt: true }, { status: "draft", sessions: [] });
     expect((await updateFind(req("PUT", `/hunts/${HUNT}/finds/f1`, { sort_order: 0 }), findParams)).status).toBe(200);
     expect((await deleteFind(req("DELETE", `/hunts/${HUNT}/finds/f1`), findParams)).status).toBe(200);
+  });
+});
+
+describe("study hunt flag", () => {
+  const put = (metadata: Row) => updateHunt(req("PUT", `/hunts/${HUNT}`, { metadata }), huntParams);
+
+  it("a creator can't set it, and a save that leaves it out keeps it", async () => {
+    h.user = { id: "creator", role: "teacher" };
+    seed({ clue_delivery: "fixed_order" }, { status: "draft", sessions: [] });
+    const res = await put({ clue_delivery: "fixed_order", study_hunt: true });
+    expect(res.status).toBe(403);
+
+    const db = seed({ clue_delivery: "fixed_order", study_hunt: true }, { status: "draft" });
+    expect((await put({ clue_delivery: "fixed_order", hide_scores: true })).status).toBe(200);
+    expect(db.table("hunts")[0].metadata).toMatchObject({ study_hunt: true, hide_scores: true });
+  });
+
+  it("a creator can't clear it", async () => {
+    h.user = { id: "creator", role: "teacher" };
+    seed({ clue_delivery: "fixed_order", study_hunt: true }, { status: "draft", sessions: [] });
+    expect((await put({ clue_delivery: "fixed_order", study_hunt: false })).status).toBe(403);
+  });
+
+  it("a researcher can set it on any hunt, even a live one", async () => {
+    h.user = { id: "res", role: "researcher" };
+    const db = seed({ clue_delivery: "fixed_order" });
+    expect((await put({ clue_delivery: "fixed_order", study_hunt: true })).status).toBe(200);
+    expect(db.table("hunts")[0].metadata).toMatchObject({ study_hunt: true });
+  });
+
+  it("an admin can clear it before the hunt begins, but never once it is locked", async () => {
+    h.user = { id: "adm", role: "admin" };
+    seed({ clue_delivery: "fixed_order", study_hunt: true }, { status: "draft", sessions: [] });
+    expect((await put({ clue_delivery: "fixed_order", study_hunt: false })).status).toBe(200);
+
+    seed({ clue_delivery: "fixed_order", study_hunt: true });
+    const res = await put({ clue_delivery: "fixed_order", study_hunt: false });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/can't stop being a study hunt/);
   });
 });

@@ -7,10 +7,17 @@
  * both are checked: a played-then-unpublished draft stays locked. To run a
  * different setting, clone the hunt (the copy is a fresh draft).
  *
- * After the lock the stops are frozen too, in every mode: no stop can be
- * added, removed or moved, since any of those changes the order players get
- * (and would break assigned orders). A stop's own content (clue text, hints,
- * challenge) can still be edited.
+ * The clue delivery lock applies to every hunt. Stops are frozen after the
+ * lock (no add, remove or move; a stop's own content can still be edited)
+ * only when:
+ *   - the hunt is a study hunt (metadata `study_hunt`, set by admins and
+ *     researchers only), so every participant gets the same stops; or
+ *   - it uses assigned orders, which list the exact set of stops.
+ * Other hunts keep the usual unpublish → edit → resubmit workflow.
+ *
+ * The study flag can only be set or cleared by admins and researchers, and
+ * once a study hunt is locked it can't be cleared at all (that would undo the
+ * freeze).
  *
  * The database enforces the same rules (migration 083).
  *
@@ -31,11 +38,77 @@ type Meta = Readonly<Record<string, unknown>> | null | undefined;
 export const DELIVERY_LOCKED_MESSAGE =
   "Clue delivery is locked because this hunt has been published or played. Clone the hunt to use a different setting.";
 
-export const STOPS_LOCKED_MESSAGE =
-  "This hunt has been published or played, so its stops can't be added, removed or reordered. Clone the hunt to change its stops.";
+export const STUDY_STOPS_LOCKED_MESSAGE =
+  "This study hunt has been published or played, so its stops can't be added, removed or reordered. Clone the hunt to change its stops.";
+
+export const ASSIGNED_STOPS_LOCKED_MESSAGE =
+  "This hunt uses assigned orders and has been published or played, so its stops can't be added, removed or reordered. Clone the hunt to change its stops.";
+
+export const STUDY_FLAG_FORBIDDEN_MESSAGE = "Only admins and researchers can mark or unmark a study hunt.";
+
+export const STUDY_FLAG_LOCKED_MESSAGE =
+  "This study hunt has been published or played, so it can't stop being a study hunt.";
+
+/** Hunt metadata key marking a study hunt. */
+export const STUDY_HUNT_KEY = "study_hunt";
 
 export function isDeliveryLocked(hunt: { status: string; hasPlaySessions: boolean }): boolean {
   return hunt.status !== "draft" || hunt.hasPlaySessions;
+}
+
+export function readStudyHunt(metadata: Meta): boolean {
+  return metadata?.[STUDY_HUNT_KEY] === true;
+}
+
+/** Would this hunt's stops freeze once it is locked? (Study hunt or assigned orders.) */
+export function freezesStops(metadata: Meta): boolean {
+  return readStudyHunt(metadata) || readClueDelivery(metadata) === "assigned_order";
+}
+
+/** Are this hunt's stops frozen (no add, remove or reorder)? */
+export function stopsFrozen(input: { locked: boolean; metadata: Meta }): boolean {
+  return input.locked && freezesStops(input.metadata);
+}
+
+/**
+ * Metadata for a hunt created (or cloned) by someone with `role`: the study
+ * flag survives only for admins and researchers. Never mutates.
+ */
+export function withStudyFlagFor<T extends Readonly<Record<string, unknown>> | null>(
+  role: string | null | undefined,
+  metadata: T
+): T {
+  if (!metadata || !(STUDY_HUNT_KEY in metadata) || role === "admin" || role === "researcher") return metadata;
+  return Object.fromEntries(Object.entries(metadata).filter(([key]) => key !== STUDY_HUNT_KEY)) as T;
+}
+
+export type StudyFlagResult =
+  | { ok: true; metadata: Record<string, unknown> | null }
+  | { ok: false; status: 403 | 409; error: string };
+
+/**
+ * The study flag an update ends up with. A save that leaves the key out keeps
+ * the stored value (creators' clients never manage it). Only admins and
+ * researchers may change it, and nobody may clear it once a study hunt is
+ * locked. Never mutates.
+ */
+export function resolveStudyFlag(input: {
+  before: Meta;
+  after: Readonly<Record<string, unknown>> | null;
+  canSetStudyFlag: boolean;
+  locked: boolean;
+}): StudyFlagResult {
+  const { before, after, canSetStudyFlag, locked } = input;
+  const was = readStudyHunt(before);
+  if (!after || !(STUDY_HUNT_KEY in after)) {
+    if (!was) return { ok: true, metadata: after ? { ...after } : null };
+    return { ok: true, metadata: { ...(after ?? {}), [STUDY_HUNT_KEY]: true } };
+  }
+  const next = readStudyHunt(after);
+  if (next === was) return { ok: true, metadata: { ...after } };
+  if (!canSetStudyFlag) return { ok: false, status: 403, error: STUDY_FLAG_FORBIDDEN_MESSAGE };
+  if (was && locked) return { ok: false, status: 409, error: STUDY_FLAG_LOCKED_MESSAGE };
+  return { ok: true, metadata: { ...after } };
 }
 
 function deliveryKey(metadata: Meta): string {
@@ -68,9 +141,13 @@ export function checkDeliveryEdit(input: {
   return { ok: true };
 }
 
-/** May a stop be added to or removed from this hunt? */
-export function checkStopSetChange(input: { locked: boolean }): Check {
-  return input.locked ? { ok: false, error: STOPS_LOCKED_MESSAGE } : { ok: true };
+/** May a stop be added to, removed from or moved within this hunt? */
+export function checkStopSetChange(input: { locked: boolean; metadata: Meta }): Check {
+  if (!stopsFrozen(input)) return { ok: true };
+  return {
+    ok: false,
+    error: readStudyHunt(input.metadata) ? STUDY_STOPS_LOCKED_MESSAGE : ASSIGNED_STOPS_LOCKED_MESSAGE,
+  };
 }
 
 /**

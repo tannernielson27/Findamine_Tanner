@@ -19,8 +19,8 @@ import {
 } from "@/lib/hunts/review";
 import { firstFlagged } from "@/lib/hunts/text-filter";
 import { logger } from "@/lib/utils/logger";
-import { assertDeliveryEditAllowed, huntHasPlaySessions } from "../delivery-guard";
-import { inheritClueOrders, isDeliveryLocked } from "@/lib/hunts/delivery-lock";
+import { huntHasPlaySessions, prepareMetadataUpdate } from "../delivery-guard";
+import { isDeliveryLocked, stopsFrozen } from "@/lib/hunts/delivery-lock";
 import { fullDeliveryMetadata, saveClueOrders, storedMetadata } from "@/lib/hunts/clue-orders-store";
 import { withoutClueOrders } from "@/lib/play/clue-delivery";
 
@@ -71,13 +71,23 @@ export async function GET(
         hunt: { ...withoutInternalReviewFields(hunt), metadata: withoutClueOrders(hunt.metadata ?? null) },
       });
     }
-    // The editor shows clue delivery and the stop list read-only once locked.
+    // The editor shows clue delivery (and, for study hunts, the stop list)
+    // read-only once locked, and the study toggle to admins/researchers only.
     const [has_play_sessions, metadata] = await Promise.all([
       huntHasPlaySessions(supabase, hunt.id, ROUTE),
       fullDeliveryMetadata(supabase, hunt, ROUTE),
     ]);
     const delivery_locked = isDeliveryLocked({ status: hunt.status, hasPlaySessions: has_play_sessions });
-    return Response.json({ hunt: { ...hunt, metadata, delivery_locked, has_play_sessions } });
+    return Response.json({
+      hunt: {
+        ...hunt,
+        metadata,
+        delivery_locked,
+        has_play_sessions,
+        stops_frozen: stopsFrozen({ locked: delivery_locked, metadata }),
+        viewer_can_set_study_hunt: isReviewer(user.role),
+      },
+    });
   } catch (error) {
     return errorResponse(error);
   }
@@ -138,17 +148,20 @@ export async function PUT(
       throw new ApiError(400, "No editable fields provided");
     }
     // Clue delivery (and its assigned orders, kept in their own table) is
-    // locked once the hunt is published or played.
+    // locked once the hunt is published or played; the study flag is for
+    // admins and researchers only.
     let delivery: { before: Meta; after: Meta } | null = null;
     if (updates.metadata !== undefined) {
       if (updates.metadata !== null && (typeof updates.metadata !== "object" || Array.isArray(updates.metadata))) {
         throw new ApiError(400, "Hunt settings must be an object");
       }
-      const before = await fullDeliveryMetadata(supabase, { id, metadata: existing.metadata }, ROUTE);
-      const after = inheritClueOrders(before, updates.metadata as Meta) as Meta;
-      await assertDeliveryEditAllowed(supabase, { hunt: { id, status: existing.status }, before, after, route: ROUTE });
-      delivery = { before, after };
-      updates.metadata = storedMetadata(after);
+      delivery = await prepareMetadataUpdate(supabase, {
+        hunt: { id, status: existing.status, metadata: existing.metadata as Meta },
+        incoming: updates.metadata as Meta,
+        canSetStudyFlag: isReviewer(user.role),
+        route: ROUTE,
+      });
+      updates.metadata = storedMetadata(delivery.after);
     }
 
     const before: Record<string, unknown> = existing;
