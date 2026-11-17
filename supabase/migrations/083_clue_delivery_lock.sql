@@ -314,7 +314,12 @@ begin
     or new.grade_range_min is distinct from old.grade_range_min
     or new.grade_range_max is distinct from old.grade_range_max
     or new.subject_domains is distinct from old.subject_domains
-    or (new.metadata - 'study_hunt') is distinct from (old.metadata - 'study_hunt')
+    -- study_hunt is ignored only while it holds a real boolean (or is absent);
+    -- any other value under that key counts as a content change.
+    or (case when coalesce(jsonb_typeof(new.metadata->'study_hunt'), 'boolean') = 'boolean'
+              and coalesce(jsonb_typeof(old.metadata->'study_hunt'), 'boolean') = 'boolean'
+             then (new.metadata - 'study_hunt') is distinct from (old.metadata - 'study_hunt')
+             else new.metadata is distinct from old.metadata end)
     or new.cover_image_url is distinct from old.cover_image_url;
   if not v_changed then
     return new;
