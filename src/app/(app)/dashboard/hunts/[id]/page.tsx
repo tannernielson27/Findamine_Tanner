@@ -516,7 +516,7 @@ export default function HuntDetailPage() {
             stops={deliveryStops}
             locked={!isDraft || !!hunt.delivery_locked}
             busy={actionLoading}
-            onSave={saveHunt}
+            onSave={(metadata, successText) => saveHunt({ metadata }, successText)}
           />
         </div>
       </details>
