@@ -268,3 +268,71 @@ revoke all on function private.caller_may_set_study_flag() from public, anon, au
 revoke all on function private.guard_hunt_delivery_settings() from public, anon, authenticated;
 revoke all on function private.guard_clue_orders_lock() from public, anon, authenticated;
 revoke all on function private.guard_locked_stops() from public, anon, authenticated;
+
+-- ── Study flag is not content: do not requeue for review ─────────────
+-- Same as 079 except the metadata comparison ignores study_hunt. Only admins,
+-- researchers and server-side callers may set it (trigger above), players
+-- never see it, so flipping it must not unlist an approved hunt.
+create or replace function private.requeue_hunt_on_content_change()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_changed boolean;
+begin
+  -- Back to draft: out of review and out of the catalogue.
+  if new.status = 'draft'
+     and old.status is distinct from 'draft'
+     and new.review_status is distinct from 'not_submitted' then
+    new.review_status := 'not_submitted';
+    new.is_public := false;
+    new.review_reason := null;
+    new.review_submitted_at := null;
+    new.reviewed_at := null;
+    new.reviewed_by := null;
+    return new;
+  end if;
+
+  -- An update that records a review decision is left alone.
+  if new.review_status is distinct from old.review_status
+     or private.caller_is_reviewer() then
+    return new;
+  end if;
+
+  v_changed := new.title is distinct from old.title
+    or new.description is distinct from old.description
+    or new.theme is distinct from old.theme
+    or new.theme_narrative is distinct from old.theme_narrative
+    or new.target_audience is distinct from old.target_audience
+    or new.play_mode is distinct from old.play_mode
+    or new.identity_mode is distinct from old.identity_mode
+    or new.center_latitude is distinct from old.center_latitude
+    or new.center_longitude is distinct from old.center_longitude
+    or new.search_radius_km is distinct from old.search_radius_km
+    or new.grade_range_min is distinct from old.grade_range_min
+    or new.grade_range_max is distinct from old.grade_range_max
+    or new.subject_domains is distinct from old.subject_domains
+    or (new.metadata - 'study_hunt') is distinct from (old.metadata - 'study_hunt')
+    or new.cover_image_url is distinct from old.cover_image_url;
+  if not v_changed then
+    return new;
+  end if;
+
+  if new.review_status = 'approved' then
+    new.review_status := 'pending';
+    new.is_public := false;
+    new.review_reason := null;
+    new.reviewed_at := null;
+    new.reviewed_by := null;
+    new.review_submitted_at := now();
+  elsif new.review_status = 'pending' then
+    new.review_submitted_at := now();
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function private.requeue_hunt_on_content_change() from public;
+grant execute on function private.requeue_hunt_on_content_change() to anon, authenticated, service_role;
