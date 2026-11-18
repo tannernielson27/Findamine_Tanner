@@ -11,7 +11,8 @@ import { isChildAccount } from "@/lib/play/child-account";
 import type { CelebrationControls } from "@/lib/play/use-celebration-state";
 import type { PlaySession } from "@/lib/play/use-play-session";
 import type { PrivacyNotice } from "@/lib/services/privacy-notice";
-import type { AnswerFeedback, HotCold, LocationConsent, StopStep } from "@/lib/play/play-types";
+import { initialStep, stepAfterStart } from "@/lib/play/stop-state";
+import type { AnswerFeedback, Find, HotCold, LocationConsent, StopStep } from "@/lib/play/play-types";
 
 export interface StopFlow extends GeoTracking, CheckIn {
   step: StopStep;
@@ -33,7 +34,10 @@ export interface StopFlow extends GeoTracking, CheckIn {
   finishing: boolean;
   uploadingPhoto: boolean;
   hints: StopHints;
-  handlePrimeViewed: () => Promise<void>;
+  /** True while "I'm ready" is waiting for the server to start the stop. */
+  starting: boolean;
+  /** "I'm ready": starts the stop on the server, which then releases its details. */
+  handleReady: () => Promise<void>;
   handleReadingCheckPassed: () => void;
   handleClueRead: () => void;
   handleSubmitAnswer: () => Promise<void>;
@@ -45,8 +49,11 @@ export interface StopFlow extends GeoTracking, CheckIn {
 }
 
 /**
- * Per-stop state machine: prime → reading check → clue → navigate →
- * challenge → capture → feedback, plus every handler that moves it along.
+ * Per-stop state machine: prime (the ready step: primer or plain gate, ending
+ * in "I'm ready", which starts the stop on the server) → reading check → clue
+ * → navigate → challenge → capture → feedback, plus every handler that moves
+ * it along. Nothing about where the stop is exists on the device before the
+ * start (issue #16).
  */
 export function useStopFlow(
   huntId: string | string[] | undefined,
@@ -54,7 +61,7 @@ export function useStopFlow(
   celebration: CelebrationControls
 ): StopFlow {
   const { finds, currentIndex, setCurrentIndex, completedFinds, setCompletedFinds, setSessionScore, huntMeta, finishHunt } = session;
-  const { delivery, setClueBoardOpen } = session;
+  const { delivery, setClueBoardOpen, refreshStops, applyStartedStop } = session;
   const { celebrate } = celebration;
   const currentFind = finds[currentIndex];
 
@@ -80,6 +87,9 @@ export function useStopFlow(
   const [finishing, setFinishing] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const resetForFindRef = useRef<string | null>(null);
+  const refreshedForRef = useRef<string | null>(null);
+  const startingRef = useRef(false);
+  const [starting, setStarting] = useState(false);
 
   const setError = useCallback((message: string | null) => setErrorState(message), []);
   const hints = useStopHints(huntId, currentFind, setError);
@@ -106,9 +116,8 @@ export function useStopFlow(
     // results and skip the photo step.
     if (resetForFindRef.current === currentFind.id) return;
     resetForFindRef.current = currentFind.id;
-    if (completedFinds.has(currentFind.id)) setStep("feedback");
-    else if (currentFind.primers) setStep("prime");
-    else setStep("clue");
+    // Not started: the ready step. Started (a reload mid-stop): the clue.
+    setStep(initialStep(currentFind, completedFinds.has(currentFind.id)));
     setAnswer("");
     setFeedback(null);
     setScore(null);
@@ -121,20 +130,41 @@ export function useStopFlow(
     setErrorState(null);
   }, [currentIndex, currentFind, completedFinds, resetHints, setGpsStatus]);
 
-  const handlePrimeViewed = useCallback(async () => {
-    if (!currentFind) return;
+  // A stop the clue order hadn't opened when the list was loaded (the next
+  // stop, right after finishing one) has no primer yet: fetch the list again,
+  // once per stop. handleReady retries if this fails.
+  useEffect(() => {
+    if (!currentFind || currentFind.started_at || currentFind.open) return;
+    if (refreshedForRef.current === currentFind.id) return;
+    refreshedForRef.current = currentFind.id;
+    refreshStops().catch((err) => setErrorState(errorMessage(err, "Couldn't load this stop. Check your connection and try again.")));
+  }, [currentFind, refreshStops]);
+
+  // "I'm ready": the server starts the stop's clock and only then sends its
+  // clue, place and challenge. Safe to repeat: the start time is set once.
+  const handleReady = useCallback(async () => {
+    if (!currentFind || startingRef.current) return;
+    const findId = currentFind.id;
+    startingRef.current = true;
+    setStarting(true);
+    setErrorState(null);
     try {
-      await postJsonStrict(`/api/v1/play/${huntId}/prime-viewed`, { find_id: currentFind.id });
-      // If reading check is enabled, go to reading_check step first
-      if (currentFind.reading_check?.enabled && currentFind.reading_check.questions?.length > 0) {
-        setStep("reading_check");
-      } else {
-        setStep("clue");
+      if (!currentFind.open) {
+        // Not opened by the clue order yet (see the effect above): reload first.
+        await refreshStops();
+        return;
       }
+      const data = await postJsonStrict<{ stop: Find }>(`/api/v1/play/${huntId}/start-stop`, { find_id: findId });
+      applyStartedStop(data.stop);
+      // Unless the player switched stops while the request was out.
+      if (resetForFindRef.current === findId) setStep(stepAfterStart(data.stop));
     } catch (err) {
-      setErrorState(errorMessage(err, "Failed to record primer view"));
+      setErrorState(errorMessage(err, "Couldn't start this stop. Please try again."));
+    } finally {
+      startingRef.current = false;
+      setStarting(false);
     }
-  }, [currentFind, huntId]);
+  }, [currentFind, huntId, refreshStops, applyStartedStop]);
 
   const handleReadingCheckPassed = useCallback(() => setStep("clue"), []);
   const handleClueRead = useCallback(() => setStep("navigate"), []);
@@ -189,6 +219,10 @@ export function useStopFlow(
         const notice = data.privacy_notice as PrivacyNotice | undefined;
         if (notice?.id) setPrivacyNotice(notice);
         setStep("capture");
+        // Finishing a stop opens the next one in the player's order: fetch it
+        // (and its primer) while they look at the results. If this fails, the
+        // next stop reloads itself when the player reaches it.
+        refreshStops().catch(() => undefined);
       }
     } catch (err) {
       setErrorState(errorMessage(err, "Failed to submit answer"));
@@ -196,7 +230,7 @@ export function useStopFlow(
       submittingRef.current = false;
       setSubmitting(false);
     }
-  }, [currentFind, huntId, answer, huntMeta.hide_scores, celebrate, setCompletedFinds, setSessionScore]);
+  }, [currentFind, huntId, answer, huntMeta.hide_scores, celebrate, setCompletedFinds, setSessionScore, refreshStops]);
 
   const handleCapturePhoto = useCallback(
     async (file: File) => {
@@ -270,7 +304,8 @@ export function useStopFlow(
     finishing,
     uploadingPhoto,
     hints,
-    handlePrimeViewed,
+    starting,
+    handleReady,
     handleReadingCheckPassed,
     handleClueRead,
     handleSubmitAnswer,

@@ -15,6 +15,7 @@ import { MultipleChoice } from "@/components/play/challenge/multiple-choice";
 import { ClueCard } from "@/components/play/clue-card";
 import { PlayHud } from "@/components/play/play-hud";
 import { PlaySheet } from "@/components/play/play-sheet";
+import { PrimeStep, ReadyGate } from "@/components/play/steps/prime-step";
 import { StopResults } from "@/components/play/stop-results";
 import { HuntSummary } from "@/components/play/hunt-summary";
 import { PlayEmpty, PlayLoadError } from "@/components/play/play-states";
@@ -150,6 +151,46 @@ describe("ClueCard", () => {
     expect(html).toContain("text-on-ink-accent");
     expect(html).toContain("Head toward the bell tower.");
     expect(html).toContain(SAFETY_REMINDER);
+  });
+});
+
+describe("ready step (issue #16: nothing about the stop before the player starts it)", () => {
+  it("a stop without a primer gets a neutral gate: the stop number and I'm ready", () => {
+    const html = render(createElement(ReadyGate, { stopNumber: 2, open: true, onReady: noop }));
+    expect(html).toContain("Ready for stop 2?");
+    expect(html).toContain(">I'm ready<");
+    expect(html).toContain('aria-label="Stop 2: ready to start"');
+    // No clue card, place line, distance or meter on the gate.
+    expect(html).not.toContain("CLUE");
+    expect(html).not.toContain("Heading to");
+    expect(html).not.toContain("bg-proximity-");
+  });
+
+  it("waits, with a retry, while the next stop is still being fetched", () => {
+    const html = render(createElement(ReadyGate, { stopNumber: 3, open: false, onReady: noop }));
+    expect(html).toContain("Getting this stop ready");
+    expect(html).toContain(">Try again<");
+    expect(html).not.toContain(">I'm ready<");
+  });
+
+  it("one tap is enough: the button is disabled while the stop is starting", () => {
+    const gate = render(createElement(ReadyGate, { stopNumber: 2, open: true, onReady: noop, busy: true }));
+    expect(gate).toContain("disabled");
+    expect(gate).toContain("Starting…");
+    const primer = render(
+      createElement(PrimeStep, { stopNumber: 1, primer: { title: "Bells", content: { text: "Bells are tuned by size." } }, onReady: noop, busy: true })
+    );
+    expect(primer).toContain("disabled");
+    expect(primer).toContain("Starting…");
+  });
+
+  it("the primer still comes before the start, ending in I'm ready", () => {
+    const html = render(
+      createElement(PrimeStep, { stopNumber: 1, primer: { title: "Bells", content: { text: "Bells are tuned by size." } }, onReady: noop })
+    );
+    expect(html).toContain("Stop 1 · Before you start");
+    expect(html).toContain("Bells");
+    expect(html).toContain(">I'm ready<");
   });
 });
 

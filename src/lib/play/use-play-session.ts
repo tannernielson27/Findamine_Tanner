@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } 
 import { HttpError, safeFetch } from "@/lib/play/play-api";
 import type { CelebrationControls } from "@/lib/play/use-celebration-state";
 import type { Find, HuntMetadata, HuntSummaryData, StartOptions } from "@/lib/play/play-types";
-import { readClueDelivery, sessionStopOrder, type ClueDelivery } from "@/lib/play/clue-delivery";
+import { readClueDelivery, type ClueDelivery } from "@/lib/play/clue-delivery";
+import { mergeStops, withStartedStop } from "@/lib/play/stop-state";
 
 export interface FinishOptions {
   findsCompleted: number;
@@ -14,6 +15,13 @@ export interface FinishOptions {
 
 export interface PlaySession {
   finds: Find[];
+  /**
+   * Reloads the stops from the server: which stop is open next, and its
+   * primer. Details of stops the player hasn't started never come with it.
+   */
+  refreshStops: () => Promise<void>;
+  /** Puts the details the server released at "I'm ready" into the list. */
+  applyStartedStop: (stop: Find) => void;
   huntMeta: HuntMetadata;
   /** How this hunt hands out clues. */
   delivery: ClueDelivery;
@@ -43,6 +51,13 @@ function markFirstHuntStarted(): void {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ milestone_type: "first_hunt_started" }),
   }).catch(() => {});
+}
+
+/** The session's stops in play order (GET /api/v1/play/[huntId]/stops). */
+async function fetchStops(huntId: string | string[] | undefined): Promise<Find[]> {
+  const res = await safeFetch(`/api/v1/play/${huntId}/stops`);
+  const body = (await res.json()) as { stops?: Find[] };
+  return body.stops ?? [];
 }
 
 /**
@@ -120,18 +135,15 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
           throw new HttpError(startRes.status, startBody.error || `HTTP ${startRes.status}`);
         }
         setNeedsCodename(false);
-        const startBody = (await startRes.json().catch(() => ({}))) as {
-          session?: { id?: string };
-          clue_order_index?: number | null;
-          /** Assigned orders: this player's own order (the hunt's orders stay on the server). */
-          clue_order?: string[] | null;
-        };
 
         // Drives the next-steps funnel surfaced after onboarding.
         markFirstHuntStarted();
 
-        const [findsRes, progressRes, meta] = await Promise.all([
-          safeFetch(`/api/v1/hunts/${huntId}/finds`),
+        const [allFinds, progressRes, meta] = await Promise.all([
+          // This session's stops, already in its own order (random and assigned
+          // orders differ per player; stable across reloads). A stop the
+          // player hasn't started comes without its clue, place or challenge.
+          fetchStops(huntId),
           safeFetch(`/api/v1/play/${huntId}/progress`),
           // Hunt metadata for anxiety-sensitive mode and scoring config (non-critical)
           safeFetch(`/api/v1/hunts/${huntId}`)
@@ -140,16 +152,7 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
             .catch(() => ({}) as HuntMetadata),
         ]);
 
-        const findsData = await findsRes.json();
         const progressData = await progressRes.json();
-        // This session's order (random or assigned orders differ per player),
-        // stable across reloads. The server enforces the same order.
-        const allFinds: Find[] = sessionStopOrder((findsData.finds || []) as Find[], {
-          huntMetadata: meta as Record<string, unknown>,
-          sessionId: startBody.session?.id ?? progressData.session?.id,
-          orderIndex: startBody.clue_order_index ?? progressData.session?.metadata?.clue_order_index ?? null,
-          ownOrder: startBody.clue_order ?? null,
-        });
 
         const doneCompletions = (progressData.completions || []).filter(
           (c: { completed_at: string | null }) => c.completed_at
@@ -209,8 +212,19 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
     loadHunt();
   }, [loadHunt]);
 
+  const refreshStops = useCallback(async () => {
+    const fresh = await fetchStops(huntId);
+    setFinds((current) => mergeStops(current, fresh));
+  }, [huntId]);
+
+  const applyStartedStop = useCallback((stop: Find) => {
+    setFinds((current) => withStartedStop(current, stop));
+  }, []);
+
   return {
     finds,
+    refreshStops,
+    applyStartedStop,
     huntMeta,
     delivery: readClueDelivery(huntMeta as Record<string, unknown>),
     clueBoardOpen,

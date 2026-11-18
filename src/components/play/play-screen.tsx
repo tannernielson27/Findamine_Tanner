@@ -10,7 +10,7 @@ import { ErrorBanner, GpsBanners, OfflineBanner, PlayBanner } from "@/components
 import { ThumbZone } from "@/components/play/thumb-zone";
 import { ChallengeSheet } from "@/components/play/challenge-sheet";
 import { StopResults } from "@/components/play/stop-results";
-import { PrimeStep, ReadingCheckStep } from "@/components/play/steps/prime-step";
+import { PrimeStep, ReadyGate, ReadingCheckStep } from "@/components/play/steps/prime-step";
 import { ClueBoard } from "@/components/play/clue-board";
 import { useWakeLock } from "@/lib/play/use-wake-lock";
 import { useHeatHaptics, useOnlineStatus } from "@/lib/play/use-play-feedback";
@@ -56,9 +56,10 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
     if (index >= 0) session.setCurrentIndex(index);
     setClueBoardOpen(false);
   };
-  const target = currentFind?.locations
-    ? { lat: currentFind.locations.latitude, lng: currentFind.locations.longitude }
-    : null;
+  // The server sends a stop's place only once the stop is started; the check
+  // here keeps the map, pin and compass empty before that whatever arrives.
+  const place = currentFind?.started_at ? currentFind.locations : null;
+  const target = place ? { lat: place.latitude, lng: place.longitude } : null;
 
   useWakeLock(true);
   useHeatHaptics(navigating ? hotCold?.zone : null);
@@ -76,7 +77,7 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
 
   return (
     <main className="fixed inset-0 z-[51] overflow-hidden bg-map-ground text-ink">
-      <PlayMap location={currentFind?.locations ?? null} userPos={userPos} zone={navigating ? hotCold?.zone ?? null : null} />
+      <PlayMap location={place} userPos={userPos} zone={navigating ? hotCold?.zone ?? null : null} />
 
       <div className="absolute inset-x-4 top-[calc(12px+env(safe-area-inset-top))] z-10 flex flex-col gap-2.5">
         <PlayHud
@@ -119,8 +120,24 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
         />
       )}
 
+      {/* Every stop starts with "I'm ready": after its primer, or on a plain gate. */}
       {step === "prime" && currentFind?.primers && (
-        <PrimeStep stopNumber={stopNumber} primer={currentFind.primers} onReady={flow.handlePrimeViewed} errorSlot={sheetBanners} />
+        <PrimeStep
+          stopNumber={stopNumber}
+          primer={currentFind.primers}
+          onReady={flow.handleReady}
+          busy={flow.starting}
+          errorSlot={sheetBanners}
+        />
+      )}
+      {step === "prime" && currentFind && !currentFind.primers && (
+        <ReadyGate
+          stopNumber={stopNumber}
+          open={currentFind.open}
+          onReady={flow.handleReady}
+          busy={flow.starting}
+          errorSlot={sheetBanners}
+        />
       )}
       {step === "reading_check" && currentFind?.reading_check && (
         <ReadingCheckStep

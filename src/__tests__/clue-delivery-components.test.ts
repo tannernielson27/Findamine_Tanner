@@ -71,6 +71,19 @@ describe("ClueBoard", () => {
     expect(html).toContain('aria-label="Back to the active clue"');
   });
 
+  it("lists a stop that isn't started by number only: its clue is not on the device yet", () => {
+    const unstarted: Find = { ...find("b", ""), started_at: null, clue_text: null };
+    const html = render(
+      createElement(ClueBoard, { finds: [finds[0], unstarted, finds[2]], completedFinds: new Set<string>(), activeId: "a", onPick: noop, onClose: noop })
+    );
+    expect(html).toContain("Under the old oak");
+    expect(html).toContain("Stop 2");
+    expect(html).toContain("Not started yet. Its clue appears when you tap I'm ready.");
+    expect(html).toContain("Open stop 2");
+    expect(html).not.toContain("Where the water sings");
+    expect(html).not.toContain("No written clue");
+  });
+
   it("has no close button when there is no open clue to go back to", () => {
     const html = render(createElement(ClueBoard, { finds, completedFinds: new Set<string>(), activeId: null, onPick: noop, onClose: null }));
     expect(html).not.toContain("Back to the active clue");

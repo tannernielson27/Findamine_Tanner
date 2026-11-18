@@ -82,7 +82,11 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
   const delivery = readClueDelivery(hunt.metadata as Record<string, unknown> | null);
   // Only the creator's fixed order has one starting stop for everyone.
   const shuffled = delivery !== "fixed_order";
-  const start = startArea(finds, hunt.center_latitude, hunt.center_longitude, { shuffled });
+  // A stop's location is released in play, when the player starts that stop,
+  // and not before: players see the hunt's general area here. Only the owner
+  // and reviewers are shown where stop 1 is.
+  const showsFirstStop = canSeeStops && !shuffled;
+  const start = startArea(finds, hunt.center_latitude, hunt.center_longitude, { firstStop: showsFirstStop });
   const tags = [
     audienceLabel(hunt.target_audience),
     ...((hunt.subject_domains as string[] | null) ?? []).map(subjectLabel),
@@ -181,14 +185,16 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
         {start && (
           <DetailSection
             id="start-heading"
-            title={shuffled ? "Where it takes place" : "Where it starts"}
+            title={showsFirstStop ? "Where it starts" : "Where it takes place"}
             note={
               <p className="text-sm text-themed-muted">
                 {delivery === "all_at_once"
-                  ? "Every clue is open from the start, and you choose which stop to work on."
+                  ? "Every stop is open from the start, and you choose which one to work on."
                   : shuffled
                   ? "Stops come in a different order for different players and stay hidden until you reach them."
-                  : "Later stops stay hidden until you reach them."}
+                  : showsFirstStop
+                  ? "This is stop 1. Players see only the hunt's general area here: each stop stays hidden until they start it."
+                  : "Each stop stays hidden until you start it."}
               </p>
             }
           >
@@ -211,7 +217,7 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
                 Only you and reviewers see the route and clues. Players see the start area.
                 {delivery === "random_order" && " Shuffled: each player gets these stops in a random order."}
                 {delivery === "assigned_order" && " Each player is assigned one of your clue orders."}
-                {delivery === "all_at_once" && " Players see every clue at once and pick their own order."}
+                {delivery === "all_at_once" && " Players pick their own order; each clue appears when they start that stop."}
               </p>
             }
           >

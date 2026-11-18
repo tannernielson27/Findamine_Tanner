@@ -17,12 +17,14 @@ interface ClueBoardProps {
 }
 
 /**
- * "All clues at once" hunts: every unfinished clue, and the player picks the
- * one to work on. The map, hot/cold and arrival all follow the active clue;
+ * "All clues at once" hunts: every unfinished stop, and the player picks the
+ * one to work on. A stop shows its clue only once the player has started it
+ * ("I'm ready"); until then it is listed by number, because its clue is not on
+ * the device yet. The map, hot/cold and arrival all follow the active stop;
  * the player can come back here and switch at any time.
  */
 export function ClueBoard({ finds, completedFinds, activeId, onPick, onClose }: ClueBoardProps) {
-  const open = finds.filter((f) => !completedFinds.has(f.id));
+  const open = finds.flatMap((find, index) => (completedFinds.has(find.id) ? [] : [{ find, stopNumber: index + 1 }]));
   const doneCount = finds.length - open.length;
 
   return (
@@ -35,7 +37,7 @@ export function ClueBoard({ finds, completedFinds, activeId, onPick, onClose }: 
       <header className="flex items-start justify-between gap-3 px-5 pt-5 pb-3">
         <div>
           <h2 id="clue-board-heading" className="text-lg font-bold">
-            Choose a clue
+            Choose a stop
           </h2>
           <p className="text-sm text-themed-muted">
             {open.length} open · {doneCount} of {finds.length} found. Pick one to work on; you can switch any time.
@@ -49,8 +51,10 @@ export function ClueBoard({ finds, completedFinds, activeId, onPick, onClose }: 
       </header>
 
       <ul className="flex flex-col gap-2.5 overflow-y-auto px-5 pb-5">
-        {open.map((find) => {
+        {open.map(({ find, stopNumber }) => {
           const active = find.id === activeId;
+          const started = !!find.started_at;
+          const pickLabel = started ? "Work on this clue" : `Open stop ${stopNumber}`;
           return (
             <li
               key={find.id}
@@ -59,15 +63,20 @@ export function ClueBoard({ finds, completedFinds, activeId, onPick, onClose }: 
                 active ? "border-brand bg-sky-tint" : "border-themed-border bg-surface"
               )}
             >
-              <p className="text-[15px] leading-snug">{find.clue_text || "No written clue: follow the map."}</p>
+              <p className="text-sm font-bold uppercase tracking-[0.04em] text-juniper-deep">Stop {stopNumber}</p>
+              <p className="text-[15px] leading-snug">
+                {started
+                  ? find.clue_text || "No written clue: follow the map."
+                  : "Not started yet. Its clue appears when you tap I'm ready."}
+              </p>
               <Button
                 size="md"
                 variant={active ? "ink" : "secondary"}
                 className="mt-3"
                 onClick={() => onPick(find.id)}
-                aria-label={active ? "Keep working on this clue" : "Work on this clue"}
+                aria-label={active ? `Keep working on stop ${stopNumber}` : pickLabel}
               >
-                {active ? "Keep working on this" : "Work on this clue"}
+                {active ? "Keep working on this" : pickLabel}
               </Button>
             </li>
           );
