@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import { BackButton } from "@/components/ui/back-button";
 import { CONTACT_EMAIL, LAST_UPDATED, PRIVACY_PATH, TERMS_PATH, formatLegalDate } from "@/lib/constants/legal";
 
 /**
@@ -49,6 +50,11 @@ export default function LegalPage({ title, intro, sections, children }: LegalPag
     <main className="min-h-screen bg-[#FEFCF6] px-4 py-8 sm:py-12">
       <div className="mx-auto w-full max-w-3xl">
         <header className="mb-8">
+          {/* First thing on the page: players reach these from sign-up, Profile
+              and Settings, and the app shells have no browser back button. */}
+          <div className="mb-6">
+            <BackButton fallbackHref="/" />
+          </div>
           <Link href="/" className="inline-block mb-6">
             <Image
               src="/logo-findamine.png"

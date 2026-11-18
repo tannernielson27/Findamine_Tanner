@@ -1,6 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+
+// The legal shell carries the Back control, which reads the router.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: () => {} }) }));
+
 import PrivacyPolicyPage from "@/app/privacy/page";
 import TermsOfUsePage from "@/app/terms/page";
 import { CONTACT_EMAIL, LAST_UPDATED, formatLegalDate } from "@/lib/constants/legal";

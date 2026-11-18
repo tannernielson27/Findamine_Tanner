@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { BackButton } from "@/components/ui/back-button";
 
 interface Standard {
   id: string;
@@ -16,6 +17,9 @@ interface Framework {
   abbreviation: string;
   scope: string;
 }
+
+/** Admin has no tab bar and nothing links here from the Admin home, so the page carries its own way out. */
+const BACK = <BackButton fallbackHref="/admin" className="mb-3" />;
 
 export default function AdminStandardsPage() {
   const [frameworks, setFrameworks] = useState<Framework[]>([]);
@@ -43,12 +47,13 @@ export default function AdminStandardsPage() {
   }, []);
 
   if (loading) {
-    return <main className="mx-auto max-w-4xl px-4 py-4"><p className="text-sm text-gray-500">Loading...</p></main>;
+    return <main className="mx-auto max-w-4xl px-4 py-4">{BACK}<p className="text-sm text-gray-500">Loading...</p></main>;
   }
 
   if (error) {
     return (
       <main className="mx-auto max-w-4xl px-4 py-4">
+        {BACK}
         <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           Could not load standards: {error}
         </div>
@@ -70,6 +75,7 @@ export default function AdminStandardsPage() {
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-4">
+      {BACK}
       <h1 className="text-base font-semibold text-gray-900 mb-1">Standards Coverage Dashboard</h1>
       <p className="text-xs text-gray-500 mb-4">
         {standards.length} standards across {frameworks.length} frameworks
