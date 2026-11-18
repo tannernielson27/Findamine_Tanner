@@ -39,6 +39,8 @@ import { POST as clueHint } from "@/app/api/v1/play/[huntId]/clue-hint/route";
 import { POST as challengeHint } from "@/app/api/v1/play/[huntId]/hint/route";
 import { POST as aiHint } from "@/app/api/v1/ai/hints/route";
 import { GET as huntFinds } from "@/app/api/v1/hunts/[id]/finds/route";
+import { GET as listLocations } from "@/app/api/v1/locations/route";
+import { GET as getLocation } from "@/app/api/v1/locations/[id]/route";
 import { getCompletion } from "@/app/api/v1/play/_lib/completions";
 import { stopStartedAt } from "@/app/api/v1/play/_lib/stop-start";
 import { findsForViewer } from "@/app/api/v1/hunts/redact-finds";
@@ -509,6 +511,25 @@ describe("hunt APIs no longer hand stop details to players", () => {
       expect(body.finds[0]).toMatchObject({ clue_text: SECRETS.clue, clue_hints: [SECRETS.hint], locations: { name: SECRETS.place } });
       expect(body.finds[0].tasks.content.correct_answer).toBe("52");
     }
+  });
+
+  it("the location library is for hunt builders: a player can't list or open places", async () => {
+    seed();
+    const one = (id: string) => getLocation(req("GET", `/locations/${id}`), { params: Promise.resolve({ id }) });
+    const nearby = () => listLocations(req("GET", "/locations?lat=40.25&lng=-111.65&radius=5000"));
+
+    for (const res of [await nearby(), await listLocations(req("GET", "/locations")), await one("loc-f0")]) {
+      expect(res.status).toBe(403);
+      expectNoSecrets(await res.json());
+    }
+    h.user = null;
+    expect((await one("loc-f0")).status).toBe(401);
+
+    h.user = { id: "creator", role: "teacher" };
+    const res = await one("loc-f0");
+    expect(res.status).toBe(200);
+    expect((await res.json()).location.name).toBe(SECRETS.place);
+    expect((await listLocations(req("GET", "/locations"))).status).toBe(200);
   });
 
   it("findsForViewer strips everything but id and order for anyone who can't edit the hunt", () => {

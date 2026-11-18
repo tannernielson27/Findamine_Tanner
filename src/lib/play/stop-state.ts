@@ -10,20 +10,22 @@
 
 import type { Find, StopStep } from "@/lib/play/play-types";
 
-/**
- * The step a stop opens on. Not started: the ready step (the primer, or a
- * plain "I'm ready" gate). Started: straight to the clue, because the clock is
- * already running and the start is never asked for twice.
- */
-export function initialStep(find: Find, completed: boolean): StopStep {
-  if (completed) return "feedback";
-  return find.started_at ? "clue" : "prime";
-}
-
 /** Where "I'm ready" leads once the server has started the stop. */
 export function stepAfterStart(find: Find): StopStep {
   const check = find.reading_check;
   return check?.enabled && check.questions?.length > 0 ? "reading_check" : "clue";
+}
+
+/**
+ * The step a stop opens on. Not started: the ready step (the primer, or a
+ * plain "I'm ready" gate). Started (a reload mid-stop): past the ready step,
+ * because the clock is already running and the start is never asked for
+ * twice. A stop with a reading check reopens on the check, as it always has
+ * after a reload: passing it is not recorded, so a reload must not skip it.
+ */
+export function initialStep(find: Find, completed: boolean): StopStep {
+  if (completed) return "feedback";
+  return find.started_at ? stepAfterStart(find) : "prime";
 }
 
 /** The list with a just-started stop's details in place. Never mutates. */

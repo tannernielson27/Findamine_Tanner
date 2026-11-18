@@ -39,6 +39,12 @@ describe("initialStep", () => {
     expect(initialStep(started("a", { primers: { title: "Read me", content: {} } }), false)).toBe("clue");
   });
 
+  it("reopens a started stop on its reading check, so a reload can't skip the check", () => {
+    const check = { enabled: true, questions: [{ question: "Q", options: ["a", "b"], correct_answer: "a" }] };
+    expect(initialStep(started("a", { reading_check: check }), false)).toBe("reading_check");
+    expect(initialStep(started("a", { reading_check: { ...check, enabled: false } }), false)).toBe("clue");
+  });
+
   it("shows the results of a finished stop", () => {
     expect(initialStep(started("a"), true)).toBe("feedback");
   });

@@ -16,7 +16,7 @@ export const POST = withLogging("POST /api/v1/ai/hints", async (request: NextReq
 
   const body = await request.json();
   const { find_id, level } = body;
-  if (!find_id) throw new ApiError(400, "find_id required");
+  if (typeof find_id !== "string" || !find_id) throw new ApiError(400, "find_id required");
 
   const hintLevel = Math.max(1, Math.min(4, level || 1));
   const supabase = await createSupabaseServiceClient();

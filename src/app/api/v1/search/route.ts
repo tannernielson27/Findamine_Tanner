@@ -1,7 +1,9 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
-import { errorResponse, ApiError, sanitizeFilterInput } from "@/lib/utils/api-auth";
+import { errorResponse, ApiError, getAuthUser, sanitizeFilterInput } from "@/lib/utils/api-auth";
 import { generalLimiter } from "@/lib/utils/rate-limit";
+
+const BUILDER_ROLES: readonly string[] = ["teacher", "hunt_creator", "admin", "researcher"];
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,6 +15,10 @@ export async function GET(request: NextRequest) {
     const safeQ = sanitizeFilterInput(q);
     const limit = parseInt(searchParams.get("limit") || "20");
     const supabase = await createSupabaseServiceClient();
+    // Place names and addresses are for hunt builders only: to a player they
+    // give away where stops are before the stop is started (issue #16).
+    const user = await getAuthUser(request);
+    const canSearchPlaces = !!user && BUILDER_ROLES.includes(user.role);
 
     // Search across hunts, tasks, locations, primers using tsvector where available
     const [hunts, tasks, locations] = await Promise.all([
@@ -29,12 +35,14 @@ export async function GET(request: NextRequest) {
         .is("deleted_at", null)
         .or(`title.ilike.%${safeQ}%,description.ilike.%${safeQ}%`)
         .limit(limit),
-      supabase
-        .from("locations")
-        .select("id, name, address")
-        .is("deleted_at", null)
-        .or(`name.ilike.%${safeQ}%,address.ilike.%${safeQ}%`)
-        .limit(limit),
+      canSearchPlaces
+        ? supabase
+            .from("locations")
+            .select("id, name, address")
+            .is("deleted_at", null)
+            .or(`name.ilike.%${safeQ}%,address.ilike.%${safeQ}%`)
+            .limit(limit)
+        : Promise.resolve({ data: [] }),
     ]);
 
     return Response.json({
