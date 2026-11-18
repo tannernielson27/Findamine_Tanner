@@ -83,7 +83,7 @@ export function createPingHub(transport: PingTransport): PingHub {
     };
   }
 
-  function close(state: TopicState): void {
+  function close(topic: string, state: TopicState): void {
     const leave = state.leave;
     if (!leave) return;
     state.leave = null;
@@ -91,7 +91,9 @@ export function createPingHub(transport: PingTransport): PingHub {
       // A failed leave still ends this connection as far as the hub is concerned.
       .catch(() => undefined)
       .then(() => {
-        if (state.closing === closing) state.closing = null;
+        if (state.closing !== closing) return;
+        state.closing = null;
+        if (state.listeners.size === 0 && topics.get(topic) === state) topics.delete(topic);
       });
     state.closing = closing;
   }
@@ -107,7 +109,7 @@ export function createPingHub(transport: PingTransport): PingHub {
 
       return () => {
         state.listeners.delete(handlers);
-        if (state.listeners.size === 0) close(state);
+        if (state.listeners.size === 0) close(topic, state);
       };
     },
   };

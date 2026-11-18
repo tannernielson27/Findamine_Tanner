@@ -35,16 +35,30 @@ interface Board {
   me: ServerMe | null;
 }
 
+/**
+ * Give up on a board request after this long. A request left hanging (the
+ * app was suspended mid-flight, a dead connection) would otherwise hold up
+ * every later refetch, because refetches never overlap.
+ */
+const BOARD_FETCH_TIMEOUT_MS = 10_000;
+
 /** One fetch of the board; null when the request fails (keep what's on screen). */
 async function loadBoard(huntId: string | undefined): Promise<Board | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), BOARD_FETCH_TIMEOUT_MS);
   try {
     const params = huntId ? `?hunt_id=${encodeURIComponent(huntId)}` : "";
-    const res = await fetch(`/api/v1/leaderboard${params}`, { cache: "no-store" });
+    const res = await fetch(`/api/v1/leaderboard${params}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    });
     if (!res.ok) return null;
     const data = await res.json();
     return { entries: data.entries || [], viewerId: data.viewer_id ?? null, me: data.me ?? null };
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
