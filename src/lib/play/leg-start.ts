@@ -126,3 +126,23 @@ export function saveLegStart(
     // Storage full or blocked: the start still lives in memory for this page.
   }
 }
+
+/**
+ * Forgets the start saved for a stop. Called when the player arrives: the leg
+ * is over, so a replay of the hunt (or walking off and coming back) starts a
+ * new one instead of reusing this one.
+ */
+export function clearLegStart(
+  huntId: string,
+  findId: string,
+  now: number = Date.now(),
+  storage: LegStartStorage | null = browserStorage()
+): void {
+  if (!storage) return;
+  try {
+    const kept = Object.entries(readEntries(huntId, now, storage)).filter(([id]) => id !== findId);
+    storage.setItem(STORAGE_PREFIX + huntId, JSON.stringify(Object.fromEntries(kept)));
+  } catch {
+    // Storage blocked: the entry expires on its own.
+  }
+}

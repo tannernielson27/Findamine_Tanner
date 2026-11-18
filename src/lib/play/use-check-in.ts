@@ -5,6 +5,7 @@ import { getCurrentLocation, locationSupported } from "@/lib/native/geolocation"
 import { errorMessage, postJsonStrict, safeFetch } from "@/lib/play/play-api";
 import { interpretCheckIn, type PhotoCheckInReason } from "@/lib/play/check-in";
 import { isChildAccount } from "@/lib/play/child-account";
+import { clearLegStart } from "@/lib/play/leg-start";
 import type { UserPosition } from "@/lib/play/use-geo-tracking";
 import type { Find, LocationConsent } from "@/lib/play/play-types";
 
@@ -65,6 +66,8 @@ export function useCheckIn({ huntId, currentFind, userPos, locationConsent, setE
       const outcome = interpretCheckIn(reply);
       if (outcome.kind === "arrived") {
         setOffer(null);
+        // The leg is over: the hot/cold meter starts afresh if this stop is walked to again.
+        clearLegStart(String(huntId), findId);
         onArrived();
       } else if (outcome.kind === "photo") {
         setOffer({ findId, reason: outcome.reason });
@@ -93,6 +96,7 @@ export function useCheckIn({ huntId, currentFind, userPos, locationConsent, setE
         }
         await safeFetch(`/api/v1/play/${huntId}/arrive-photo`, { method: "POST", body: form });
         setOffer(null);
+        clearLegStart(String(huntId), findId);
         onArrived();
       } catch (err) {
         setError(errorMessage(err, "Failed to upload photo"));

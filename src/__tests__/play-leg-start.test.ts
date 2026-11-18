@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   LEG_START_MAX_AGE_MS,
+  clearLegStart,
   isVagueFix,
   legStartAfterReply,
   legStartToSend,
@@ -149,6 +150,19 @@ describe("saving the leg start on the device", () => {
     // Expired entries are dropped on the next save.
     saveLegStart("hunt-1", "find-2", firm, NOW + LEG_START_MAX_AGE_MS + 1, storage);
     expect(Object.keys(JSON.parse([...storage.data.values()][0]))).toEqual(["find-2"]);
+  });
+
+  it("forgets a stop's start on arrival and keeps the other stops'", () => {
+    const storage = memoryStorage();
+    saveLegStart("hunt-1", "find-1", firm, NOW, storage);
+    saveLegStart("hunt-1", "find-2", provisional, NOW, storage);
+    clearLegStart("hunt-1", "find-1", NOW, storage);
+    expect(loadLegStart("hunt-1", "find-1", NOW, storage)).toBeNull();
+    expect(loadLegStart("hunt-1", "find-2", NOW, storage)).toEqual(provisional);
+    // Clearing something that isn't there is harmless.
+    expect(() => clearLegStart("hunt-9", "find-1", NOW, storage)).not.toThrow();
+    expect(() => clearLegStart("hunt-1", "find-1", NOW, null)).not.toThrow();
+    expect(() => clearLegStart("hunt-1", "find-1", NOW, brokenStorage)).not.toThrow();
   });
 
   it("ignores anything in storage that isn't a valid entry", () => {

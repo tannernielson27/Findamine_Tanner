@@ -5,7 +5,14 @@ import { locationSupported, watchLocation } from "@/lib/native/geolocation";
 import { safeFetch } from "@/lib/play/play-api";
 import { heatLevel } from "@/lib/native/haptics";
 import { arriveDelayMs, isMeaningfulFix, type Fix } from "@/lib/play/geo-filter";
-import { isVagueFix, legStartAfterReply, legStartToSend, loadLegStart, saveLegStart } from "@/lib/play/leg-start";
+import {
+  clearLegStart,
+  isVagueFix,
+  legStartAfterReply,
+  legStartToSend,
+  loadLegStart,
+  saveLegStart,
+} from "@/lib/play/leg-start";
 import type { Find, GpsStatus, HotCold, LocationConsent, StopStep } from "@/lib/play/play-types";
 
 export interface UserPosition {
@@ -109,7 +116,6 @@ export function useGeoTracking({
         if (!active) return;
 
         if (data.hot_cold) {
-          // An arrival ends the leg: a reading at the stop is not a place to start one.
           const nextLegStart = data.arrived ? legStart : legStartAfterReply(legStart, sentLegStart, data.distance, vague);
           if (nextLegStart && nextLegStart !== legStart) {
             legStart = nextLegStart;
@@ -119,7 +125,12 @@ export function useGeoTracking({
           nearTarget = (heatLevel(data.hot_cold.zone) ?? 0) >= 4;
           callbacksRef.current.onHotCold(data.hot_cold);
         }
-        if (data.arrived) callbacksRef.current.onArrived();
+        if (data.arrived) {
+          // The leg is over: a replay, or walking off and coming back, starts a new one.
+          legStart = null;
+          clearLegStart(huntKey, currentFind.id);
+          callbacksRef.current.onArrived();
+        }
       } catch {
         // Network error during GPS ping — don't block navigation. Forget the
         // accepted fix so a stationary player's next fix is sent again.
