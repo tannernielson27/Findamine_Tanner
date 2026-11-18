@@ -16,6 +16,7 @@ vi.mock("next/navigation", () => ({
 import {
   BACK_STUCK_AFTER_MS,
   MAX_BACK_STEPS,
+  REPLACEMENT_WINDOW_MS,
   goBack,
   hasBackEntry,
   hasInAppBackEntry,
@@ -172,6 +173,15 @@ describe("goBack", () => {
     const browser = fakeBrowser(["/admin/standards"]);
     goBack({ fallbackHref: "/admin", replace: () => noteNavigation("/admin"), win: browser.win });
     expect(hasInAppBackEntry()).toBe(false);
+  });
+
+  it("stops expecting the fallback if it never arrives, so a later navigation still counts", () => {
+    noteNavigation("/privacy");
+    const browser = fakeBrowser(["/privacy"]);
+    goBack({ fallbackHref: "/", replace: () => {}, win: browser.win }); // the replace never lands
+    vi.advanceTimersByTime(REPLACEMENT_WINDOW_MS + 1);
+    noteNavigation("/terms");
+    expect(hasInAppBackEntry()).toBe(true);
   });
 
   it("returns to the page the player came from", () => {

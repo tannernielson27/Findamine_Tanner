@@ -58,18 +58,27 @@ export function hasBackEntry(history: InAppHistory | null): boolean {
 
 /* ─── The record for this document ───────────────────────────────────────── */
 
+/**
+ * How long after Back starts a fallback replace the next navigation is taken
+ * to be that replace. Not matched by path: the fallback may redirect (`/`
+ * sends a signed-in player to the app). The limit keeps a replace that never
+ * lands from mislabelling some later, unrelated navigation.
+ */
+export const REPLACEMENT_WINDOW_MS = 10_000;
+
 let current: InAppHistory | null = null;
-let replacementExpected = false;
+let replacementExpectedUntil = 0;
 
 export function noteNavigation(path: string): void {
+  const replacing = Date.now() <= replacementExpectedUntil;
+  replacementExpectedUntil = 0;
   if (!current) {
     current = startHistory(path);
-  } else if (replacementExpected) {
+  } else if (replacing) {
     current = recordReplacement(current, path);
   } else {
     current = recordNavigation(current, path);
   }
-  replacementExpected = false;
 }
 
 export function noteTraversal(path: string): void {
@@ -84,7 +93,7 @@ export function hasInAppBackEntry(): boolean {
 /** Forget everything (tests), or everything except the page being shown. */
 export function resetInAppHistory(path?: string): void {
   current = path === undefined ? null : startHistory(path);
-  replacementExpected = false;
+  replacementExpectedUntil = 0;
 }
 
 /* ─── Going back ─────────────────────────────────────────────────────────── */
@@ -125,7 +134,7 @@ export function goBack({ fallbackHref, replace, win = window as unknown as BackW
   if (leaving) return;
 
   const goToFallback = () => {
-    replacementExpected = true;
+    replacementExpectedUntil = Date.now() + REPLACEMENT_WINDOW_MS;
     replace(fallbackHref);
   };
 
