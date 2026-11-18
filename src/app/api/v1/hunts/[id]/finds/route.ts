@@ -7,7 +7,7 @@ import {
   ApiError,
 } from "@/lib/utils/api-auth";
 import { parseFindFields } from "../../find-fields";
-import { canSeeAnswerKeys, redactAnswerKeys } from "../../redact-finds";
+import { findsForViewer } from "../../redact-finds";
 import { assertCleanFindText, canAccessHunt, requeuedMessage, settleRequeue } from "@/lib/hunts/review";
 import { internalError } from "@/lib/utils/internal-error";
 import { assertStopSetEditable } from "../../delivery-guard";
@@ -43,10 +43,9 @@ export async function GET(
 
     if (error) throw internalError("/api/v1/hunts/[id]/finds", error);
 
-    const rows = finds || [];
-    return Response.json({
-      finds: canSeeAnswerKeys(user, hunt?.created_by ?? null) ? rows : redactAnswerKeys(rows),
-    });
+    // Only the hunt's editors get the stops' content. Players get ids and
+    // order; the play API releases each stop's details once it is started.
+    return Response.json({ finds: findsForViewer(finds || [], user, hunt?.created_by ?? null) });
   } catch (error) {
     return errorResponse(error);
   }

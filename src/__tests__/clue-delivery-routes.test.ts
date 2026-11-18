@@ -149,6 +149,8 @@ describe("play routes enforce the clue order", () => {
     const res = await clueHint(req("POST", "/clue-hint", { find_id: "f2", level: 1 }), playParams);
     expect(res.status).toBe(409);
     expect((await res.json()).error).toMatch(/isn't open yet/);
+    // The current stop gives hints once it has been started (issue #16).
+    await prime("f0");
     const current = await clueHint(req("POST", "/clue-hint", { find_id: "f0", level: 1 }), playParams);
     expect(current.status).toBe(200);
   });

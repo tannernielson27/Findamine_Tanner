@@ -6,6 +6,7 @@ import { coordinatesForStorage } from "@/lib/utils/location-storage";
 import { checkArrival, stopRadius, type ArrivalVerdict } from "@/lib/play/arrival-check";
 import { recordArrival } from "../../_lib/arrival";
 import { assertStopOpen } from "../../_lib/stop-access";
+import { assertStopStarted } from "../../_lib/stop-start";
 
 const ROUTE = "/api/v1/play/[huntId]/arrive";
 
@@ -56,6 +57,8 @@ export async function POST(
 
     // Clue delivery: only the player's current stop (any stop in all-at-once mode).
     await assertStopOpen(supabase, { huntId, userId: user.id, session, findId: find_id, route: ROUTE });
+    // No distance or hot/cold reading for a stop whose clock isn't running.
+    await assertStopStarted(supabase, session.id, find_id);
 
     const { data: find } = await supabase
       .from("finds")

@@ -46,6 +46,8 @@ const render = (el: ReturnType<typeof createElement>) =>
 const find = (id: string, clue: string): Find => ({
   id,
   sort_order: 0,
+  started_at: "2026-11-18T10:05:00.000Z",
+  open: true,
   clue_text: clue,
   hot_cold_enabled: true,
   scaffolding_level: null,

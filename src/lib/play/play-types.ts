@@ -15,11 +15,22 @@ export interface ReadingCheckQuestion {
   correct_answer: string;
 }
 
+/**
+ * A stop as the play API sends it (GET /api/v1/play/[huntId]/stops).
+ *
+ * Until the player starts the stop (`started_at` is null) the server sends no
+ * clue, place, challenge or reading check: those fields are null. The primer
+ * is the "before you start" reading, so it comes with a stop that is `open`.
+ */
 export interface Find {
   id: string;
   sort_order: number;
+  /** When this player started the stop (server time); null until they tap "I'm ready". */
+  started_at: string | null;
+  /** The player's clue order lets them start (or keep working on) this stop now. */
+  open: boolean;
   clue_text: string | null;
-  hot_cold_enabled: boolean;
+  hot_cold_enabled: boolean | null;
   scaffolding_level: string | null;
   reading_check: { enabled: boolean; questions: ReadingCheckQuestion[] } | null;
   locations: { name: string; latitude: number; longitude: number; radius_meters: number; safety_notes?: string | null } | null;

@@ -6,7 +6,7 @@ import {
   errorResponse,
   ApiError,
 } from "@/lib/utils/api-auth";
-import { canSeeAnswerKeys, redactAnswerKeys } from "../redact-finds";
+import { findsForViewer } from "../redact-finds";
 import {
   canAccessHunt,
   changedReviewedHuntFields,
@@ -55,13 +55,13 @@ export async function GET(
     }
 
     // Removed stops are soft-deleted; never hand them back. Then sort by order.
+    // Only the hunt's editors get the stops' content: players get ids and
+    // order here, and each stop's details from the play API once it is started.
     if (hunt.finds) {
-      hunt.finds = (hunt.finds as { sort_order: number; deleted_at: string | null }[])
+      const live = (hunt.finds as { id: string; sort_order: number; deleted_at: string | null }[])
         .filter((f) => !f.deleted_at)
         .sort((a, b) => a.sort_order - b.sort_order);
-      if (!canSeeAnswerKeys(user, hunt.created_by)) {
-        hunt.finds = redactAnswerKeys(hunt.finds);
-      }
+      hunt.finds = findsForViewer(live, user, hunt.created_by);
     }
 
     const insider = !!user && (user.id === hunt.created_by || isReviewer(user.role));

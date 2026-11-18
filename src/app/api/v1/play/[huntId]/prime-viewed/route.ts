@@ -1,9 +1,15 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
-import { getCompletion, insertCompletion } from "../../_lib/completions";
 import { assertStopOpen } from "../../_lib/stop-access";
+import { startStop } from "../../_lib/stop-start";
 
+/**
+ * Older name for the primer's "I'm ready" tap. The play screen now calls
+ * ../start-stop, which also returns the stop's details; this stays for pages
+ * that were loaded before that change. It starts the stop the same way (once,
+ * see _lib/stop-start.ts) and records `prime_viewed_at` on the first tap.
+ */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ huntId: string }> }
@@ -15,7 +21,7 @@ export async function POST(
 
     const body = await request.json();
     const { find_id } = body;
-    if (!find_id) throw new ApiError(400, "find_id required");
+    if (typeof find_id !== "string" || !find_id) throw new ApiError(400, "find_id required");
 
     const supabase = await createSupabaseServiceClient();
 
@@ -33,28 +39,12 @@ export async function POST(
     // Clue delivery: only the player's current stop (any stop in all-at-once mode).
     await assertStopOpen(supabase, { huntId, userId: user.id, session, findId: find_id, route: "/api/v1/play/[huntId]/prime-viewed" });
 
-    // Get or create completion record
-    const existing = await getCompletion(supabase, session.id, find_id);
+    const started = await startStop(supabase, session.id, find_id, { primerRead: true });
 
-    if (existing) {
-      // Update with prime viewed timestamp
-      const metadata = (existing.metadata || {}) as Record<string, unknown>;
-      await supabase
-        .from("find_completions")
-        .update({
-          metadata: { ...metadata, prime_viewed_at: new Date().toISOString() },
-        })
-        .eq("id", existing.id);
-
-      return Response.json({ completion_id: existing.id, step: "prime" });
-    }
-
-    // Create new completion
-    const { row: completion } = await insertCompletion(supabase, session.id, find_id, {
-      metadata: { prime_viewed_at: new Date().toISOString() },
-    });
-
-    return Response.json({ completion_id: completion.id, step: "prime" }, { status: 201 });
+    return Response.json(
+      { completion_id: started.completion.id, step: "prime" },
+      { status: started.alreadyStarted ? 200 : 201 }
+    );
   } catch (error) {
     return errorResponse(error);
   }
