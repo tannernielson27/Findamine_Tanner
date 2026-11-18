@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
-import { getHotColdZone, haversineDistance } from "@/lib/services/hot-cold";
+import { getHotColdZone, haversineDistance, parseHeatZone } from "@/lib/services/hot-cold";
 import { coordinatesForStorage } from "@/lib/utils/location-storage";
 import { checkArrival, stopRadius, type ArrivalVerdict } from "@/lib/play/arrival-check";
 import { recordArrival } from "../../_lib/arrival";
@@ -22,6 +22,17 @@ function finiteNumber(value: unknown): number | null {
  *   - "I'm here" (`manual: true`): same check, on a fresh fix. When the player
  *     has no usable GPS the reply offers a photo check-in instead
  *     (`photo_allowed`, see ../arrive-photo). Tapping never skips the check.
+ *
+ * The hot/cold reading (zone and marker position) is worked out here, from
+ * the stop's coordinates, and scaled to the leg: see lib/services/hot-cold.ts.
+ * Two optional fields only tune that reading, and neither is stored:
+ *   - `leg_start`: the distance this endpoint reported on the player's first
+ *     reading for the stop, echoed back so the scale spans their walk. The
+ *     privacy policy says only the arrival is kept from navigation, so the
+ *     client holds this, not the database. It is clamped, and can't make
+ *     "burning" reachable outside the radius.
+ *   - `last_zone`: the zone the client last showed, so the zone doesn't flip
+ *     on GPS noise.
  */
 export async function POST(
   request: NextRequest,
@@ -94,8 +105,16 @@ export async function POST(
     }
 
     const distance = haversineDistance(latitude, longitude, loc.latitude, loc.longitude);
-    const hotCold = hotColdEnabled ? getHotColdZone(distance) : null;
     const verdict: ArrivalVerdict = checkArrival({ distance, accuracy, radius });
+    const hotCold = hotColdEnabled
+      ? getHotColdZone({
+          distanceMeters: distance,
+          radiusMeters: radius,
+          referenceMeters: finiteNumber(body.leg_start),
+          previousZone: parseHeatZone(body.last_zone),
+          atStop: verdict.kind === "inside",
+        })
+      : null;
     // With hot/cold off the creator wants no distance hints, so none go back
     // (exact distances from a few spots would also give the stop away).
     const shownDistance = hotColdEnabled ? distance : null;

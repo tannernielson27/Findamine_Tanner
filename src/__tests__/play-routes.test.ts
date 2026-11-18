@@ -104,6 +104,9 @@ const arrived = (extra: Row = {}): Row => ({
   ...extra,
 });
 
+/** A fix `meters` due north of the stop. */
+const north = (meters: number) => ({ latitude: 40.25 + meters / 111_194.93, longitude: -111.65 });
+
 beforeEach(() => {
   h.user = { id: "u1", role: "adult" };
   h.updateStreak.mockReset().mockResolvedValue({ current: 1, longest: 1, justBroke: false, badgesEarned: [] });
@@ -235,6 +238,99 @@ describe("POST /play/[huntId]/arrive", () => {
     const body = await (await arrivePhoto(photoForm({ find_id: FIND }), playParams)).json();
     expect(body.already_arrived).toBe(true);
     expect(db.table("find_completions")[0].metadata).toEqual(first);
+  });
+});
+
+describe("POST /play/[huntId]/arrive hot/cold scale", () => {
+  const ping = async (body: Row) => (await arrive(post("/arrive", { find_id: FIND, ...body }), playParams)).json();
+
+  it("starts the meter at the first reading and stores nothing about it", async () => {
+    const db = seed();
+    const body = await ping(FAR);
+    expect(body.hot_cold).toMatchObject({ zone: "icy", markerPercent: 10, distanceLabel: "1.1km" });
+    // The client keeps the start of the leg; the privacy policy says only arrivals are stored.
+    expect(db.table("find_completions")).toHaveLength(0);
+    expect(db.log.every((entry) => entry.op === "select")).toBe(true);
+  });
+
+  it("scales later readings against the leg start the client echoes back", async () => {
+    const db = seed();
+    const first = await ping(FAR);
+    const legStart = Math.round(first.distance);
+    expect(legStart).toBe(1112);
+    const markers: number[] = [];
+    for (const meters of [800, 400, 200, 100, 60]) {
+      markers.push((await ping({ ...north(meters), leg_start: legStart })).hot_cold.markerPercent);
+    }
+    for (let i = 1; i < markers.length; i++) expect(markers[i]).toBeGreaterThan(markers[i - 1]);
+    expect(markers[0]).toBeGreaterThan(10);
+    expect(markers[markers.length - 1]).toBeGreaterThan(70);
+    expect(db.table("find_completions")).toHaveLength(0);
+  });
+
+  it("reads the same spot differently on a short leg and a long one", async () => {
+    seed();
+    const onShortLeg = await ping({ ...north(150), leg_start: 300 });
+    const onLongLeg = await ping({ ...north(150), leg_start: 3000 });
+    expect(onShortLeg.hot_cold.markerPercent).toBeLessThan(onLongLeg.hot_cold.markerPercent);
+    // 1.5 km into a 3 km leg, not a new leg starting at 1.5 km (which would read 10).
+    const midway = await ping({ ...north(1500), leg_start: 3000 });
+    expect(midway.hot_cold.zone).toBe("cold");
+  });
+
+  it("ignores a leg start that isn't a usable number", async () => {
+    seed();
+    const plain = (await ping(north(400))).hot_cold;
+    for (const leg_start of ["3000", null, 0, -50, "abc"]) {
+      expect((await ping({ ...north(400), leg_start })).hot_cold).toEqual(plain);
+    }
+  });
+
+  it("can't be talked into burning by a made-up leg start", async () => {
+    seed();
+    for (const leg_start of [1, 51, 1e12]) {
+      // 61 m from a 50 m radius: close, but not there.
+      const body = await ping({ ...JUST_OUTSIDE, accuracy: 5, leg_start });
+      expect(body.arrived).toBe(false);
+      expect(body.hot_cold.zone).not.toBe("burning");
+      expect(body.hot_cold.markerPercent).toBeLessThan(80);
+    }
+  });
+
+  it("says burning only inside the stop's radius, and always when the arrival is confirmed", async () => {
+    seed();
+    expect((await ping({ ...JUST_OUTSIDE, accuracy: 5 })).hot_cold.zone).toBe("hot");
+    // The same fix with ±15 m GPS error passes the arrival check.
+    const confirmed = await ping({ ...JUST_OUTSIDE, accuracy: 15 });
+    expect(confirmed.arrived).toBe(true);
+    expect(confirmed.hot_cold).toMatchObject({ zone: "burning", markerPercent: 90 });
+  });
+
+  it("says burning at the stop even when the fix is too vague to confirm the arrival", async () => {
+    seed();
+    const body = await ping({ ...AT_STOP, accuracy: 120 });
+    expect(body).toMatchObject({ arrived: false, reason: "weak_gps" });
+    expect(body.hot_cold.zone).toBe("burning");
+  });
+
+  it("holds the zone the client last showed while readings wobble on a boundary", async () => {
+    // With a 1112 m start and a 50 m radius, cold turns to warm at about 294 m.
+    seed();
+    const at = (meters: number, last_zone?: string) => ping({ ...north(meters), leg_start: 1112, last_zone });
+    expect((await at(290)).hot_cold.zone).toBe("warm");
+    const held = await at(290, "cold");
+    expect(held.hot_cold.zone).toBe("cold");
+    expect(held.hot_cold.markerPercent).toBeLessThan(40);
+    // A real move still gets through, and junk in last_zone is ignored.
+    expect((await at(240, "cold")).hot_cold.zone).toBe("warm");
+    expect((await at(290, "tepid")).hot_cold.zone).toBe("warm");
+  });
+
+  it("sends no reading for a stop with hot/cold turned off, whatever the client sends", async () => {
+    seed({ finds: [{ id: FIND, hunt_id: HUNT, task_id: "task-1", location_id: "loc-1", hot_cold_enabled: false }] });
+    const body = await ping({ ...FAR, leg_start: 2000, last_zone: "cold" });
+    expect(body.hot_cold).toBeNull();
+    expect(body.distance).toBeNull();
   });
 });
 
