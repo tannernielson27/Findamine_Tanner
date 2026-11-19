@@ -7,7 +7,6 @@ import {
   SCORING_VERSION_DESCRIPTIONS,
   SCORING_VERSION_LABELS,
   SOLVE_WINDOW_INVALID_MESSAGE,
-  SOLVE_WINDOW_MINUTES,
   isValidSolveWindowInput,
   readScoringVersion,
   readSolveWindowMinutes,
@@ -29,7 +28,11 @@ interface ScoringSettingsProps {
   onSave: (metadata: Record<string, unknown>, successText: string) => Promise<boolean>;
 }
 
-/** "" means "use the default"; anything else must be a whole number. */
+/**
+ * "" means "use the default"; anything else must be a whole number. The field
+ * is a text input on purpose: a number input reports "" for text it can't
+ * parse ("9e"), which would read as "use the default" and clear a stored window.
+ */
 function parseWindow(text: string): number | null | "invalid" {
   const trimmed = text.trim();
   if (trimmed === "") return null;
@@ -99,11 +102,9 @@ export function ScoringSettings({ metadata, draft, played, busy, onSave }: Scori
           <div className="flex items-center gap-2">
             <input
               id="scoring-solve-window"
-              type="number"
+              type="text"
               inputMode="numeric"
-              min={SOLVE_WINDOW_MINUTES.min}
-              max={SOLVE_WINDOW_MINUTES.max}
-              step={1}
+              autoComplete="off"
               value={windowText}
               placeholder={String(DEFAULT_SOLVE_WINDOW_MINUTES)}
               disabled={busy}

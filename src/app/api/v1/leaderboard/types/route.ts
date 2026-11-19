@@ -108,6 +108,7 @@ export async function GET(request: NextRequest) {
         const entries = await sessionBoard(supabase, viewerId, { since: null, subject, limit });
         return Response.json({ type, subject, entries });
       }
+
       case "improvement": {
         // DB-level aggregation via RPC (scales to millions of sessions)
         const { data } = await supabase.rpc("get_user_improvements", { p_limit: limit });

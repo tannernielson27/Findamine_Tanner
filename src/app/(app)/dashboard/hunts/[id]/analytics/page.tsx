@@ -82,9 +82,12 @@ export default function HuntAnalyticsPage() {
 
   function handleExportCSV() {
     if (!data?.stops) return;
-    const headers = "Stop,Name,Avg Score,Avg Hints,Completions";
+    // "Max Score" is what a stop is out of on this hunt (100 or 1000), so a
+    // file from one hunt is not pooled with another's on a different scale.
+    const headers = "Stop,Name,Avg Score,Max Score,Avg Hints,Completions";
+    const stopMax = data.stop_max_score ?? null;
     const rows = data.stops.map((s) =>
-      [s.stop_number, s.name, s.avg_score, s.avg_hints, s.completion_count].map(csvCell).join(",")
+      [s.stop_number, s.name, s.avg_score, stopMax, s.avg_hints, s.completion_count].map(csvCell).join(",")
     );
     const csv = [headers, ...rows].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });

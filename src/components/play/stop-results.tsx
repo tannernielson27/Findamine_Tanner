@@ -110,6 +110,8 @@ export function StopResults(props: StopResultsProps) {
   // Once the notice has shown on this screen, keep its space reserved so the
   // buttons don't jump under the player's thumb when it auto-dismisses.
   const [reserveForNotice, setReserveForNotice] = useState(props.noticeVisible);
+  // A hunt that hides scores (and timers) shows no points and no solve time.
+  const shownBreakdown = hideScores ? null : breakdown;
   if (props.noticeVisible && !reserveForNotice) setReserveForNotice(true);
 
   return (
@@ -145,7 +147,7 @@ export function StopResults(props: StopResultsProps) {
         <p className="mt-3 text-lg text-[#D6EFE0]">You already completed this stop.</p>
       )}
 
-      {(feedback || breakdown) && (
+      {(feedback || shownBreakdown) && (
         <div className="mt-6 w-full rounded-[20px] bg-white/10 px-[18px] py-4">
           {feedback && (
             <>
@@ -154,7 +156,7 @@ export function StopResults(props: StopResultsProps) {
               {feedback.next_steps && <p className="mt-2 text-base italic">{feedback.next_steps}</p>}
             </>
           )}
-          {breakdown && <Breakdown breakdown={breakdown} solveMs={props.solveMs ?? null} />}
+          {shownBreakdown && <Breakdown breakdown={shownBreakdown} solveMs={props.solveMs ?? null} />}
         </div>
       )}
 

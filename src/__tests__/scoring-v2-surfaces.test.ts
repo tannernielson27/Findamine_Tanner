@@ -204,6 +204,14 @@ describe("StopResults on a version 2 stop", () => {
     expect(html).toContain("Solved in 3 min 12 s");
   });
 
+  it("shows neither points nor the solve time on a hunt that hides scores and timers", () => {
+    const html = render(createElement(StopResults, { ...base, solveMs: 192_000, hideScores: true }));
+    expect(html).not.toContain("Solved in");
+    expect(html).not.toContain("Speed on this stop");
+    expect(html).not.toContain("How this stop scored");
+    expect(html).toContain("Complete!");
+  });
+
   it("shows the breakdown without a time when none came back", () => {
     const html = render(createElement(StopResults, base));
     expect(html).toContain("Speed on this stop");
@@ -229,6 +237,8 @@ describe("ScoringSettings", () => {
   it("shows a stored window, and no window field on the classic version", () => {
     const timed = render(createElement(ScoringSettings, { ...base, metadata: { scoring_version: 2, scoring_solve_window_min: 90 }, draft: true, played: false }));
     expect(timed).toContain('value="90"');
+    // A text field, so text a number field would swallow reaches the validation.
+    expect(timed).toMatch(/<input[^>]*id="scoring-solve-window"[^>]*type="text"|<input[^>]*type="text"[^>]*id="scoring-solve-window"/);
     const classic = render(createElement(ScoringSettings, { ...base, metadata: {}, draft: true, played: false }));
     expect(classic).toMatch(/<input[^>]*id="scoring-version-1"[^>]*checked=""/);
     expect(classic).not.toContain("Speed points run out after");

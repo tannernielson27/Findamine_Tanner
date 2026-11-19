@@ -89,7 +89,7 @@ describe("generatePlaySessionsExport", () => {
         { study_id: "st1", user_id: "u2", participant_code: "FM-WDRAWN", enrolled_at: "2026-11-01T00:00:00.000Z", withdrawn_at: "2026-11-03T00:00:00.000Z" },
       ],
       play_sessions: [session(), session({ id: "s2", user_id: "u2" })],
-      hunts: [{ id: "h1", metadata: { study_hunt: true, scoring_version: 2, scoring_solve_window_min: 45, clue_orders: [["x"]] } }],
+      hunts: [{ id: "h1", metadata: { study_hunt: true, scoring_version: 2, scoring_solve_window_min: 777, clue_orders: [["x"]] } }],
     });
     const csv = await generatePlaySessionsExport({ studyId: "st1", format: "csv" });
     const lines = csv.split("\n");
@@ -98,7 +98,8 @@ describe("generatePlaySessionsExport", () => {
     expect(lines[1]).toContain("FM-ABC234,s1,h1");
     expect(lines[1].endsWith(",assigned_order,2,1,2")).toBe(true);
     // Only the study flag and the scoring version are read from hunt metadata.
-    expect(csv).not.toContain("45");
+    expect(csv).not.toContain("777");
+    expect(csv).not.toContain("scoring_solve_window_min");
     expect(csv).not.toContain("clue_orders");
     expect(csv).not.toContain("u1");
     expect(csv).not.toContain("FM-WDRAWN");
