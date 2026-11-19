@@ -19,10 +19,12 @@ const STEPS = [
 ];
 
 /**
- * One glanceable 5-step cold → hot scale with a ringed marker on the current
- * step. Steps differ in lightness as well as hue (proximity tokens), so the
- * scale still reads for colour-blind players. The distance card around it
- * carries the words; this is decoration for sighted players (aria-hidden).
+ * One glanceable 5-step cold → hot scale with a ringed marker that slides
+ * along it as the player closes in (the position is scaled to the leg by the
+ * server, and always falls on the step the label names). Steps differ in
+ * lightness as well as hue (proximity tokens), so the scale still reads for
+ * colour-blind players. The distance card around it carries the words; this
+ * is decoration for sighted players (aria-hidden).
  */
 export default function HotColdMeter({ level, markerPercent }: HotColdMeterProps) {
   const reducedMotion = useReducedMotion();
@@ -37,7 +39,8 @@ export default function HotColdMeter({ level, markerPercent }: HotColdMeterProps
         ))}
       </div>
       {/* The marker slides with a compositor transform: a full-width layer
-          translated by the position, with the dot pinned to its left edge. */}
+          translated by the position, with the dot pinned to its left edge.
+          With reduced motion it still moves to the new position, without the glide. */}
       <div
         className="pointer-events-none absolute inset-x-0 top-0 transition-transform duration-700 ease-out motion-reduce:transition-none"
         style={{ transform: `translateX(${markerPercent}%)` }}

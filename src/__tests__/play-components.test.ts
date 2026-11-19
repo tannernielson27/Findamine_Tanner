@@ -60,6 +60,15 @@ describe("HotColdMeter", () => {
   it("keeps the burning heartbeat on the marker", () => {
     expect(render(createElement(HotColdMeter, { level: 5, markerPercent: 90 }))).toContain("fm-burning-pulse");
   });
+
+  it("places the marker anywhere along the scale, moved by a transform that reduced motion switches off", () => {
+    const html = render(createElement(HotColdMeter, { level: 2, markerPercent: 37.4 }));
+    expect(html).toContain("translateX(37.4%)");
+    expect(html).toContain("transition-transform");
+    expect(html).toContain("motion-reduce:transition-none");
+    // Position is a transform only: no layout properties are animated.
+    expect(html).not.toMatch(/style="[^"]*(left|margin|width)\s*:/);
+  });
 });
 
 describe("ProximityPanel", () => {
@@ -80,6 +89,14 @@ describe("ProximityPanel", () => {
     expect(html).toContain("Getting warmer");
     expect(html).toMatch(/rotate\(\d+deg\)/);
     expect(html).toContain('aria-live="polite"');
+  });
+
+  it("moves the marker to the server's position, and to the zone's centre when there is none", () => {
+    const props = { gpsStatus: "active" as const, userPos: null, target: null };
+    const scaled = render(createElement(ProximityPanel, { ...props, hotCold: { ...hotCold, markerPercent: 47.5 } }));
+    expect(scaled).toContain("translateX(47.5%)");
+    expect(scaled).toContain("Getting warmer");
+    expect(render(createElement(ProximityPanel, { ...props, hotCold }))).toContain("translateX(50%)");
   });
 
   it("doesn't rotate (fake) an arrow without a position", () => {

@@ -15,6 +15,7 @@ import { isOwnAudioPath, parseAudioAnswer } from "@/lib/play/audio-answer";
 import { internalError } from "@/lib/utils/internal-error";
 import { runAfter } from "@/lib/utils/run-after";
 import { assertStopOpen } from "../../_lib/stop-access";
+import { notifyLeaderboardChanged } from "@/lib/social/leaderboard-broadcast";
 
 export async function POST(
   request: NextRequest,
@@ -236,6 +237,15 @@ export async function POST(
       ]);
       privacyNotice = notice;
       badgesEarned = badges;
+
+      // A scheduled hunt's board is a running total, so a scored stop changes
+      // it: tell open boards to refetch. A play-anytime hunt's board lists
+      // finished sessions only, and /complete pings for those. Sent now and
+      // only kept alive past the response; it never fails the answer.
+      if (releasedAt !== null) {
+        const leaderboardPing = notifyLeaderboardChanged(huntId);
+        runAfter("leaderboard_ping", () => leaderboardPing);
+      }
 
       // Referral economy: a recruiter earns a share when their minion scores.
       // Not part of the response, so it runs after it is sent.

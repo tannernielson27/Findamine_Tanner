@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   user: null as null | { id: string; role: string },
   updateStreak: vi.fn(),
   evaluateBadges: vi.fn(),
+  notifyLeaderboardChanged: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/server", async () => {
@@ -32,6 +33,9 @@ vi.mock("@/lib/services/privacy-notice", () => ({ recordPrivacyNotice: async () 
 vi.mock("@/lib/services/gamification", () => ({
   updateStreak: h.updateStreak,
   evaluateBadges: h.evaluateBadges,
+}));
+vi.mock("@/lib/social/leaderboard-broadcast", () => ({
+  notifyLeaderboardChanged: h.notifyLeaderboardChanged,
 }));
 
 import { POST as arrive } from "@/app/api/v1/play/[huntId]/arrive/route";
@@ -105,6 +109,8 @@ const arrived = (extra: Row = {}): Row => ({
   ...extra,
 });
 
+/** A fix `meters` due north of the stop. */
+const north = (meters: number) => ({ latitude: 40.25 + meters / 111_194.93, longitude: -111.65 });
 /**
  * The player has tapped "I'm ready" on the stop (issue #16): arriving, checking
  * in and clue hints are refused until then. Covered in play-stop-start.test.ts.
@@ -118,6 +124,7 @@ beforeEach(() => {
   h.user = { id: "u1", role: "adult" };
   h.updateStreak.mockReset().mockResolvedValue({ current: 1, longest: 1, justBroke: false, badgesEarned: [] });
   h.evaluateBadges.mockReset().mockResolvedValue([]);
+  h.notifyLeaderboardChanged.mockReset().mockResolvedValue(undefined);
 });
 
 describe("POST /play/[huntId]/arrive", () => {
@@ -245,6 +252,99 @@ describe("POST /play/[huntId]/arrive", () => {
     const body = await (await arrivePhoto(photoForm({ find_id: FIND }), playParams)).json();
     expect(body.already_arrived).toBe(true);
     expect(db.table("find_completions")[0].metadata).toEqual(first);
+  });
+});
+
+describe("POST /play/[huntId]/arrive hot/cold scale", () => {
+  const ping = async (body: Row) => (await arrive(post("/arrive", { find_id: FIND, ...body }), playParams)).json();
+
+  it("starts the meter at the first reading and stores nothing about it", async () => {
+    const db = seedStarted();
+    const body = await ping(FAR);
+    expect(body.hot_cold).toMatchObject({ zone: "icy", markerPercent: 10, distanceLabel: "1.1km" });
+    // The client keeps the start of the leg; the privacy policy says only arrivals are stored.
+    expect(arrivals(db)).toHaveLength(0);
+    expect(db.log.every((entry) => entry.op === "select")).toBe(true);
+  });
+
+  it("scales later readings against the leg start the client echoes back", async () => {
+    const db = seedStarted();
+    const first = await ping(FAR);
+    const legStart = Math.round(first.distance);
+    expect(legStart).toBe(1112);
+    const markers: number[] = [];
+    for (const meters of [800, 400, 200, 100, 60]) {
+      markers.push((await ping({ ...north(meters), leg_start: legStart })).hot_cold.markerPercent);
+    }
+    for (let i = 1; i < markers.length; i++) expect(markers[i]).toBeGreaterThan(markers[i - 1]);
+    expect(markers[0]).toBeGreaterThan(10);
+    expect(markers[markers.length - 1]).toBeGreaterThan(70);
+    expect(arrivals(db)).toHaveLength(0);
+  });
+
+  it("reads the same spot differently on a short leg and a long one", async () => {
+    seedStarted();
+    const onShortLeg = await ping({ ...north(150), leg_start: 300 });
+    const onLongLeg = await ping({ ...north(150), leg_start: 3000 });
+    expect(onShortLeg.hot_cold.markerPercent).toBeLessThan(onLongLeg.hot_cold.markerPercent);
+    // 1.5 km into a 3 km leg, not a new leg starting at 1.5 km (which would read 10).
+    const midway = await ping({ ...north(1500), leg_start: 3000 });
+    expect(midway.hot_cold.zone).toBe("cold");
+  });
+
+  it("ignores a leg start that isn't a usable number", async () => {
+    seedStarted();
+    const plain = (await ping(north(400))).hot_cold;
+    for (const leg_start of ["3000", null, 0, -50, "abc"]) {
+      expect((await ping({ ...north(400), leg_start })).hot_cold).toEqual(plain);
+    }
+  });
+
+  it("can't be talked into burning by a made-up leg start", async () => {
+    seedStarted();
+    for (const leg_start of [1, 51, 1e12]) {
+      // 61 m from a 50 m radius: close, but not there.
+      const body = await ping({ ...JUST_OUTSIDE, accuracy: 5, leg_start });
+      expect(body.arrived).toBe(false);
+      expect(body.hot_cold.zone).not.toBe("burning");
+      expect(body.hot_cold.markerPercent).toBeLessThan(80);
+    }
+  });
+
+  it("says burning only inside the stop's radius, and always when the arrival is confirmed", async () => {
+    seedStarted();
+    expect((await ping({ ...JUST_OUTSIDE, accuracy: 5 })).hot_cold.zone).toBe("hot");
+    // The same fix with ±15 m GPS error passes the arrival check.
+    const confirmed = await ping({ ...JUST_OUTSIDE, accuracy: 15 });
+    expect(confirmed.arrived).toBe(true);
+    expect(confirmed.hot_cold).toMatchObject({ zone: "burning", markerPercent: 90 });
+  });
+
+  it("says burning at the stop even when the fix is too vague to confirm the arrival", async () => {
+    seedStarted();
+    const body = await ping({ ...AT_STOP, accuracy: 120 });
+    expect(body).toMatchObject({ arrived: false, reason: "weak_gps" });
+    expect(body.hot_cold.zone).toBe("burning");
+  });
+
+  it("holds the zone the client last showed while readings wobble on a boundary", async () => {
+    // With a 1112 m start and a 50 m radius, cold turns to warm at about 294 m.
+    seedStarted();
+    const at = (meters: number, last_zone?: string) => ping({ ...north(meters), leg_start: 1112, last_zone });
+    expect((await at(290)).hot_cold.zone).toBe("warm");
+    const held = await at(290, "cold");
+    expect(held.hot_cold.zone).toBe("cold");
+    expect(held.hot_cold.markerPercent).toBeLessThan(40);
+    // A real move still gets through, and junk in last_zone is ignored.
+    expect((await at(240, "cold")).hot_cold.zone).toBe("warm");
+    expect((await at(290, "tepid")).hot_cold.zone).toBe("warm");
+  });
+
+  it("sends no reading for a stop with hot/cold turned off, whatever the client sends", async () => {
+    seedStarted({ finds: [{ id: FIND, hunt_id: HUNT, task_id: "task-1", location_id: "loc-1", hot_cold_enabled: false }] });
+    const body = await ping({ ...FAR, leg_start: 2000, last_zone: "cold" });
+    expect(body.hot_cold).toBeNull();
+    expect(body.distance).toBeNull();
   });
 });
 
@@ -492,6 +592,52 @@ describe("POST /play/[huntId]/complete", () => {
     const res = await complete(post("/complete"), playParams);
     expect(res.status).toBe(200);
     expect(db.table("play_sessions")[0].status).toBe("completed");
+  });
+});
+
+describe("live leaderboard pings", () => {
+  it("pings the hunt's leaderboard when a session completes", async () => {
+    seed();
+    await complete(post("/complete"), playParams);
+    expect(h.notifyLeaderboardChanged).toHaveBeenCalledTimes(1);
+    expect(h.notifyLeaderboardChanged).toHaveBeenCalledWith(HUNT);
+  });
+
+  it("pings before the badge work, so the board is not held up by it", async () => {
+    const order: string[] = [];
+    h.notifyLeaderboardChanged.mockImplementation(async () => {
+      order.push("ping");
+    });
+    h.evaluateBadges.mockImplementation(async () => {
+      order.push("badges");
+      return [];
+    });
+    seed();
+    await complete(post("/complete"), playParams);
+    expect(order).toEqual(["ping", "badges"]);
+  });
+
+  it("does not ping again for a repeat complete call: nothing changed", async () => {
+    seed();
+    await complete(post("/complete"), playParams);
+    h.notifyLeaderboardChanged.mockClear();
+    await complete(post("/complete"), playParams);
+    expect(h.notifyLeaderboardChanged).not.toHaveBeenCalled();
+  });
+
+  it("does not ping when there was no session to complete", async () => {
+    seed({ play_sessions: [] });
+    await complete(post("/complete"), playParams);
+    expect(h.notifyLeaderboardChanged).not.toHaveBeenCalled();
+  });
+
+  it("does not ping for a scored answer or a new session: boards list finished hunts only", async () => {
+    seed({ find_completions: [arrived()] });
+    await answer(post("/answer", { find_id: FIND, answer: "A red door" }), playParams);
+    seed({ play_sessions: [] });
+    const res = await startHunt(post("/start"), playParams);
+    expect(res.status).toBe(201);
+    expect(h.notifyLeaderboardChanged).not.toHaveBeenCalled();
   });
 });
 

@@ -1,6 +1,11 @@
 import Leaderboard from "@/components/social/leaderboard";
+import { getViewerRow } from "@/lib/auth/viewer";
+import { canViewRealNames } from "@/lib/social/real-names";
 
-export default function LeaderboardPage() {
+export default async function LeaderboardPage() {
+  // Shared with the (app) layout's lookup for this request: no extra query.
+  const viewer = await getViewerRow();
+
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
       <header className="mb-5">
@@ -11,7 +16,8 @@ export default function LeaderboardPage() {
           See where you stand — then go climb.
         </p>
       </header>
-      <Leaderboard />
+      {/* Only admins and researchers are offered real names. */}
+      <Leaderboard canShowRealNames={canViewRealNames(viewer)} />
     </main>
   );
 }
