@@ -5,6 +5,14 @@ import { locationSupported, watchLocation } from "@/lib/native/geolocation";
 import { safeFetch } from "@/lib/play/play-api";
 import { heatLevel } from "@/lib/native/haptics";
 import { arriveDelayMs, isMeaningfulFix, type Fix } from "@/lib/play/geo-filter";
+import {
+  clearLegStart,
+  isVagueFix,
+  legStartAfterReply,
+  legStartToSend,
+  loadLegStart,
+  saveLegStart,
+} from "@/lib/play/leg-start";
 import type { Find, GpsStatus, HotCold, LocationConsent, StopStep } from "@/lib/play/play-types";
 
 export interface UserPosition {
@@ -71,6 +79,13 @@ export function useGeoTracking({
     let lastAccepted: Fix | null = null;
     let lastSentAt: number | null = null;
     let nearTarget = false;
+    // The zone on screen, sent back so the server can hold it steady while
+    // GPS noise wobbles a reading across a zone boundary.
+    let lastZone: string | null = null;
+    // How far away the walk to this stop began: the meter is scaled to it.
+    // Saved on the device so a reload mid-walk doesn't restart the meter.
+    const huntKey = String(huntId);
+    let legStart = loadLegStart(huntKey, currentFind.id);
     let pending: Fix | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -82,6 +97,8 @@ export function useGeoTracking({
       }
       arriveInFlightRef.current = true;
       lastSentAt = Date.now();
+      const vague = isVagueFix(fix.accuracy);
+      const sentLegStart = legStartToSend(legStart, vague);
       try {
         const res = await safeFetch(`/api/v1/play/${huntId}/arrive`, {
           method: "POST",
@@ -91,16 +108,29 @@ export function useGeoTracking({
             latitude: fix.lat,
             longitude: fix.lng,
             accuracy: fix.accuracy,
+            ...(sentLegStart !== null ? { leg_start: sentLegStart } : {}),
+            ...(lastZone ? { last_zone: lastZone } : {}),
           }),
         });
         const data = await res.json();
         if (!active) return;
 
         if (data.hot_cold) {
+          const nextLegStart = data.arrived ? legStart : legStartAfterReply(legStart, sentLegStart, data.distance, vague);
+          if (nextLegStart && nextLegStart !== legStart) {
+            legStart = nextLegStart;
+            saveLegStart(huntKey, currentFind.id, nextLegStart);
+          }
+          lastZone = data.hot_cold.zone;
           nearTarget = (heatLevel(data.hot_cold.zone) ?? 0) >= 4;
           callbacksRef.current.onHotCold(data.hot_cold);
         }
-        if (data.arrived) callbacksRef.current.onArrived();
+        if (data.arrived) {
+          // The leg is over: a replay, or walking off and coming back, starts a new one.
+          legStart = null;
+          clearLegStart(huntKey, currentFind.id);
+          callbacksRef.current.onArrived();
+        }
       } catch {
         // Network error during GPS ping — don't block navigation. Forget the
         // accepted fix so a stationary player's next fix is sent again.

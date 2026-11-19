@@ -47,6 +47,8 @@ export interface HotCold {
   label: string;
   emoji: string;
   distanceLabel: string;
+  /** Marker position on the meter, % from the cold end, worked out by the server with the zone. */
+  markerPercent?: number;
 }
 
 export interface AnswerFeedback {
