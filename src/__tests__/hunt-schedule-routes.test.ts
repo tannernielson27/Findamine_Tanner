@@ -33,6 +33,8 @@ vi.mock("@/lib/utils/bot-guard", () => ({ botGuard: async () => null }));
 vi.mock("@/lib/utils/logger", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 vi.mock("@/lib/utils/track-event", () => ({ trackEvent: async () => {} }));
 vi.mock("@/lib/utils/run-after", () => ({ runAfter: () => {} }));
+const ping = vi.hoisted(() => ({ notify: vi.fn<(huntId: string) => Promise<void>>(async () => {}) }));
+vi.mock("@/lib/social/leaderboard-broadcast", () => ({ notifyLeaderboardChanged: ping.notify }));
 vi.mock("@/lib/services/referral", () => ({ awardReferralPoints: async () => {} }));
 vi.mock("@/lib/services/privacy-notice", () => ({ recordPrivacyNotice: async () => null }));
 vi.mock("@/lib/services/gamification", () => ({
@@ -368,6 +370,21 @@ describe("scoring on a scheduled hunt (version 2)", () => {
     await answer(req("POST", "/answer", { find_id: "f0", answer: "52" }), playParams);
     const timing = (db.table("find_completions")[0].metadata as Row).scoring_timing as Row;
     expect(timing).toMatchObject({ release_active: true, released_at: STARTS, release_ms: HOUR + 60_000 });
+  });
+
+  it("a scored stop tells open leaderboards to refresh: the board is a running total", async () => {
+    ping.notify.mockClear();
+    await solve(at(RELEASE.f1, 5 * 60_000), at(RELEASE.f1));
+    expect(ping.notify).toHaveBeenCalledTimes(1);
+    expect(ping.notify).toHaveBeenCalledWith(HUNT);
+
+    // A play-anytime hunt's board lists finished sessions only: nothing to refresh yet.
+    ping.notify.mockClear();
+    const startIso = new Date(at(STARTS)).toISOString();
+    seed({ scheduled: false, completions: [completion("f1", { started_at: startIso, arrived_at: startIso, created_at: startIso })] });
+    now(at(STARTS, 5 * 60_000));
+    expect((await answer(req("POST", "/answer", { find_id: "f1", answer: "52" }), playParams)).status).toBe(200);
+    expect(ping.notify).not.toHaveBeenCalled();
   });
 
   it("a hunt with no window scores on solve time alone, as before", async () => {

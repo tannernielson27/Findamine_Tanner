@@ -6,10 +6,12 @@
  * leaderboard-channel.ts); browsers refetch the board from the API, which
  * applies the usual visibility rules per viewer.
  *
- * Call this after anything that changes what a board shows. Today that is a
- * session completing: both boards list finished hunts only, so a scored answer
- * or a newly started session changes nothing on them until the hunt is
- * finished. If in-progress sessions are ever shown, ping from those routes too.
+ * Call this after anything that changes what a board shows:
+ *   - a session completing (/complete): the overall board and a play-anytime
+ *     hunt's board list finished hunts only;
+ *   - a scored stop on a scheduled hunt (/answer): its board is a running
+ *     total of sessions still in progress.
+ * A newly started session has no points and is on no board.
  */
 
 import { logger } from "@/lib/utils/logger";
