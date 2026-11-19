@@ -5,6 +5,7 @@ import { trackEvent } from "@/lib/utils/track-event";
 import { evaluateBadges, updateStreak } from "@/lib/services/gamification";
 import { runAfter } from "@/lib/utils/run-after";
 import { logger } from "@/lib/utils/logger";
+import { notifyLeaderboardChanged } from "@/lib/social/leaderboard-broadcast";
 
 export async function POST(
   request: NextRequest,
@@ -47,6 +48,12 @@ export async function POST(
       if (!finished?.[0]) throw new ApiError(404, "No active play session");
       return Response.json({ session: finished[0], already_completed: true, badges_earned: [] });
     }
+
+    // A finished session is what puts a player on the boards: tell open
+    // leaderboards to refetch. Sent now, ahead of the badge work below, and
+    // only kept alive past the response; it never fails the completion.
+    const leaderboardPing = notifyLeaderboardChanged(huntId);
+    runAfter("leaderboard_ping", () => leaderboardPing);
 
     runAfter("track_play_complete", () =>
       trackEvent({ userId: user.id, eventType: "play_complete", payload: { hunt_id: huntId } })

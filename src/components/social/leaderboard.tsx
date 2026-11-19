@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useCallback } from "react";
 import Link from "next/link";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Medal, Star, Trophy } from "lucide-react";
 import { LazyMotion, m } from "framer-motion";
 import { SPRING_SNAPPY } from "@/lib/motion";
@@ -12,6 +11,8 @@ import {
   standingCaption,
   type ServerMe,
 } from "@/lib/social/standing";
+import { leaderboardTopic } from "@/lib/social/leaderboard-channel";
+import { useLiveBoard } from "@/lib/social/use-live-board";
 
 interface LeaderboardEntry {
   user_id: string;
@@ -34,74 +35,41 @@ interface Board {
   me: ServerMe | null;
 }
 
+/**
+ * Give up on a board request after this long. A request left hanging (the
+ * app was suspended mid-flight, a dead connection) would otherwise hold up
+ * every later refetch, because refetches never overlap.
+ */
+const BOARD_FETCH_TIMEOUT_MS = 10_000;
+
 /** One fetch of the board; null when the request fails (keep what's on screen). */
 async function loadBoard(huntId: string | undefined): Promise<Board | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), BOARD_FETCH_TIMEOUT_MS);
   try {
     const params = huntId ? `?hunt_id=${encodeURIComponent(huntId)}` : "";
-    const res = await fetch(`/api/v1/leaderboard${params}`);
+    const res = await fetch(`/api/v1/leaderboard${params}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    });
     if (!res.ok) return null;
     const data = await res.json();
     return { entries: data.entries || [], viewerId: data.viewer_id ?? null, me: data.me ?? null };
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
 const loadLayoutFeatures = () => import("@/lib/themes/motion-features-max").then((mod) => mod.default);
 
 export default function Leaderboard({ huntId }: LeaderboardProps) {
-  const [board, setBoard] = useState<Board | null>(null);
-  const [loading, setLoading] = useState(true);
-  const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    loadBoard(huntId).then((next) => {
-      if (cancelled) return;
-      if (next) setBoard(next);
-      setLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [huntId]);
-
-  useEffect(() => {
-    const supabase = createSupabaseBrowserClient();
-    const filter = huntId ? `hunt_id=eq.${huntId}` : undefined;
-
-    const channel = supabase
-      .channel("leaderboard-updates")
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "play_sessions",
-          ...(filter ? { filter } : {}),
-        },
-        (payload) => {
-          if (payload.new.status === "completed" || payload.new.total_score !== payload.old?.total_score) {
-            if (refetchTimer.current) clearTimeout(refetchTimer.current);
-            refetchTimer.current = setTimeout(() => {
-              refetchTimer.current = null;
-              loadBoard(huntId).then((next) => {
-                if (next) setBoard(next);
-              });
-            }, 3000);
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-      if (refetchTimer.current) {
-        clearTimeout(refetchTimer.current);
-        refetchTimer.current = null;
-      }
-    };
-  }, [huntId]);
+  // Live updates: the server pings this board's own channel when standings
+  // change and the board refetches from the API; a poll covers missed pings.
+  // No player data travels over the channel (see lib/social/leaderboard-channel).
+  const load = useCallback(() => loadBoard(huntId), [huntId]);
+  const { data: board, loading } = useLiveBoard(leaderboardTopic(huntId), load);
 
   const medalTints = ["text-amber-500", "text-slate-400", "text-orange-700"];
   const podiumColors = [

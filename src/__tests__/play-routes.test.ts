@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   user: null as null | { id: string; role: string },
   updateStreak: vi.fn(),
   evaluateBadges: vi.fn(),
+  notifyLeaderboardChanged: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/server", async () => {
@@ -31,6 +32,9 @@ vi.mock("@/lib/services/privacy-notice", () => ({ recordPrivacyNotice: async () 
 vi.mock("@/lib/services/gamification", () => ({
   updateStreak: h.updateStreak,
   evaluateBadges: h.evaluateBadges,
+}));
+vi.mock("@/lib/social/leaderboard-broadcast", () => ({
+  notifyLeaderboardChanged: h.notifyLeaderboardChanged,
 }));
 
 import { POST as arrive } from "@/app/api/v1/play/[huntId]/arrive/route";
@@ -108,6 +112,7 @@ beforeEach(() => {
   h.user = { id: "u1", role: "adult" };
   h.updateStreak.mockReset().mockResolvedValue({ current: 1, longest: 1, justBroke: false, badgesEarned: [] });
   h.evaluateBadges.mockReset().mockResolvedValue([]);
+  h.notifyLeaderboardChanged.mockReset().mockResolvedValue(undefined);
 });
 
 describe("POST /play/[huntId]/arrive", () => {
@@ -482,6 +487,52 @@ describe("POST /play/[huntId]/complete", () => {
     const res = await complete(post("/complete"), playParams);
     expect(res.status).toBe(200);
     expect(db.table("play_sessions")[0].status).toBe("completed");
+  });
+});
+
+describe("live leaderboard pings", () => {
+  it("pings the hunt's leaderboard when a session completes", async () => {
+    seed();
+    await complete(post("/complete"), playParams);
+    expect(h.notifyLeaderboardChanged).toHaveBeenCalledTimes(1);
+    expect(h.notifyLeaderboardChanged).toHaveBeenCalledWith(HUNT);
+  });
+
+  it("pings before the badge work, so the board is not held up by it", async () => {
+    const order: string[] = [];
+    h.notifyLeaderboardChanged.mockImplementation(async () => {
+      order.push("ping");
+    });
+    h.evaluateBadges.mockImplementation(async () => {
+      order.push("badges");
+      return [];
+    });
+    seed();
+    await complete(post("/complete"), playParams);
+    expect(order).toEqual(["ping", "badges"]);
+  });
+
+  it("does not ping again for a repeat complete call: nothing changed", async () => {
+    seed();
+    await complete(post("/complete"), playParams);
+    h.notifyLeaderboardChanged.mockClear();
+    await complete(post("/complete"), playParams);
+    expect(h.notifyLeaderboardChanged).not.toHaveBeenCalled();
+  });
+
+  it("does not ping when there was no session to complete", async () => {
+    seed({ play_sessions: [] });
+    await complete(post("/complete"), playParams);
+    expect(h.notifyLeaderboardChanged).not.toHaveBeenCalled();
+  });
+
+  it("does not ping for a scored answer or a new session: boards list finished hunts only", async () => {
+    seed({ find_completions: [arrived()] });
+    await answer(post("/answer", { find_id: FIND, answer: "A red door" }), playParams);
+    seed({ play_sessions: [] });
+    const res = await startHunt(post("/start"), playParams);
+    expect(res.status).toBe(201);
+    expect(h.notifyLeaderboardChanged).not.toHaveBeenCalled();
   });
 });
 
