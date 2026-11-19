@@ -206,24 +206,27 @@ describe("POST /reports", () => {
     });
   });
 
-  it("a stop the reporter has not started reads as not found, and its clue is not stored for them", async () => {
+  it("a clue the reporter has not been given is never stored for them", async () => {
     // A reporter can read their own reports back, clue snapshot included.
     const stops = { hunts: [{ id: HUNT, created_by: ADA }], finds: [{ id: FIND, hunt_id: HUNT, clue_text: "Under the bridge" }] };
     const send = () => report(req("POST", "/api/v1/reports", { category: "off_topic", target_type: "find", target_id: FIND }));
 
-    // Never played the hunt.
+    // Not in the hunt at all: the stop reads as not found, like a made-up id.
     let db = seed({ ...stops, play_sessions: [], find_completions: [] });
     expect((await send()).status).toBe(404);
     expect(db.table("moderation_reports")).toHaveLength(0);
 
-    // Playing it, but this stop is not started; someone else has started it.
+    // In the hunt, on the "I'm ready" step: the stop is not started yet (someone
+    // else has started it). The report goes through, without the clue.
     db = seed({
       ...stops,
       play_sessions: [{ id: "sess-me", user_id: ME, hunt_id: HUNT }, { id: "sess-bo", user_id: BO, hunt_id: HUNT }],
       find_completions: [{ id: "comp-bo", find_id: FIND, play_session_id: "sess-bo" }],
     });
-    expect((await send()).status).toBe(404);
-    expect(db.table("moderation_reports")).toHaveLength(0);
+    expect((await send()).status).toBe(200);
+    const [stored] = db.table("moderation_reports");
+    expect(stored).toMatchObject({ entity_id: FIND, reporter_id: ME, reported_user_id: ADA, content_snapshot: null });
+    expect(JSON.stringify(stored)).not.toContain("Under the bridge");
   });
 
   it("a reviewer can report a stop without playing it", async () => {

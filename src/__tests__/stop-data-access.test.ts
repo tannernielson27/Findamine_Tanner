@@ -230,6 +230,23 @@ describe("GET /curriculum?standard=", () => {
     }
   });
 
+  it("fills the page with library challenges, however many other challenges are aligned first", async () => {
+    const db = seed();
+    db.table("education_standards").push({ id: "std-1", code: "RL.5.1" });
+    db.embeds.task_standard_alignments = { tasks: { table: "tasks", localKey: "task_id" } };
+    // Three alignments to a hunt's own challenge come before the library one.
+    db.table("task_standard_alignments").push(
+      { standard_id: "std-1", task_id: "t-ada", alignment_strength: "strong" },
+      { standard_id: "std-1", task_id: "t-ada", alignment_strength: "strong" },
+      { standard_id: "std-1", task_id: "t-ada", alignment_strength: "strong" },
+      { standard_id: "std-1", task_id: "t-lib", alignment_strength: "strong" },
+      { standard_id: "std-1", task_id: "t-lib", alignment_strength: "partial" }
+    );
+    h.user = bo;
+    const page = await (await curriculum(req("/curriculum?standard=RL.5.1&limit=1"))).json();
+    expect(ids(page.tasks)).toEqual(["t-lib"]);
+  });
+
   it("keeps the library answer key for builders and strips it for everyone else", async () => {
     h.user = bo;
     expect((await byStandard()).tasks[0].content.correct_answer).toBe("lib-key");
@@ -383,6 +400,16 @@ describe("what a stop may point at", () => {
     expect((await put("f1", { task_id: T_BO, clue_text: "Reworded" })).status).toBe(200);
     expect((await put("f2", { task_id: T_BO })).status).toBe(200);
     expect(db.table("finds")[1].task_id).toBe(T_BO);
+  });
+
+  it("a stop keeps a challenge that was removed after it was attached", async () => {
+    // The editor resends a stop's ids on every save.
+    const db = seedBuilder([{ id: "f1", hunt_id: HUNT_ADA, sort_order: 0, task_id: T_ADA, location_id: null, primer_id: null, deleted_at: null }]);
+    db.table("tasks").find((row) => row.id === T_ADA)!.deleted_at = "2026-01-01T00:00:00.000Z";
+    expect((await put("f1", { task_id: T_ADA, clue_text: "Reworded" })).status).toBe(200);
+    // A removed row the hunt does not use is still refused.
+    db.table("tasks").find((row) => row.id === T_LIB)!.deleted_at = "2026-01-01T00:00:00.000Z";
+    expect((await put("f1", { task_id: T_LIB })).status).toBe(403);
   });
 
   it("admins and researchers may use any row", async () => {

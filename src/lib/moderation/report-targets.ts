@@ -132,9 +132,12 @@ const REVIEWER_ROLES: readonly string[] = ["admin", "researcher"];
  * A hunt stop: its clue text, written by the hunt's creator.
  *
  * The clue is kept with the report, and a reporter can read their own reports
- * back. So a stop can be reported by someone who has been given its clue: a
- * player who has started it, the hunt's creator, or a reviewer. For anyone
- * else it resolves as not found, as a made-up id does.
+ * back. So the clue is kept only for someone who has been given it: a player
+ * who has started the stop, the hunt's creator, or a reviewer. A player who is
+ * in the hunt but has not started the stop (the play screen offers "Report a
+ * problem" on the "I'm ready" step too) can still report it; that report is
+ * stored without the clue. For anyone else the stop resolves as not found, as
+ * a made-up id does.
  */
 async function resolveFind(supabase: ServiceClient, findId: string, reporter: Reporter): Promise<ResolvedTarget> {
   const { data, error } = await supabase
@@ -152,28 +155,38 @@ async function resolveFind(supabase: ServiceClient, findId: string, reporter: Re
   const creatorId = typeof hunt?.created_by === "string" ? hunt.created_by : null;
 
   const insider = creatorId === reporter.id || REVIEWER_ROLES.includes(reporter.role);
-  if (!insider && !(await hasStartedStop(supabase, reporter.id, String(row.hunt_id ?? ""), findId))) return NOT_FOUND;
+  const standing = insider ? "started" : await playerStanding(supabase, reporter.id, String(row.hunt_id ?? ""), findId);
+  if (standing === "outside") return NOT_FOUND;
 
   return {
     found: true,
     reportedUserId: creatorId,
-    snapshot: typeof row.clue_text === "string" ? row.clue_text.slice(0, SNAPSHOT_MAX) : null,
+    snapshot: standing === "started" && typeof row.clue_text === "string" ? row.clue_text.slice(0, SNAPSHOT_MAX) : null,
   };
 }
 
-/** Has this player started the stop in any of their sessions on its hunt? A failed read counts as no. */
-async function hasStartedStop(supabase: ServiceClient, userId: string, huntId: string, findId: string): Promise<boolean> {
+/**
+ * Where a player stands with a stop: they have started it in one of their
+ * sessions on its hunt, they are in the hunt but have not started it, or they
+ * are not in the hunt at all. A failed read counts as the more cautious answer.
+ */
+async function playerStanding(
+  supabase: ServiceClient,
+  userId: string,
+  huntId: string,
+  findId: string
+): Promise<"started" | "in_hunt" | "outside"> {
   const { data: sessions, error: sessionsError } = await supabase
     .from("play_sessions")
     .select("id")
     .eq("user_id", userId)
     .eq("hunt_id", huntId);
-  if (sessionsError || !sessions || sessions.length === 0) return false;
+  if (sessionsError || !sessions || sessions.length === 0) return "outside";
   const { data: started, error } = await supabase
     .from("find_completions")
     .select("id")
     .eq("find_id", findId)
     .in("play_session_id", sessions.map((s) => s.id as string))
     .limit(1);
-  return !error && !!started && started.length > 0;
+  return !error && !!started && started.length > 0 ? "started" : "in_hunt";
 }

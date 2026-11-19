@@ -12,6 +12,7 @@ import { assertCleanFields } from "@/lib/utils/crud-helpers";
 import { internalError } from "@/lib/utils/internal-error";
 import { DEFAULT_STOP_RADIUS_M } from "@/lib/play/arrival-check";
 import { ownOrLibraryFilter, parseLibraryFlag, readsAllContent } from "@/lib/hunts/content-access";
+import { ID_CHUNK } from "@/lib/utils/paginate";
 
 /** Location text players see at a stop; screened like other hunt content. */
 const LOCATION_TEXT_FIELDS = ["name", "description", "address", "safety_notes"];
@@ -91,13 +92,18 @@ async function readableNearby(
   nearby: NearbyLocation[]
 ): Promise<NearbyLocation[]> {
   if (readsAllContent(user.role) || nearby.length === 0) return nearby.slice(0, NEARBY_RESULTS);
-  const { data, error } = await supabase
-    .from("locations")
-    .select("id")
-    .in("id", nearby.map((l) => l.id))
-    .or(ownOrLibraryFilter(user.id));
-  if (error) throw internalError("/api/v1/locations", error);
-  const readable = new Set((data ?? []).map((row) => row.id as string));
+  const ids = nearby.map((l) => l.id);
+  const readable = new Set<string>();
+  // In chunks, so the request URL stays short however many places are nearby.
+  for (let i = 0; i < ids.length; i += ID_CHUNK) {
+    const { data, error } = await supabase
+      .from("locations")
+      .select("id")
+      .in("id", ids.slice(i, i + ID_CHUNK))
+      .or(ownOrLibraryFilter(user.id));
+    if (error) throw internalError("/api/v1/locations", error);
+    for (const row of data ?? []) readable.add(row.id as string);
+  }
   return nearby.filter((l) => readable.has(l.id)).slice(0, NEARBY_RESULTS);
 }
 

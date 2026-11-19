@@ -56,7 +56,9 @@ export async function assertFindContentAllowed(
       .is("deleted_at", null)
       .limit(1);
     if (usedError) throw internalError(route, usedError);
-    if (row && used && used.length > 0) continue;
+    // Whether or not the row is still there: re-saving a stop whose place or
+    // challenge was removed later must not be refused as someone else's.
+    if (used && used.length > 0) continue;
 
     throw new ApiError(403, contentRefusedMessage(label));
   }

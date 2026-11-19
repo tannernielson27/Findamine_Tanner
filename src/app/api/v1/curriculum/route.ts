@@ -127,7 +127,9 @@ export async function GET(request: NextRequest) {
         .from("task_standard_alignments")
         .select("task_id, alignment_strength, tasks(*)")
         .eq("standard_id", std.id)
-        .limit(limit);
+        // Read past the page: only library challenges are returned, and the
+        // page is cut after that filter, not before it.
+        .limit(MAX_LIMIT);
 
       const shape = await taskShaper(request);
       // This is the curriculum library, like the listing below: a standard
@@ -136,7 +138,7 @@ export async function GET(request: NextRequest) {
         const taskData = Array.isArray(a.tasks) ? a.tasks[0] : a.tasks;
         if (!taskData || taskData.is_library !== true || taskData.deleted_at) return [];
         return [{ ...shape(taskData), alignment_strength: a.alignment_strength }];
-      });
+      }).slice(0, limit);
 
       return Response.json({ tasks, standard: standardCode });
     }
