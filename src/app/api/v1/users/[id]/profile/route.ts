@@ -10,7 +10,7 @@ import {
   type ViewerContext,
   type VisibilityOverrides,
 } from "@/lib/utils/privacy";
-import { getViewerRelationship, getViewerRelationships } from "@/lib/utils/viewer";
+import { getViewerRelationships, resolveViewerRelationship } from "@/lib/utils/viewer";
 import { sumLedger } from "@/lib/utils/points";
 import { withComparableTotals } from "@/lib/hunts/scoring-version";
 
@@ -56,8 +56,9 @@ export async function GET(
       throw new ApiError(404, "User not found");
     }
 
-    const relationship: ViewerRelationship =
-      viewer.id === target.id ? "self" : await getViewerRelationship(viewer.id, target.id);
+    // `via` says what the relationship rests on (a team, a class, a crew, a
+    // follow) so the page can name it correctly.
+    const { relationship, via } = await resolveViewerRelationship(viewer.id, target.id);
     const visibility = (target.profile_visibility || {}) as Record<string, string>;
     // Per-person overrides (migration 057) apply to THIS viewer specifically.
     const viewerCtx: ViewerContext = {
@@ -155,6 +156,7 @@ export async function GET(
     return Response.json({
       profile: { id: target.id, role: target.role, ...filtered },
       relationship,
+      relationship_via: via,
       hidden_fields: hiddenFields,
     });
   } catch (error) {

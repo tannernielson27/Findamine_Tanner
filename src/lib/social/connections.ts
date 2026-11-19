@@ -30,6 +30,10 @@ export async function areConnected(supabase: ServiceClient, a: string, b: string
     .limit(1);
   if (crew && crew.length > 0) return true;
 
+  // "team" and "class" also cover social audiences (lib/utils/viewer.ts): for
+  // adult accounts, `a` counts as connected to `b` when `b` follows `a`. So the
+  // people you follow can send you kudos; following someone does not let you
+  // message them.
   const rel = await getViewerRelationship(a, b);
   return rel === "team" || rel === "class";
 }

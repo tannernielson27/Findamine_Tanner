@@ -4,6 +4,8 @@ import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { Lock } from "lucide-react";
 import FriendButton from "@/components/social/friend-button";
+import FollowButton from "@/components/social/follow-button";
+import { canUseFollows, type RelationshipVia } from "@/lib/social/follow-rules";
 import ProfileSafetyActions from "@/components/moderation/profile-safety-actions";
 
 interface BadgeRow {
@@ -40,13 +42,18 @@ interface PeerProfile {
 interface ProfileResponse {
   profile: PeerProfile;
   relationship: "self" | "team" | "class" | "public";
+  /** What the relationship rests on; absent from older API responses. */
+  relationship_via?: RelationshipVia;
   hidden_fields: string[];
 }
 
-const RELATIONSHIP_LABEL: Record<string, string> = {
+const RELATIONSHIP_LABEL: Record<RelationshipVia, string> = {
   self: "This is you",
   team: "Your teammate",
   class: "In your class",
+  crew: "In your crew",
+  // The profile's owner follows the viewer.
+  follow: "Follows you",
   public: "Explorer",
 };
 
@@ -111,7 +118,7 @@ export default function PeerProfilePage({ params }: { params: Promise<{ userId: 
         <div className="min-w-0">
           <h1 className="truncate font-[family-name:var(--font-display)] text-3xl font-bold text-themed-text">{name}</h1>
           {profile.real_name && <p className="text-base text-themed-text">{profile.real_name}</p>}
-          <p className="text-sm text-themed-muted">{RELATIONSHIP_LABEL[relationship]}</p>
+          <p className="text-sm text-themed-muted">{RELATIONSHIP_LABEL[data.relationship_via ?? relationship]}</p>
         </div>
       </header>
 
@@ -126,6 +133,7 @@ export default function PeerProfilePage({ params }: { params: Promise<{ userId: 
       ) : (
         <>
           {profile.role !== "child" && !blocked && <FriendButton key={friendKey} userId={profile.id} />}
+          {canUseFollows(profile.role) && !blocked && <FollowButton key={`follow-${friendKey}`} userId={profile.id} />}
           <ProfileSafetyActions
             userId={profile.id}
             name={profile.display_name || "this player"}

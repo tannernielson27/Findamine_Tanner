@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Flag } from "lucide-react";
 import ReportDialog, { type ReportOutcome } from "@/components/moderation/report-dialog";
 import StreakDisplay from "@/components/gamification/streak-display";
+import FollowsPanel from "@/components/social/follows-panel";
 import { buildKudosRecipients, type RecipientGroup } from "@/lib/social/recipients";
 import { RECRUIT_BONUS, WELCOME_BONUS } from "@/lib/utils/referral-rewards";
 import {
@@ -438,6 +439,9 @@ export default function SocialPage() {
               </ul>
             </section>
           )}
+
+          {/* One-way follows: who you keep an eye on, and who watches you */}
+          <FollowsPanel />
 
           <div className="grid gap-6 lg:grid-cols-2">
             {/* Friends */}

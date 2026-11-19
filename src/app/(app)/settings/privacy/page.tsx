@@ -7,10 +7,11 @@ import { m } from "framer-motion";
 import { backdrop, dialog } from "@/lib/motion";
 import { fetchMe, invalidateMe } from "@/lib/hooks/use-me";
 import {
-  PROFILE_FIELDS, VISIBILITY_LABELS, CATEGORIES,
+  PROFILE_FIELDS, CATEGORIES,
   type VisibilityLevel, type PrivacyTreatment,
   getDefaults,
 } from "@/lib/utils/privacy";
+import { audienceLabelsFor } from "@/lib/social/follow-rules";
 import {
   logPrivacyEvent, diffVisibility, classifyChange, countOptionsShown,
 } from "@/lib/utils/privacy-tracking";
@@ -99,6 +100,9 @@ export default function PrivacySettingsPage() {
   const [schemeError, setSchemeError] = useState<string | null>(null);
   const [normLine, setNormLine] = useState<NormLineData | null>(null);
   const [userId, setUserId] = useState("");
+  // Audience names depend on the account: adults see their crew and the
+  // players they follow where children and teens see a team and a class.
+  const [audienceLabels, setAudienceLabels] = useState(() => audienceLabelsFor(null));
 
   // Welcome-tour stop (tour-mode.ts): the page is shown read-only, the T1
   // trigger is not fired, and the view is logged as view_reason "tour" so it
@@ -220,6 +224,7 @@ export default function PrivacySettingsPage() {
         const loadedOverrides = (data.user.profile_visibility_overrides || {}) as VisibilityOverrides;
         userIdRef.current = data.user.id ?? "";
         setUserId(data.user.id ?? "");
+        setAudienceLabels(audienceLabelsFor(data.user.role));
 
         // Edits parked before a trip to the gating questionnaire come back as
         // unsaved edits: the baseline stays the stored state and nothing is
@@ -717,7 +722,7 @@ export default function PrivacySettingsPage() {
           <p className="text-sm font-medium text-gray-700">Who can see your profile?</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {VISIBILITY_LEVELS.map((level) => {
-              const info = VISIBILITY_LABELS[level];
+              const info = audienceLabels[level];
               const isActive = PROFILE_FIELDS.every((f) => visibility[f.key] === level);
               return (
                 <button
@@ -756,7 +761,7 @@ export default function PrivacySettingsPage() {
                 </p>
                 <div className="flex gap-1.5">
                   {VISIBILITY_LEVELS.map((level) => {
-                    const info = VISIBILITY_LABELS[level];
+                    const info = audienceLabels[level];
                     return (
                       <button
                         key={level}
@@ -792,7 +797,7 @@ export default function PrivacySettingsPage() {
               </div>
               <div className="flex gap-1 mt-1.5">
                 {VISIBILITY_LEVELS.map((level) => {
-                  const info = VISIBILITY_LABELS[level];
+                  const info = audienceLabels[level];
                   return (
                     <button
                       key={level}

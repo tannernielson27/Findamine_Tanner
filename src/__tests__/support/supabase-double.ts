@@ -275,10 +275,14 @@ class Query implements PromiseLike<Result> {
       let alias = head;
       let spec: EmbedSpec | undefined;
       if (head.includes(":")) {
+        // alias:table!fk_column(cols) → that table, joined on the named column.
         // alias:fk_column(cols) → embedded table named by the alias.
-        const [a, fk] = head.split(":");
+        const [a, rest] = head.split(":");
         alias = a;
-        spec = { table: a, localKey: fk };
+        const bang = rest.indexOf("!");
+        spec = bang === -1
+          ? { table: a, localKey: rest }
+          : { table: rest.slice(0, bang), localKey: rest.slice(bang + 1) };
       } else {
         spec = this.db.embeds[this.table]?.[head];
       }

@@ -129,7 +129,7 @@ export async function getReportedEntityIds(
 
 /**
  * Block `blockedId` on behalf of `blockerId`: store the block (idempotent) and
- * remove any friendship or pending request between them.
+ * remove any friendship, pending request or follow between them.
  */
 export async function blockUser(supabase: ServiceClient, blockerId: string, blockedId: string): Promise<void> {
   if (blockerId === blockedId) throw new ApiError(400, "You can't block yourself.");
@@ -154,5 +154,16 @@ export async function blockUser(supabase: ServiceClient, blockerId: string, bloc
     // The block itself is stored and enforced; a stale friendship row is
     // still hidden by the block checks, so log rather than fail.
     console.error(`Block stored but friendship not removed: ${unfriendError.message}`);
+  }
+
+  // Follows in both directions go too (the table arrives with migration 089).
+  const { error: unfollowError } = await supabase
+    .from("player_follows")
+    .delete()
+    .in("follower_id", [blockerId, blockedId])
+    .in("followee_id", [blockerId, blockedId]);
+  if (unfollowError && !isMissingTable(unfollowError)) {
+    // Same as above: the block is enforced on every follow read and write.
+    console.error(`Block stored but follows not removed: ${unfollowError.message}`);
   }
 }
