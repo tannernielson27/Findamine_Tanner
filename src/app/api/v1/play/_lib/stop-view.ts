@@ -75,14 +75,17 @@ export function hasPrimer(source: StopSource): boolean {
 
 /**
  * A stop the player has not started. `open` says whether their clue order lets
- * them start it now; only then does the primer come along.
+ * them start it now; only then does the primer come along. On a scheduled
+ * hunt (issue #14) a stop that has not been released carries `release_at`,
+ * the time it opens, and nothing else: not even its primer.
  */
-export function lockedStopView(source: StopSource, open: boolean): Find {
+export function lockedStopView(source: StopSource, open: boolean, releaseAt: string | null = null): Find {
   return {
     id: source.id,
     sort_order: source.sort_order ?? 0,
     started_at: null,
     open,
+    ...(releaseAt ? { release_at: releaseAt } : {}),
     clue_text: null,
     hot_cold_enabled: null,
     scaffolding_level: null,

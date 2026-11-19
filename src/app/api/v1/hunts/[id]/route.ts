@@ -23,7 +23,11 @@ import { huntHasPlaySessions, prepareMetadataUpdate } from "../delivery-guard";
 import { settleNavigationHelp } from "../navigation-help-guard";
 import { isDeliveryLocked, stopsFrozen } from "@/lib/hunts/delivery-lock";
 import { fullDeliveryMetadata, saveClueOrders, storedMetadata } from "@/lib/hunts/clue-orders-store";
-import { withoutClueOrders } from "@/lib/play/clue-delivery";
+import { readClueDelivery, withoutClueOrders } from "@/lib/play/clue-delivery";
+import { isScheduledHunt, type HuntWindowSource } from "@/lib/hunts/schedule";
+
+const SCHEDULED_DELIVERY_MESSAGE =
+  "A scheduled hunt gives out every released clue at once. Remove the schedule to use a different clue order.";
 
 const ROUTE = "/api/v1/hunts/[id]";
 type Meta = Record<string, unknown> | null;
@@ -111,7 +115,7 @@ export async function PUT(
     // Verify ownership
     const { data: existingRow } = await supabase
       .from("hunts")
-      .select(`created_by, status, review_status, metadata, ${REVIEWED_HUNT_FIELDS.join(", ")}`)
+      .select(`created_by, status, review_status, metadata, starts_at, ends_at, ${REVIEWED_HUNT_FIELDS.join(", ")}`)
       .eq("id", id)
       .is("deleted_at", null)
       .single();
@@ -173,6 +177,11 @@ export async function PUT(
         route: ROUTE,
       });
       delivery = { before: delivery.before, after: settled };
+      // A scheduled hunt hands out every released clue at once (issue #14):
+      // a set order could put a player on a stop that is not out yet.
+      if (isScheduledHunt(existing as HuntWindowSource) && readClueDelivery(delivery.after) !== "all_at_once") {
+        throw new ApiError(400, SCHEDULED_DELIVERY_MESSAGE);
+      }
       updates.metadata = storedMetadata(delivery.after);
     }
 

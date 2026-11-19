@@ -29,6 +29,11 @@ export interface Find {
   started_at: string | null;
   /** The player's clue order lets them start (or keep working on) this stop now. */
   open: boolean;
+  /**
+   * Scheduled hunts: set on a stop that has not been released yet, to the
+   * time it opens (ISO, UTC). Absent once it is out, and on play-anytime hunts.
+   */
+  release_at?: string | null;
   clue_text: string | null;
   hot_cold_enabled: boolean | null;
   scaffolding_level: string | null;
@@ -67,6 +72,20 @@ export interface HuntMetadata {
   clue_delivery?: string;
   /** How much navigation help players get: "Difficulty" (lib/play/navigation-help). */
   navigation_help?: string;
+}
+
+/**
+ * A scheduled hunt's window as the play API reports it (GET .../stops). Times
+ * are ISO, UTC. `server_time` is the server's clock when the reply was made:
+ * countdowns are measured against it, not the device's clock.
+ */
+export interface PlaySchedule {
+  starts_at: string;
+  ends_at: string;
+  phase: "upcoming" | "open" | "ended";
+  /** The next release still to come, or null when every stop is out. */
+  next_release_at: string | null;
+  server_time: string;
 }
 
 export interface HotCold {

@@ -17,6 +17,14 @@ import {
 } from "@/lib/play/clue-delivery";
 import { fullDeliveryMetadata } from "@/lib/hunts/clue-orders-store";
 import { readNavigationHelp, sessionNavigationHelpMetadata, type NavigationHelp } from "@/lib/play/navigation-help";
+import {
+  HUNT_ENDED_MESSAGE,
+  formatInZone,
+  huntPhase,
+  readHuntWindow,
+  readScheduleTimeZone,
+  type HuntWindowSource,
+} from "@/lib/hunts/schedule";
 
 const PLAYABLE_STATUSES = ["published", "enrollment_open", "in_progress"];
 const ROUTE = "/api/v1/play/[huntId]/start";
@@ -45,7 +53,7 @@ export async function POST(
     // Check hunt exists and is playable
     const { data: hunt } = await supabase
       .from("hunts")
-      .select("id, status, identity_mode, created_by, play_mode, review_status, metadata")
+      .select("id, status, identity_mode, created_by, play_mode, review_status, metadata, starts_at, ends_at")
       .eq("id", huntId)
       .maybeSingle();
 
@@ -93,6 +101,17 @@ export async function POST(
         ...playerDelivery(delivery, existing.metadata),
       });
     }
+
+    // Scheduled hunts (issue #14): one window for everyone. A player can join
+    // at any point while it is open, not before and not after. Someone who
+    // already has a session (above) can always get back into it.
+    const window = readHuntWindow(hunt as HuntWindowSource);
+    const phase = huntPhase(window, Date.now());
+    if (window && phase === "upcoming") {
+      const zone = readScheduleTimeZone(hunt.metadata as Record<string, unknown> | null);
+      throw new ApiError(409, `This hunt starts ${formatInZone(window.startsAtMs, zone)}. Come back then to play.`);
+    }
+    if (phase === "ended") throw new ApiError(409, HUNT_ENDED_MESSAGE);
 
     const body = await request.json().catch(() => ({}));
 

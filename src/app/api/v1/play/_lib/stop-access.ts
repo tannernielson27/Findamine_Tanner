@@ -11,6 +11,17 @@ import {
   type ClueDelivery,
 } from "@/lib/play/clue-delivery";
 import { readNavigationHelp, type NavigationHelp } from "@/lib/play/navigation-help";
+import {
+  HUNT_ENDED_MESSAGE,
+  HUNT_NOT_OPEN_MESSAGE,
+  STOP_NOT_RELEASED_MESSAGE,
+  huntPhase,
+  readHuntWindow,
+  stopReleaseMs,
+  type HuntPhase,
+  type HuntWindow,
+  type HuntWindowSource,
+} from "@/lib/hunts/schedule";
 
 /**
  * Server-side clue delivery (lib/play/clue-delivery.ts) for the play routes
@@ -39,6 +50,8 @@ export interface StopAccessInput extends SessionStopsInput {
 interface StopRow {
   id: string;
   sort_order: number | null;
+  /** Scheduled hunts: when the stop opens (migration 087). */
+  release_at?: string | null;
 }
 
 /** One stop's progress in a session (the furthest-along row when there are duplicates). */
@@ -58,13 +71,25 @@ export interface SessionStops<F extends StopRow> {
   ordered: F[];
   progress: Map<string, StopProgress>;
   completedIds: Set<string>;
-  /** May the player start or work on this stop now? (lib/play/clue-delivery checkStopAccess) */
+  /**
+   * May the player start or work on this stop now? Their clue order must
+   * allow it (lib/play/clue-delivery checkStopAccess) and, on a scheduled
+   * hunt, the hunt must be open and the stop released (lib/hunts/schedule).
+   */
   isOpen: (findId: string) => boolean;
+  /** The hunt's window; null on a play-anytime hunt. */
+  window: HuntWindow | null;
+  /** Where the hunt is in its window, by the server's clock. */
+  phase: HuntPhase;
+  /** The server time everything above was judged at, in ms. */
+  nowMs: number;
+  /** When a stop opens, in ms; null on a play-anytime hunt. */
+  releaseMs: (findId: string) => number | null;
 }
 
 export const OUT_OF_ORDER_MESSAGE = "That stop isn't open yet. Finish your current stop first.";
 
-const BASE_FIND_COLUMNS = "id, sort_order";
+const BASE_FIND_COLUMNS = "id, sort_order, release_at";
 const PROGRESS_COLUMNS = "find_id, started_at, arrived_at, completed_at, created_at";
 
 async function loadSessionMetadata(supabase: SupabaseClient, session: SessionRef, route: string) {
@@ -99,7 +124,7 @@ export async function loadSessionStops<F extends StopRow = StopRow>(
   const { huntId, userId, session, route } = input;
 
   const [huntRes, findsRes, completionsRes, sessionMetadata] = await Promise.all([
-    supabase.from("hunts").select("metadata").eq("id", huntId).maybeSingle(),
+    supabase.from("hunts").select("metadata, starts_at, ends_at").eq("id", huntId).maybeSingle(),
     supabase.from("finds").select(findColumns).eq("hunt_id", huntId).is("deleted_at", null),
     supabase.from("find_completions").select(PROGRESS_COLUMNS).eq("play_session_id", session.id),
     loadSessionMetadata(supabase, session, route),
@@ -119,26 +144,62 @@ export async function loadSessionStops<F extends StopRow = StopRow>(
   const progress = progressByStop((completionsRes.data ?? []) as unknown as StopProgress[]);
   const completedIds = new Set([...progress.values()].filter((c) => c.completed_at).map((c) => c.find_id));
 
+  // Scheduled hunts (issue #14): one clock, the server's, for the whole request.
+  const nowMs = Date.now();
+  const window = readHuntWindow(huntRes.data as HuntWindowSource | null);
+  const phase = huntPhase(window, nowMs);
+  const releaseById = new Map(finds.map((f) => [f.id, stopReleaseMs(window, f.release_at)]));
+  const releaseMs = (findId: string) => releaseById.get(findId) ?? null;
+  const released = (findId: string) => {
+    const at = releaseMs(findId);
+    return at === null || nowMs >= at;
+  };
+  const playable = phase === "anytime" || phase === "open";
+
   return {
     mode,
     navigationHelp: readNavigationHelp(huntMetadata),
     ordered,
     progress,
     completedIds,
-    isOpen: (findId) => checkStopAccess({ mode, orderedIds, completedIds, findId }).ok,
+    isOpen: (findId) =>
+      checkStopAccess({ mode, orderedIds, completedIds, findId }).ok && playable && released(findId),
+    window,
+    phase,
+    nowMs,
+    releaseMs,
   };
 }
 
 /** What a route learns about the hunt while checking that a stop is open. */
 export interface OpenStop {
   navigationHelp: NavigationHelp;
+  /**
+   * Scheduled hunts: when this stop was released, as an ISO time, for the
+   * release layer of the score. Null on a play-anytime hunt.
+   */
+  releasedAt: string | null;
 }
 
-/** Throws 404 for a stop outside the hunt, 409 for one out of order. */
+/**
+ * Throws 404 for a stop outside the hunt, 409 for one out of order. On a
+ * scheduled hunt also 409 before the hunt starts, after it ends, and for a
+ * stop that has not been released: nothing about such a stop is given out,
+ * and no progress is recorded on it. A stop the player already finished stays
+ * readable (their own results) whatever the schedule says.
+ */
 export async function assertStopOpen(supabase: SupabaseClient, input: StopAccessInput): Promise<OpenStop> {
-  const { mode, navigationHelp, ordered, completedIds } = await loadSessionStops(supabase, input);
+  const { mode, navigationHelp, ordered, completedIds, phase, nowMs, releaseMs } = await loadSessionStops(supabase, input);
   const access = checkStopAccess({ mode, orderedIds: ordered.map((f) => f.id), completedIds, findId: input.findId });
-  if (access.ok) return { navigationHelp };
-  if (access.reason === "not_in_hunt") throw new ApiError(404, "Find not found");
-  throw new ApiError(409, OUT_OF_ORDER_MESSAGE);
+  if (!access.ok) {
+    if (access.reason === "not_in_hunt") throw new ApiError(404, "Find not found");
+    throw new ApiError(409, OUT_OF_ORDER_MESSAGE);
+  }
+  const releaseAtMs = releaseMs(input.findId);
+  const releasedAt = releaseAtMs === null ? null : new Date(releaseAtMs).toISOString();
+  if (completedIds.has(input.findId)) return { navigationHelp, releasedAt };
+  if (phase === "upcoming") throw new ApiError(409, HUNT_NOT_OPEN_MESSAGE);
+  if (releaseAtMs !== null && nowMs < releaseAtMs) throw new ApiError(409, STOP_NOT_RELEASED_MESSAGE);
+  if (phase === "ended") throw new ApiError(409, HUNT_ENDED_MESSAGE);
+  return { navigationHelp, releasedAt };
 }

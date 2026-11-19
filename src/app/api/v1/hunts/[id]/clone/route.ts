@@ -31,6 +31,10 @@ const HUNT_REVIEW = [
 // (migration 079); the copy starts with generated art instead of pointing at
 // a file the source's owner can delete.
 const HUNT_MEDIA = ["cover_image_url"];
+// A schedule is a set of dates for one run of one hunt (issue #14): a copy
+// starts as a play-anytime hunt, and its owner schedules it afresh.
+const HUNT_SCHEDULE = ["starts_at", "ends_at"];
+const FIND_SCHEDULE = ["release_at"];
 
 function omit(row: Row, keys: string[]): Row {
   const copy: Row = { ...row };
@@ -67,7 +71,7 @@ export async function POST(
     if (!(await canAccessHunt(supabase, source, user))) throw new ApiError(404, "Hunt not found");
 
     const { finds, ...sourceHunt } = source as Row & { finds: Row[] | null };
-    const huntData = omit(sourceHunt, [...SERVER_MANAGED, ...HUNT_GENERATED, ...HUNT_REVIEW, ...HUNT_MEDIA]);
+    const huntData = omit(sourceHunt, [...SERVER_MANAGED, ...HUNT_GENERATED, ...HUNT_REVIEW, ...HUNT_MEDIA, ...HUNT_SCHEDULE]);
     // Assigned clue orders live in their own table and are only for the
     // source's owner and reviewers: anyone else's copy starts without them.
     const canSeeOrders = source.created_by === user.id || isReviewer(user.role);
@@ -162,7 +166,7 @@ export async function POST(
           tasks: Row | null;
           primers: Row | null;
         };
-        const findData = omit(rest, [...SERVER_MANAGED, "hunt_id"]);
+        const findData = omit(rest, [...SERVER_MANAGED, ...FIND_SCHEDULE, "hunt_id"]);
 
         let locationId = (findData.location_id as string | null) ?? null;
         let taskId = (findData.task_id as string | null) ?? null;

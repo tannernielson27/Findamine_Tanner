@@ -55,7 +55,9 @@ export async function POST(
     if (!session) throw new ApiError(404, "No active play session");
 
     // Clue delivery: only the player's current stop (any stop in all-at-once mode).
-    await assertStopOpen(supabase, { huntId, userId: user.id, session, findId: find_id, route: "/api/v1/play/[huntId]/answer" });
+    // On a scheduled hunt this also refuses a stop that is not released, and
+    // any answer once the hunt has ended; it returns when the stop was released.
+    const { releasedAt } = await assertStopOpen(supabase, { huntId, userId: user.id, session, findId: find_id, route: "/api/v1/play/[huntId]/answer" });
 
     // Get completion record (may already exist from prime-viewed/arrive steps)
     const completion = await getCompletion(supabase, session.id, find_id);
@@ -112,6 +114,9 @@ export async function POST(
       answeredAt,
       expectedTimeSeconds: (task?.content?.expected_time_seconds as number) || undefined,
       challengeType: task?.challenge_type || "short_text",
+      // Scheduled hunts: half the time points are for how soon after the
+      // stop's release it was solved (version 2 only). Null on other hunts.
+      releasedAt,
     });
 
     const ageBand = bandForUser(profile?.effective_band, user.role);

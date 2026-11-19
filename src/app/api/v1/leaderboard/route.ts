@@ -5,6 +5,7 @@ import { generalLimiter } from "@/lib/utils/rate-limit";
 import { resolveLeaderboardVisibility } from "@/lib/utils/leaderboard-visibility";
 import { boardRanks, compareStanding, standingAmong, type ServerMe, type StandingKey } from "@/lib/social/standing";
 import { comparableTotal, embeddedHuntMetadata, readScoringVersion } from "@/lib/hunts/scoring-version";
+import { isScheduledHunt, type HuntWindowSource } from "@/lib/hunts/schedule";
 
 // Roles whose names are never shown publicly on leaderboards
 const PROTECTED_ROLES = ["child", "teen"];
@@ -59,6 +60,19 @@ function redactEntry(
   return { display_name: user.display_name, avatar_url: user.avatar_url, named: Boolean(user.display_name) };
 }
 
+const FINISHED_ONLY: ReadonlyArray<string> = ["completed"];
+const RUNNING_TOTAL: ReadonlyArray<string> = ["active", "completed"];
+
+/**
+ * Which sessions a hunt's board lists. A play-anytime hunt lists finished
+ * sessions, as it always has. A scheduled hunt (issue #14) runs for days, so
+ * its board is a running total: sessions still in progress are listed too,
+ * with the points they have so far.
+ */
+function boardStatuses(hunt: HuntWindowSource | null): ReadonlyArray<string> {
+  return isScheduledHunt(hunt) ? RUNNING_TOTAL : FINISHED_ONLY;
+}
+
 /** What a completed session is ordered by on a board. */
 function standingKey(row: Record<string, unknown>): StandingKey {
   return {
@@ -77,13 +91,14 @@ async function levelWith(
   supabase: Awaited<ReturnType<typeof createSupabaseServiceClient>>,
   huntId: string,
   userId: string,
-  mine: StandingKey
+  mine: StandingKey,
+  statuses: ReadonlyArray<string>
 ): Promise<{ ahead: number; tied: boolean }> {
   const { data } = await supabase
     .from("play_sessions")
     .select("user_id, total_score, total_solve_ms, completed_at")
     .eq("hunt_id", huntId)
-    .eq("status", "completed")
+    .in("status", statuses)
     .eq("total_score", mine.score)
     .neq("user_id", userId)
     .limit(STANDING_SCAN_LIMIT);
@@ -126,9 +141,15 @@ export async function GET(request: NextRequest) {
       // Auth, the hunt's identity_mode, the board and the viewer's own session
       // are independent: run them together (the own-session read chains off auth).
       const authPromise = getAuthUser(request);
-      const [user, { data: hunt }, { data }, mySessionResult] = await Promise.all([
+      // The hunt first: whether it is scheduled decides which sessions the board lists.
+      const { data: hunt } = await supabase
+        .from("hunts")
+        .select("identity_mode, created_by, metadata, starts_at, ends_at")
+        .eq("id", huntId)
+        .single();
+      const statuses = boardStatuses(hunt as HuntWindowSource | null);
+      const [user, { data }, mySessionResult] = await Promise.all([
         authPromise,
-        supabase.from("hunts").select("identity_mode, created_by, metadata").eq("id", huntId).single(),
         // Hunt-specific: join play_sessions for codenames. Ordered by score,
         // then total solve time, then finish time (issue #11).
         supabase
@@ -137,7 +158,7 @@ export async function GET(request: NextRequest) {
             "user_id, total_score, total_solve_ms, completed_at, codename, users(id, display_name, avatar_url, role, profile_visibility)"
           )
           .eq("hunt_id", huntId)
-          .eq("status", "completed")
+          .in("status", statuses)
           .order("total_score", { ascending: false })
           .order("total_solve_ms", { ascending: true, nullsFirst: false })
           .order("completed_at", { ascending: true, nullsFirst: false })
@@ -149,7 +170,10 @@ export async function GET(request: NextRequest) {
                 .select("total_score, total_solve_ms, completed_at")
                 .eq("hunt_id", huntId)
                 .eq("user_id", u.id)
-                .eq("status", "completed")
+                .in("status", statuses)
+                // A replay leaves more than one session: the best one stands.
+                .order("total_score", { ascending: false })
+                .limit(1)
                 .maybeSingle()
             : null
         ),
@@ -240,20 +264,20 @@ export async function GET(request: NextRequest) {
               .from("play_sessions")
               .select("user_id", { count: "exact", head: true })
               .eq("hunt_id", huntId)
-              .eq("status", "completed")
+              .in("status", statuses)
               .gt("total_score", myScore),
             supabase
               .from("play_sessions")
               .select("total_score")
               .eq("hunt_id", huntId)
-              .eq("status", "completed")
+              .in("status", statuses)
               .gt("total_score", myScore)
               .order("total_score", { ascending: true })
               .limit(1)
               .maybeSingle(),
             // Version 2: everyone else on the same score, to place the viewer among them.
             splitTies
-              ? levelWith(supabase, huntId, currentUser.id, standingKey(mySession))
+              ? levelWith(supabase, huntId, currentUser.id, standingKey(mySession), statuses)
               : Promise.resolve(null),
           ]);
 
