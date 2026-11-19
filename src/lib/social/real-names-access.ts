@@ -9,6 +9,7 @@
 import type { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { writeAudit } from "@/app/api/v1/admin/_lib/audit";
 import { logger } from "@/lib/utils/logger";
+import { chunk, ID_BATCH_SIZE } from "@/lib/utils/chunk";
 import {
   resolveRealName,
   withRealNames,
@@ -45,22 +46,32 @@ export async function loadRealNames(
   const ids = [...new Set(userIds)].filter(Boolean);
   if (ids.length === 0) return names;
 
+  // Batched: each read puts its ids in the request URL (see ID_BATCH_SIZE).
+  const batches = chunk(ids, ID_BATCH_SIZE);
   const [users, profiles] = await Promise.all([
-    supabase.from("users").select("id, role, date_of_birth, metadata, deleted_at").in("id", ids),
+    Promise.all(
+      batches.map((batch) =>
+        supabase.from("users").select("id, role, date_of_birth, metadata, deleted_at").in("id", batch)
+      )
+    ),
     // The stored age band is one of the three under-18 signals (see isMinor).
-    supabase.from("user_profiles").select("user_id, effective_band").in("user_id", ids),
+    Promise.all(
+      batches.map((batch) => supabase.from("user_profiles").select("user_id, effective_band").in("user_id", batch))
+    ),
   ]);
-  // Without both reads an under-18 player could be missed: return no names.
-  const failed = users.error ?? profiles.error;
+  // Without every read an under-18 player could be missed: return no names.
+  const failed = [...users, ...profiles].find((r) => r.error)?.error;
   if (failed) {
     logger.error("leaderboard.real_names.read_failed", { error: failed.message });
     return names;
   }
 
   const bands = new Map<string, string | null>(
-    (profiles.data || []).map((p) => [p.user_id as string, (p.effective_band as string | null) ?? null])
+    profiles
+      .flatMap((r) => r.data || [])
+      .map((p) => [p.user_id as string, (p.effective_band as string | null) ?? null])
   );
-  for (const row of users.data || []) {
+  for (const row of users.flatMap((r) => r.data || [])) {
     const subject: RealNameSubject = { ...(row as RealNameSubject), effective_band: bands.get(row.id as string) ?? null };
     names.set(row.id as string, resolveRealName(subject, now));
   }

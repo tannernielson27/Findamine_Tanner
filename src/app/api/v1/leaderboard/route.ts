@@ -16,6 +16,11 @@ const PROTECTED_ROLES = ["child", "teen"];
 // they sit below the visible top-N. Beyond this, the reported rank is a floor.
 const STANDING_SCAN_LIMIT = 1000;
 
+// A board lists every player on it, up to this many (a study cohort is ~300).
+// Kept at half the 1000-row API cap: a running-total board reads up to twice
+// this many sessions so a player's replay can be dropped.
+const BOARD_LIMIT = 500;
+
 interface LeaderboardUser {
   id: string;
   display_name: string | null;
@@ -172,7 +177,10 @@ export async function GET(request: NextRequest) {
     const huntId = searchParams.get("hunt_id");
     const entryType = searchParams.get("type") || "user";
     const period = searchParams.get("period") || "all_time";
-    const limit = Math.min(Math.max(parseInt(searchParams.get("limit") || "25") || 25, 1), 100);
+    const limit = Math.min(
+      Math.max(parseInt(searchParams.get("limit") || String(BOARD_LIMIT)) || BOARD_LIMIT, 1),
+      BOARD_LIMIT
+    );
     // Real names (issue #13) are added only for a caller who asks AND is
     // allowed (canViewRealNames, checked below once the caller is known).
     // Without both, the response is the one built here for everyone else.

@@ -14,6 +14,7 @@
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { canViewField } from "@/lib/utils/privacy";
 import { getViewerRelationships } from "@/lib/utils/viewer";
+import { chunk, ID_BATCH_SIZE } from "@/lib/utils/chunk";
 
 export interface LeaderboardVisibility {
   /** Users whose total_score the viewer may NOT see → omit from score boards. */
@@ -26,9 +27,21 @@ export async function resolveLeaderboardVisibility(
   viewerId: string | null,
   userIds: string[]
 ): Promise<LeaderboardVisibility> {
+  const ids = [...new Set(userIds)].filter(Boolean);
+  // A full board can hold hundreds of players; each lookup puts its ids in the
+  // request URL, so resolve them in batches and merge.
+  const parts = await Promise.all(
+    chunk(ids, ID_BATCH_SIZE).map((batch) => resolveBatch(viewerId, batch))
+  );
+  return {
+    drop: new Set(parts.flatMap((p) => [...p.drop])),
+    nameAllowed: new Map(parts.flatMap((p) => [...p.nameAllowed])),
+  };
+}
+
+async function resolveBatch(viewerId: string | null, ids: string[]): Promise<LeaderboardVisibility> {
   const drop = new Set<string>();
   const nameAllowed = new Map<string, boolean>();
-  const ids = [...new Set(userIds)].filter(Boolean);
   if (ids.length === 0) return { drop, nameAllowed };
 
   const supabase = await createSupabaseServiceClient();
