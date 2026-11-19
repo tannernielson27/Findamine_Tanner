@@ -151,6 +151,8 @@ describe("GET /hunts/{id}", () => {
 describe("POST /hunts/{id}/clone", () => {
   const source = {
     id: HUNT_ID, title: "Campus Walk", status: "published", is_public: true, review_status: "approved",
+    // Shared as a template by its owner, so another builder may copy it.
+    is_template: true,
     created_by: "someone-else", created_at: "x", updated_at: "y", deleted_at: null,
     search_vector: "'campus':1 'walk':2", metadata: { scoring_mode: "binary" },
     finds: [
@@ -195,6 +197,26 @@ describe("POST /hunts/{id}/clone", () => {
     expect(error).not.toMatch(/boom/);
     expect(made.hunts[2].delete).toHaveBeenCalled();
     expect(made.hunts[2].eq).toHaveBeenCalledWith("id", "new-hunt");
+  });
+
+  it("will not copy someone else's hunt unless its owner shared it as a template", async () => {
+    // Being able to see and play a public hunt is not enough: a copy carries
+    // every stop's place, clue and answer key.
+    const made = install({ hunts: [ok({ ...source, is_template: false })] });
+    const res = await cloneHunt(req("POST", `/api/v1/hunts/${HUNT_ID}/clone`), huntParams);
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toMatch(/Only this hunt's creator can copy it/);
+    expect(made.hunts).toHaveLength(1);
+    expect(made.finds).toBeUndefined();
+  });
+
+  it("lets the owner and reviewers copy a hunt that is not a template", async () => {
+    for (const user of [{ id: "someone-else", role: "teacher" }, { id: "adm", role: "admin" }, { id: "res", role: "researcher" }]) {
+      h.user = user;
+      install({ hunts: [ok({ ...source, is_template: false }), ok({ id: "new-hunt", title: "Campus Walk (Copy)" })] });
+      const res = await cloneHunt(req("POST", `/api/v1/hunts/${HUNT_ID}/clone`), huntParams);
+      expect(res.status).toBe(201);
+    }
   });
 
   it("will not clone someone else's unpublished draft", async () => {

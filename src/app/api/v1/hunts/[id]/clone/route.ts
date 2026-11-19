@@ -16,6 +16,7 @@ import { withNewHuntScoring } from "@/lib/hunts/scoring-version";
 import { huntPhase, readHuntWindow, type HuntWindowSource } from "@/lib/hunts/schedule";
 
 const STILL_RUNNING_MESSAGE = "This hunt is running on a schedule. It can be copied once it has ended.";
+const NOT_A_TEMPLATE_MESSAGE = "Only this hunt's creator can copy it. Hunts shared as templates can be copied by anyone who builds hunts.";
 
 type Row = Record<string, unknown>;
 
@@ -73,10 +74,17 @@ export async function POST(
     // catalogue, is not visible to them, so it is not clonable.
     if (!(await canAccessHunt(supabase, source, user))) throw new ApiError(404, "Hunt not found");
 
-    // A copy hands its owner every stop. While a scheduled hunt is running
-    // (or yet to start) some of its stops are not released, so until it has
-    // ended only its owner and reviewers may copy it (issue #14).
+    // A copy hands its owner every stop: the places, the clues and the answer
+    // keys. So a hunt can be copied by its owner, by reviewers, and, when its
+    // owner has marked it as a template, by any builder. Being able to play a
+    // hunt is not enough to copy it.
     const runsSource = source.created_by === user.id || isReviewer(user.role);
+    if (!runsSource && source.is_template !== true) {
+      throw new ApiError(403, NOT_A_TEMPLATE_MESSAGE);
+    }
+    // While a scheduled hunt is running (or yet to start) some of its stops
+    // are not released, so until it has ended only its owner and reviewers
+    // may copy it (issue #14).
     const sourceWindow = readHuntWindow(source as HuntWindowSource);
     if (!runsSource && sourceWindow && huntPhase(sourceWindow, Date.now()) !== "ended") {
       throw new ApiError(409, STILL_RUNNING_MESSAGE);

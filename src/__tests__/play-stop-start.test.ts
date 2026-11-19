@@ -526,11 +526,24 @@ describe("hunt APIs no longer hand stop details to players", () => {
     h.user = null;
     expect((await one("loc-f0")).status).toBe(401);
 
+    // A builder opens the places they made, and lists those plus the shared library.
+    const db = seed();
+    for (const place of db.table("locations")) place.created_by = "creator";
     h.user = { id: "creator", role: "teacher" };
     const res = await one("loc-f0");
     expect(res.status).toBe(200);
     expect((await res.json()).location.name).toBe(SECRETS.place);
-    expect((await listLocations(req("GET", "/locations"))).status).toBe(200);
+    const mine = await listLocations(req("GET", "/locations"));
+    expect(mine.status).toBe(200);
+    expect((await mine.json()).locations.length).toBeGreaterThan(0);
+
+    // Another builder's places are where that builder's stops are: not theirs to read.
+    h.user = { id: "t2", role: "teacher" };
+    const other = await one("loc-f0");
+    expect(other.status).toBe(404);
+    expectNoSecrets(await other.json());
+    const listed = await listLocations(req("GET", "/locations"));
+    expect((await listed.json()).locations).toEqual([]);
   });
 
   it("findsForViewer strips everything but id and order for anyone who can't edit the hunt", () => {

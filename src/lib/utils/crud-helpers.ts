@@ -9,6 +9,10 @@ import {
 import type { AuthUser } from "@/lib/types/database";
 import type { UserRole } from "@/lib/types/enums";
 import { checkText, jsonStrings } from "@/lib/hunts/text-filter";
+import { CONTENT_BUILDER_ROLES, mayReadContentRow, ownOrLibraryFilter, readsAllContent } from "@/lib/hunts/content-access";
+
+/** Most rows one list request returns. */
+const MAX_LIST_LIMIT = 200;
 
 /** Roles that may edit or delete rows they did not create, and curate the shared library. */
 const CURATOR_ROLES: UserRole[] = ["admin", "researcher"];
@@ -74,12 +78,15 @@ export function createCrudHandlers(
 
   async function GET(request: NextRequest) {
     try {
+      // A builder's tool: these rows are what stops are made of (a task
+      // carries its answer key), so players never list them, and a builder
+      // lists the shared library and their own rows (lib/hunts/content-access).
       const user = await getAuthUser(request);
-      if (!user) throw new ApiError(401, "Not authenticated");
+      requireRole(user, ...CONTENT_BUILDER_ROLES);
 
       const { searchParams } = new URL(request.url);
       const library = searchParams.get("library");
-      const limit = parseInt(searchParams.get("limit") || "100");
+      const limit = Math.min(Math.max(parseInt(searchParams.get("limit") || "100") || 100, 1), MAX_LIST_LIMIT);
 
       const supabase = await createSupabaseServiceClient();
 
@@ -92,6 +99,8 @@ export function createCrudHandlers(
 
       if (library === "true") {
         query = query.eq("is_library", true);
+      } else if (!readsAllContent(user.role)) {
+        query = query.or(ownOrLibraryFilter(user.id, ownerColumn));
       }
 
       const { data, error } = await query;
@@ -183,7 +192,7 @@ export function createItemHandlers(
   ) {
     try {
       const user = await getAuthUser(request);
-      if (!user) throw new ApiError(401, "Not authenticated");
+      requireRole(user, ...CONTENT_BUILDER_ROLES);
 
       const { id } = await params;
       const supabase = await createSupabaseServiceClient();
@@ -195,7 +204,10 @@ export function createItemHandlers(
         .is("deleted_at", null)
         .single();
 
-      if (error || !data) throw new ApiError(404, `${table} item not found`);
+      // Someone else's row that is not in the library reads as missing.
+      if (error || !data || !mayReadContentRow(user, data as Record<string, unknown>, ownerColumn)) {
+        throw new ApiError(404, `${table} item not found`);
+      }
 
       return Response.json({ [table.replace(/s$/, "")]: data });
     } catch (error) {

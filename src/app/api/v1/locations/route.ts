@@ -11,6 +11,7 @@ import { normalizeSafetyNotes } from "@/lib/play/safety";
 import { assertCleanFields } from "@/lib/utils/crud-helpers";
 import { internalError } from "@/lib/utils/internal-error";
 import { DEFAULT_STOP_RADIUS_M } from "@/lib/play/arrival-check";
+import { ownOrLibraryFilter, readsAllContent } from "@/lib/hunts/content-access";
 
 /** Location text players see at a stop; screened like other hunt content. */
 const LOCATION_TEXT_FIELDS = ["name", "description", "address", "safety_notes"];
@@ -19,7 +20,9 @@ export async function GET(request: NextRequest) {
   try {
     // The location library is a hunt builder's tool. It lists places by area,
     // which would show a player where a hunt's stops are before they start
-    // them (issue #16), so it is for the roles that can create locations.
+    // them (issue #16), so it is for the roles that can create locations, and
+    // a builder sees the shared library and the places they made themselves:
+    // another creator's places are where that creator's stops are.
     const user = await getAuthUser(request);
     requireRole(user, "teacher", "hunt_creator", "admin", "researcher");
 
@@ -41,7 +44,7 @@ export async function GET(request: NextRequest) {
       });
 
       if (error) throw internalError("/api/v1/locations", error);
-      return Response.json({ locations: data });
+      return Response.json({ locations: await readableNearby(supabase, user, (data ?? []) as NearbyLocation[]) });
     }
 
     // Library or all
@@ -54,6 +57,8 @@ export async function GET(request: NextRequest) {
 
     if (library === "true") {
       query = query.eq("is_library", true);
+    } else if (!readsAllContent(user.role)) {
+      query = query.or(ownOrLibraryFilter(user.id));
     }
 
     const { data, error } = await query;
@@ -63,6 +68,30 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return errorResponse(error);
   }
+}
+
+interface NearbyLocation {
+  id: string;
+}
+
+/**
+ * The area search returns every place nearby. Keep the ones this builder may
+ * read: the shared library and their own (admins and researchers: all).
+ */
+async function readableNearby(
+  supabase: Awaited<ReturnType<typeof createSupabaseServiceClient>>,
+  user: { id: string; role: string },
+  nearby: NearbyLocation[]
+): Promise<NearbyLocation[]> {
+  if (readsAllContent(user.role) || nearby.length === 0) return nearby;
+  const { data, error } = await supabase
+    .from("locations")
+    .select("id")
+    .in("id", nearby.map((l) => l.id))
+    .or(ownOrLibraryFilter(user.id));
+  if (error) throw internalError("/api/v1/locations", error);
+  const readable = new Set((data ?? []).map((row) => row.id as string));
+  return nearby.filter((l) => readable.has(l.id));
 }
 
 export async function POST(request: NextRequest) {
