@@ -168,6 +168,7 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
           hideScores={!!huntMeta.hide_scores}
           feedback={flow.feedback}
           breakdown={flow.breakdown}
+          solveMs={flow.solveMs}
           alreadyCompleted={completedFinds.has(currentFind?.id || "")}
           error={error}
           noticeVisible={!!flow.privacyNotice}

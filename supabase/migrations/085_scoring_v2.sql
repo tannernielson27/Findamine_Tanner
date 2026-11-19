@@ -27,6 +27,8 @@
 --    would count ten times as much as a version 1 hunt. Their names, arguments
 --    and result columns are unchanged, so the code deployed before this keeps
 --    working. overall_leaderboard() also gets the tiebreak order.
+--    get_session_leaderboard() is new: the weekly, monthly and subject boards,
+--    ranked on the common scale.
 --    get_hunt_analytics() and get_stop_analytics() report on a single hunt, in
 --    that hunt's own scale, and are left alone.
 --
@@ -338,3 +340,38 @@ returns table(
   group by h.target_audience
   having count(ps.id) >= 3;
 $$;
+
+-- ── 6. Session boards (weekly, monthly, by subject): common scale ──
+-- GET /api/v1/leaderboard/types ranked these by the raw session total in the
+-- route. The ranking has to happen here, on the common scale and before the
+-- limit, or a version 2 session would outrank every version 1 session. One row
+-- per completed session, as before. Called with the service role only.
+create or replace function public.get_session_leaderboard(
+  p_since timestamptz default null,
+  p_subject text default null,
+  p_limit int default 25
+)
+returns table(
+  user_id uuid,
+  total_score int,
+  display_name text
+) language sql stable set search_path = public as $$
+  select
+    ps.user_id,
+    round(public.comparable_score(coalesce(ps.total_score, 0), h.metadata))::int as total_score,
+    u.display_name
+  from public.play_sessions ps
+  left join public.users u on u.id = ps.user_id
+  left join public.hunts h on h.id = ps.hunt_id
+  where ps.status = 'completed'
+    and (p_since is null or ps.completed_at >= p_since)
+    and (p_subject is null or h.subject_domains @> array[p_subject])
+  order by total_score desc, ps.completed_at asc nulls last, ps.id
+  limit greatest(1, least(coalesce(p_limit, 25), 100));
+$$;
+
+revoke all on function public.get_session_leaderboard(timestamptz, text, int) from public, anon, authenticated;
+grant execute on function public.get_session_leaderboard(timestamptz, text, int) to service_role;
+
+comment on function public.get_session_leaderboard(timestamptz, text, int) is
+  'Completed play sessions ranked by total on the common 0-100-per-stop scale, optionally since a time and for one subject. Service role only.';

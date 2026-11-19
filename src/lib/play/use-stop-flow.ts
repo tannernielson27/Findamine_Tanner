@@ -22,6 +22,8 @@ export interface StopFlow extends GeoTracking, CheckIn {
   feedback: AnswerFeedback | null;
   score: number | null;
   breakdown: Record<string, number> | null;
+  /** Scoring version 2: how long the stop took, from the server. Null otherwise. */
+  solveMs: number | null;
   canRetry: boolean;
   hotCold: HotCold | null;
   error: string | null;
@@ -70,6 +72,7 @@ export function useStopFlow(
   const [feedback, setFeedback] = useState<AnswerFeedback | null>(null);
   const [score, setScore] = useState<number | null>(null);
   const [breakdown, setBreakdown] = useState<Record<string, number> | null>(null);
+  const [solveMs, setSolveMs] = useState<number | null>(null);
   const [canRetry, setCanRetry] = useState(false);
   const [hotCold, setHotCold] = useState<HotCold | null>(null);
   const [error, setErrorState] = useState<string | null>(null);
@@ -122,6 +125,7 @@ export function useStopFlow(
     setFeedback(null);
     setScore(null);
     setBreakdown(null);
+    setSolveMs(null);
     setCanRetry(false);
     setHotCold(null);
     setArrivedCelebrated(false);
@@ -190,6 +194,7 @@ export function useStopFlow(
       setFeedback(resultFeedback);
       setScore(resultScore);
       setBreakdown(resultBreakdown);
+      setSolveMs(typeof data.solve_ms === "number" ? data.solve_ms : null);
       setCanRetry(data.can_retry as boolean);
 
       if (data.is_complete) {
@@ -292,6 +297,7 @@ export function useStopFlow(
     feedback,
     score,
     breakdown,
+    solveMs,
     canRetry,
     hotCold,
     error,

@@ -145,6 +145,34 @@ export function embeddedHuntMetadata(embedded: unknown): Record<string, unknown>
     : null;
 }
 
+/** A play session read together with its hunt: `hunts(metadata, ...)`. */
+export interface SessionWithHunt {
+  total_score?: number | null;
+  hunts?: unknown;
+}
+
+/**
+ * Play sessions with each total put on the common scale, for lists that show
+ * or combine sessions from hunts on different versions. The embedded hunt
+ * keeps its other fields and loses `metadata`, which is read here only for the
+ * version and must not travel on to a response. A null total stays null.
+ * Never mutates.
+ */
+export function withComparableTotals<T extends SessionWithHunt>(sessions: ReadonlyArray<T>): T[] {
+  return sessions.map((session) => {
+    const version = readScoringVersion(embeddedHuntMetadata(session.hunts));
+    const total =
+      typeof session.total_score === "number" ? comparableTotal([{ score: session.total_score, version }]) : null;
+    return { ...session, total_score: total, hunts: withoutMetadata(session.hunts) };
+  });
+}
+
+function withoutMetadata(embedded: unknown): unknown {
+  if (Array.isArray(embedded)) return embedded.map(withoutMetadata);
+  if (!embedded || typeof embedded !== "object") return embedded;
+  return Object.fromEntries(Object.entries(embedded).filter(([key]) => key !== "metadata"));
+}
+
 /** What one clue hint and one challenge hint cost, for the labels players see. */
 export const HINT_COSTS: Readonly<Record<ScoringVersion, { clue: number; challenge: number }>> = {
   1: { clue: DEFAULT_SCORING.clueHintPenalty, challenge: DEFAULT_SCORING.challengeHintPenalty },
@@ -176,6 +204,53 @@ export function inheritScoringSettings(
   if (next[SOLVE_WINDOW_KEY] === null) delete next[SOLVE_WINDOW_KEY];
   if (after === null && Object.keys(next).length === 0) return null;
   return next;
+}
+
+/** What the hunt page calls each version. */
+export const SCORING_VERSION_LABELS: Readonly<Record<ScoringVersion, string>> = {
+  1: "Classic",
+  2: "Timed",
+};
+
+export const SCORING_VERSION_DESCRIPTIONS: Readonly<Record<ScoringVersion, string>> = {
+  1: `Up to ${STOP_MAX_SCORE[1]} points a stop. Speed barely counts, so players who answer correctly often tie.`,
+  2: `Up to ${STOP_MAX_SCORE[2].toLocaleString("en-US")} points a stop, ${SCORING_V2.timePoints} of them for speed: the sooner a player solves a stop after tapping "I'm ready", the more they keep.`,
+};
+
+/** The solve window a version 2 hunt gets when it sets none, in minutes. */
+export const DEFAULT_SOLVE_WINDOW_MINUTES = SCORING_V2.solve.windowMs / 60_000;
+
+/**
+ * Hunt metadata with the given scoring settings, for the hunt page to save.
+ * A window of null (and any window on version 1, which has none) is written
+ * as an explicit null: the API keeps a stored value when the key is left out,
+ * and clears it on null (inheritScoringSettings). Never mutates.
+ */
+export function withScoringSettings(
+  metadata: Meta,
+  version: ScoringVersion,
+  solveWindowMinutes: number | null
+): Record<string, unknown> {
+  return {
+    ...(metadata ?? {}),
+    [SCORING_VERSION_KEY]: version,
+    [SOLVE_WINDOW_KEY]: version === 2 ? solveWindowMinutes : null,
+  };
+}
+
+/** Is this a solve window the API will accept (or null, for the default)? */
+export function isValidSolveWindowInput(value: number | null): boolean {
+  return value === null || isSolveWindow(value);
+}
+
+/**
+ * A stop score (or an average of them) as a share of the most a stop can
+ * score on that version, 0 to 100. For bars and colour thresholds that must
+ * read the same on either version.
+ */
+export function stopScorePercent(score: number | null | undefined, version: ScoringVersion): number {
+  if (typeof score !== "number" || !Number.isFinite(score)) return 0;
+  return Math.min(100, Math.max(0, (score * 100) / STOP_MAX_SCORE[version]));
 }
 
 export type ScoringEditCheck = { ok: true } | { ok: false; status: 400 | 409; error: string };

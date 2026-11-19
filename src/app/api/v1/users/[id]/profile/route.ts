@@ -12,6 +12,7 @@ import {
 } from "@/lib/utils/privacy";
 import { getViewerRelationship, getViewerRelationships } from "@/lib/utils/viewer";
 import { sumLedger } from "@/lib/utils/points";
+import { withComparableTotals } from "@/lib/hunts/scoring-version";
 
 interface FriendRow {
   requester_id: string;
@@ -88,7 +89,7 @@ export async function GET(
       allowed.has("hunt_history")
         ? supabase
             .from("play_sessions")
-            .select("hunt_id, status, total_score, completed_at, hunts(title)")
+            .select("hunt_id, status, total_score, completed_at, hunts(title, metadata)")
             .eq("user_id", target.id)
             .eq("status", "completed")
             .order("completed_at", { ascending: false })
@@ -136,7 +137,10 @@ export async function GET(
       personality_scores: Object.keys(personalityScores).length > 0 ? personalityScores : null,
       badges: badges.data || null,
       total_score: points.data ? sumLedger(points.data) : null,
-      hunt_history: sessions.data || null,
+      // Each hunt's total on the common scale (a stop out of 100 on either
+      // scoring version), like the profile's own total above. The hunt's
+      // metadata is read for the version only and is not returned.
+      hunt_history: sessions.data ? withComparableTotals(sessions.data) : null,
       friends_list: friendsList,
     };
 

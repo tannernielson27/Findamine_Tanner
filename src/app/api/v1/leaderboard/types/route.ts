@@ -3,6 +3,8 @@ import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { generalLimiter } from "@/lib/utils/rate-limit";
 import { resolveLeaderboardVisibility } from "@/lib/utils/leaderboard-visibility";
+import { internalError } from "@/lib/utils/internal-error";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 const VALID_TYPES = [
   "global_lifetime", "weekly", "monthly", "subject_specific",
@@ -39,6 +41,33 @@ async function applyVisibility(
     });
 }
 
+function daysAgo(days: number): string {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+/**
+ * One row per completed session, best total first, in the shape these boards
+ * have always returned: `{ user_id, total_score, users: { display_name } }`.
+ */
+async function sessionBoard(
+  supabase: SupabaseClient,
+  viewerId: string | null,
+  query: { since: string | null; subject: string | null; limit: number }
+): Promise<Row[]> {
+  const { data, error } = await supabase.rpc("get_session_leaderboard", {
+    p_since: query.since,
+    p_subject: query.subject,
+    p_limit: query.limit,
+  });
+  if (error) throw internalError("leaderboard.types", error);
+  const rows = ((data || []) as Row[]).map((r) => ({
+    user_id: r.user_id,
+    total_score: r.total_score,
+    users: { display_name: r.display_name ?? null },
+  }));
+  return applyVisibility(viewerId, rows, true);
+}
+
 /**
  * Advanced leaderboard types.
  * Returns different leaderboard views based on type parameter.
@@ -61,48 +90,24 @@ export async function GET(request: NextRequest) {
     const viewerId = (await getAuthUser(request))?.id ?? null;
 
     switch (type) {
+      // Weekly, monthly and subject boards list completed sessions by total.
+      // get_session_leaderboard() (migration 085) ranks them on the common
+      // scale, a stop out of 100 on either scoring version, before the limit.
       case "weekly": {
-        const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-        const { data } = await supabase
-          .from("play_sessions")
-          .select("user_id, total_score, users(display_name)")
-          .eq("status", "completed")
-          .gte("completed_at", weekAgo)
-          .order("total_score", { ascending: false })
-          .limit(limit);
-
-        const entries = await applyVisibility(viewerId, (data || []) as Row[], true);
+        const entries = await sessionBoard(supabase, viewerId, { since: daysAgo(7), subject: null, limit });
         return Response.json({ type, entries, period: "last_7_days" });
       }
 
       case "monthly": {
-        const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-        const { data } = await supabase
-          .from("play_sessions")
-          .select("user_id, total_score, users(display_name)")
-          .eq("status", "completed")
-          .gte("completed_at", monthAgo)
-          .order("total_score", { ascending: false })
-          .limit(limit);
-
-        const entries = await applyVisibility(viewerId, (data || []) as Row[], true);
+        const entries = await sessionBoard(supabase, viewerId, { since: daysAgo(30), subject: null, limit });
         return Response.json({ type, entries, period: "last_30_days" });
       }
 
       case "subject_specific": {
         if (!subject) throw new ApiError(400, "subject parameter required for subject_specific type");
-        const { data } = await supabase
-          .from("play_sessions")
-          .select("user_id, total_score, users(display_name), hunts!inner(subject_domains)")
-          .eq("status", "completed")
-          .contains("hunts.subject_domains", [subject])
-          .order("total_score", { ascending: false })
-          .limit(limit);
-
-        const entries = await applyVisibility(viewerId, (data || []) as Row[], true);
+        const entries = await sessionBoard(supabase, viewerId, { since: null, subject, limit });
         return Response.json({ type, subject, entries });
       }
-
       case "improvement": {
         // DB-level aggregation via RPC (scales to millions of sessions)
         const { data } = await supabase.rpc("get_user_improvements", { p_limit: limit });

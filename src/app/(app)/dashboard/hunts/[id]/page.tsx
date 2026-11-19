@@ -9,6 +9,8 @@ import LocationPicker from "@/components/maps/location-picker";
 import { PublishSafetyCheck } from "@/components/hunts/publish-safety-check";
 import { ReviewStatusNotice } from "@/components/hunts/review-status-notice";
 import { CoverImagePicker } from "@/components/hunts/cover-image-picker";
+import { ScoringSettings } from "@/components/hunts/scoring-settings";
+import { SCORING_VERSION_LABELS, readScoringVersion, readSolveWindowMinutes } from "@/lib/hunts/scoring-version";
 import { ClueDeliveryBadge } from "@/components/hunts/shuffle-badge";
 import { ClueDeliverySettings } from "@/components/hunts/clue-delivery-settings";
 import { StudyHuntSetting } from "@/components/hunts/study-hunt-setting";
@@ -40,6 +42,8 @@ interface HuntDetail {
   viewer_can_set_study_hunt?: boolean;
   /** Someone has played it: stops stay frozen even after unpublishing. */
   has_play_sessions?: boolean;
+  /** Scoring version and solve window can no longer change: the hunt has been played. */
+  scoring_locked?: boolean;
   finds: FindItem[];
 }
 
@@ -502,6 +506,26 @@ export default function HuntDetailPage() {
           </div>
         </details>
       )}
+
+      {/* Scoring: read-only once the hunt is published or played */}
+      <details className="mb-4">
+        <summary className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer hover:text-gray-900">
+          Scoring
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-normal text-gray-600">
+            {SCORING_VERSION_LABELS[readScoringVersion(hunt.metadata)]}
+          </span>
+        </summary>
+        <div className="mt-2 rounded-lg border border-gray-200 p-3">
+          <ScoringSettings
+            key={JSON.stringify([readScoringVersion(hunt.metadata), readSolveWindowMinutes(hunt.metadata), isDraft, !!hunt.scoring_locked])}
+            metadata={hunt.metadata}
+            draft={isDraft}
+            played={!!hunt.scoring_locked}
+            busy={actionLoading}
+            onSave={(metadata, successText) => saveHunt({ metadata }, successText)}
+          />
+        </div>
+      </details>
 
       {/* Clue delivery: shown read-only once the hunt is published or played */}
       <details className="mb-4">
