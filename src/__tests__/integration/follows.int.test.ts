@@ -25,6 +25,8 @@ vi.mock("@/lib/utils/rate-limit", () => {
 import { GET as listFollows, POST as follow } from "@/app/api/v1/social/follows/route";
 import { DELETE as unfollow } from "@/app/api/v1/social/follows/[userId]/route";
 import { GET as viewProfile } from "@/app/api/v1/users/[id]/profile/route";
+import { PUT as setAudience } from "@/app/api/v1/social/referrals/audience/route";
+import { notifyCrewJoined } from "@/lib/social/crew-audience";
 import { getViewerRelationship, getViewerRelationships, resolveViewerRelationship } from "@/lib/utils/viewer";
 import { blockUser } from "@/lib/moderation/blocks";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
@@ -274,17 +276,33 @@ describe("social audiences", () => {
     expect(await resolveViewerRelationship(ME, ADA)).toEqual({ relationship: "class", via: "follow" });
   });
 
-  it("puts crew in the 'team' audience in both directions, ahead of a follow", async () => {
-    db.table("player_follows").push({ id: "f1", follower_id: ADA, followee_id: ME, created_at: "2026-12-01" });
-    db.table("minion_links").push({ id: "m1", recruiter_id: ADA, minion_id: ME });
-    expect(await resolveViewerRelationship(ME, ADA)).toEqual({ relationship: "team", via: "crew" });
-    // The recruiter looking at their recruit.
+  it("lets a crew member into the recruiter's 'team' audience only once the recruiter approves them", async () => {
+    db.table("minion_links").push({ id: "m1", recruiter_id: ADA, minion_id: ME, audience_approved_at: null });
+    // Joining with Ada's code opens nothing of Ada's...
+    expect(await resolveViewerRelationship(ME, ADA)).toEqual({ relationship: "public", via: "public" });
+    expect((await getViewerRelationships(ME, [ADA])).get(ADA)).toBe("public");
+    // ...but the member chose their recruiter, so Ada is in the member's audience at once.
     expect(await resolveViewerRelationship(ADA, ME)).toEqual({ relationship: "team", via: "crew" });
+
+    db.table("minion_links")[0].audience_approved_at = "2026-12-02T00:00:00Z";
+    expect(await resolveViewerRelationship(ME, ADA)).toEqual({ relationship: "team", via: "crew" });
+    expect((await getViewerRelationships(ME, [ADA])).get(ADA)).toBe("team");
+  });
+
+  it("puts an approved crew tie ahead of a follow", async () => {
+    db.table("player_follows").push({ id: "f1", follower_id: ADA, followee_id: ME, created_at: "2026-12-01" });
+    db.table("minion_links").push({ id: "m1", recruiter_id: ADA, minion_id: ME, audience_approved_at: null });
+    expect(await resolveViewerRelationship(ME, ADA)).toEqual({ relationship: "class", via: "follow" });
+    db.table("minion_links")[0].audience_approved_at = "2026-12-02T00:00:00Z";
+    expect(await resolveViewerRelationship(ME, ADA)).toEqual({ relationship: "team", via: "crew" });
   });
 
   it("never applies social ties to a child's or teen's profile", async () => {
     db.table("player_follows").push({ id: "f1", follower_id: TEEN, followee_id: ME, created_at: "2026-12-01" });
-    db.table("minion_links").push({ id: "m1", recruiter_id: ME, minion_id: KID }, { id: "m2", recruiter_id: TEEN, minion_id: ME });
+    db.table("minion_links").push(
+      { id: "m1", recruiter_id: ME, minion_id: KID, audience_approved_at: null },
+      { id: "m2", recruiter_id: TEEN, minion_id: ME, audience_approved_at: "2026-12-01T00:00:00Z" }
+    );
     expect(await getViewerRelationship(ME, TEEN)).toBe("public");
     expect(await getViewerRelationship(ME, KID)).toBe("public");
     const bulk = await getViewerRelationships(ME, [TEEN, KID]);
@@ -338,8 +356,8 @@ describe("social audiences", () => {
     expect(seen.profile.total_score).toBe(120);
     expect(seen.profile.badges).toBeNull();
 
-    // In Ada's crew: the crew-only field opens too. "Only me" never does.
-    db.table("minion_links").push({ id: "m1", recruiter_id: ADA, minion_id: ME });
+    // In Ada's crew and approved by her: the crew-only field opens too. "Only me" never does.
+    db.table("minion_links").push({ id: "m1", recruiter_id: ADA, minion_id: ME, audience_approved_at: "2026-12-03T00:00:00Z" });
     seen = await view();
     expect(seen.relationship_via).toBe("crew");
     expect(seen.profile.badges).toHaveLength(1);
@@ -358,8 +376,8 @@ describe("social audiences", () => {
   });
 
   it("closes the crew audience too when either player blocks the other", async () => {
-    // Bo joined Ada's crew with her code; the link itself is not removed by a block.
-    db.table("minion_links").push({ id: "m1", recruiter_id: ADA, minion_id: BO });
+    // Bo joined Ada's crew and she approved him; the link itself is not removed by a block.
+    db.table("minion_links").push({ id: "m1", recruiter_id: ADA, minion_id: BO, audience_approved_at: "2026-12-01T00:00:00Z" });
     expect(await getViewerRelationship(BO, ADA)).toBe("team");
     expect(await getViewerRelationship(ADA, BO)).toBe("team");
 
@@ -371,7 +389,69 @@ describe("social audiences", () => {
     expect(bulk.get(ADA)).toBe("public");
 
     // Someone else in Ada's crew is unaffected.
-    db.table("minion_links").push({ id: "m2", recruiter_id: ADA, minion_id: ME });
+    db.table("minion_links").push({ id: "m2", recruiter_id: ADA, minion_id: ME, audience_approved_at: "2026-12-01T00:00:00Z" });
     expect(await getViewerRelationship(ME, ADA)).toBe("team");
+  });
+});
+
+describe("crew audience approval", () => {
+  let db: SupabaseDouble;
+  beforeEach(() => {
+    h.user = { id: ADA, role: "adult" };
+    db = seed({
+      minion_links: [
+        { id: "m1", recruiter_id: ADA, minion_id: ME, audience_approved_at: null },
+        { id: "m2", recruiter_id: BO, minion_id: TEEN, audience_approved_at: null },
+      ],
+    });
+  });
+  const put = (body: unknown, headers: Record<string, string> = {}) =>
+    setAudience(req("PUT", "/api/v1/social/referrals/audience", body, headers));
+  const link = (id: string) => db.table("minion_links").find((l) => l.id === id);
+
+  it("lets the recruiter approve and un-approve a member of their own crew", async () => {
+    const yes = await put({ minion_id: ME, approved: true });
+    expect(yes.status).toBe(200);
+    expect(await yes.json()).toEqual({ minion_id: ME, audience_approved: true });
+    expect(link("m1")?.audience_approved_at).toEqual(expect.any(String));
+    expect(await getViewerRelationship(ME, ADA)).toBe("team");
+
+    expect((await put({ minion_id: ME, approved: false })).status).toBe(200);
+    expect(link("m1")?.audience_approved_at).toBeNull();
+    expect(await getViewerRelationship(ME, ADA)).toBe("public");
+    expect(db.table("behavioral_events").map((e) => e.event_type)).toEqual(["crew_audience_approved", "crew_audience_removed"]);
+  });
+
+  it("never lets a member approve themselves, or anyone touch another recruiter's crew", async () => {
+    // The member tries to approve their own link to Ada.
+    h.user = { id: ME, role: "adult" };
+    expect((await put({ minion_id: ME, approved: true })).status).toBe(404);
+    expect((await put({ minion_id: ADA, approved: true })).status).toBe(404);
+    // Ada tries to approve someone in Bo's crew.
+    h.user = { id: ADA, role: "adult" };
+    expect((await put({ minion_id: TEEN, approved: true })).status).toBe(404);
+    expect(link("m1")?.audience_approved_at).toBeNull();
+    expect(link("m2")?.audience_approved_at).toBeNull();
+    expect(db.table("behavioral_events")).toHaveLength(0);
+  });
+
+  it("validates input, sign-in and where the request came from", async () => {
+    expect((await put({ minion_id: "nope", approved: true })).status).toBe(400);
+    expect((await put({ minion_id: ME, approved: "yes" })).status).toBe(400);
+    expect((await put({ minion_id: ME, approved: true }, { origin: "https://evil.example" })).status).toBe(403);
+    h.user = null;
+    expect((await put({ minion_id: ME, approved: true })).status).toBe(401);
+    expect(link("m1")?.audience_approved_at).toBeNull();
+  });
+
+  it("tells an adult recruiter when someone joins, with the name they are allowed to see", async () => {
+    await notifyCrewJoined(await createSupabaseServiceClient(), ADA, ME);
+    const notices = db.table("notifications");
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({ user_id: ADA, type: "crew_joined", title: "Me joined your crew", entity_id: ME });
+
+    // A teen recruiter's audiences don't include crews, so there is nothing to approve.
+    await notifyCrewJoined(await createSupabaseServiceClient(), TEEN, ME);
+    expect(notices).toHaveLength(1);
   });
 });

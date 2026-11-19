@@ -7,7 +7,7 @@
 import { CHECKIN_TARGET_PATH, PRIVACY_CHECKIN_TYPE } from "@/lib/services/privacy-checkin";
 import { REENGAGEMENT_TYPE, reengagementHref } from "@/lib/services/reengagement";
 import { HUNT_ENDING_TYPE, HUNT_RELEASE_TYPE, huntNoticeHref } from "@/lib/services/hunt-schedule-notices";
-import { FOLLOWS_PAGE_PATH, NEW_FOLLOWER_TYPE } from "@/lib/social/follow-rules";
+import { CREW_JOINED_TYPE, FOLLOWS_PAGE_PATH, NEW_FOLLOWER_TYPE } from "@/lib/social/follow-rules";
 
 /** `notifications.type` written by the survey reminder cron (survey-delivery.ts). */
 export const SURVEY_REMINDER_TYPE = "survey_reminder";
@@ -36,7 +36,9 @@ export function notificationHref(n: LinkableNotification): string | null {
     case HUNT_ENDING_TYPE:
       return huntNoticeHref(n.entity_type ?? null, n.entity_id ?? null);
     // A new follower opens the page that lists who follows you.
+    // A new crew member opens the same page, where they can be approved.
     case NEW_FOLLOWER_TYPE:
+    case CREW_JOINED_TYPE:
       return FOLLOWS_PAGE_PATH;
     default:
       return null;

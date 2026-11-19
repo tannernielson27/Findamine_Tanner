@@ -4,8 +4,11 @@
  * For accounts whose audiences cover social ties (adults and staff, see
  * follow-rules.ts), two ties count next to real teams and class rosters:
  *
- *   crew    recruiter and recruit, either direction (minion_links)
- *             -> the viewer is in the owner's "team" audience
+ *   crew    recruiter and recruit (minion_links)
+ *             -> the viewer is in the owner's "team" audience.
+ *             The owner's recruiter always counts (the owner picked them);
+ *             someone who joined the owner's crew counts only after the
+ *             owner approves them (audience_approved_at, migration 091).
  *   follow  the profile's OWNER follows the viewer (player_follows)
  *             -> the viewer is in the owner's "class" audience
  *
@@ -86,9 +89,17 @@ export async function getSocialTies(
   const [followed, recruits, recruiters] = await Promise.all([
     // Owners who follow the viewer.
     supabase.from("player_follows").select("follower_id").eq("followee_id", viewerId).in("follower_id", open),
-    // Owners the viewer recruited, and owners who recruited the viewer.
+    // Owners the viewer recruited: each chose the viewer by using their code.
     supabase.from("minion_links").select("minion_id").eq("recruiter_id", viewerId).in("minion_id", open),
-    supabase.from("minion_links").select("recruiter_id").eq("minion_id", viewerId).in("recruiter_id", open),
+    // Owners who recruited the viewer: only once the owner has approved the
+    // viewer (091). Anyone holding an invite code can join a crew, so joining
+    // by itself opens nothing.
+    supabase
+      .from("minion_links")
+      .select("recruiter_id")
+      .eq("minion_id", viewerId)
+      .in("recruiter_id", open)
+      .not("audience_approved_at", "is", null),
   ]);
   logReadError("player_follows", followed.error);
   logReadError("minion_links", recruits.error);

@@ -6,7 +6,9 @@ import {
   fetchFollowLists,
   followUser,
   removeFollower,
+  setCrewAudience,
   unfollowUser,
+  type CrewMember,
   type FollowLists,
   type FollowPerson,
 } from "@/lib/social/follows";
@@ -38,7 +40,9 @@ function PersonLink({ person }: { person: FollowPerson }) {
  * Who the viewer follows and who follows them, with unfollow, follow back and
  * remove follower. Renders nothing for accounts that can't use follows.
  */
-export default function FollowsPanel() {
+export default function FollowsPanel({ crew = [] }: { crew?: readonly CrewMember[] }) {
+  // Approvals changed in this visit, over what the page loaded.
+  const [approvals, setApprovals] = useState<Record<string, boolean>>({});
   const [lists, setLists] = useState<FollowLists | null>(null);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -67,6 +71,15 @@ export default function FollowsPanel() {
     setBusy(false);
   }
 
+  async function setApproval(memberId: string, approved: boolean) {
+    setBusy(true);
+    setMessage("");
+    const result = await setCrewAudience(memberId, approved);
+    if (result.ok) setApprovals((prev) => ({ ...prev, [memberId]: approved }));
+    setMessage(result.ok ? (approved ? "They can now see what you share with My Crew." : "Removed from your My Crew audience.") : result.message);
+    setBusy(false);
+  }
+
   if (failed) {
     return (
       <section className="mb-6 rounded-xl border border-themed-border bg-surface p-4 shadow-[var(--shadow-card)]">
@@ -88,7 +101,10 @@ export default function FollowsPanel() {
   }
   if (!lists?.available) return null;
   const { following, followers } = lists;
-  const nameOf = (p: FollowPerson) => p.display_name || "this player";
+  const nameOf = (p: { display_name: string | null }) => p.display_name || "this player";
+  const members = crew.flatMap((m) =>
+    m.user?.id ? [{ id: m.user.id, display_name: m.user.display_name, approved: approvals[m.user.id] ?? m.audience_approved === true }] : []
+  );
 
   return (
     <section
@@ -179,6 +195,44 @@ export default function FollowsPanel() {
           )}
         </div>
       </div>
+
+      {members.length > 0 && (
+        <div className="border-t border-themed-border">
+          <h3 className={SUBHEAD}>Your crew&apos;s access</h3>
+          <p className="px-4 pt-1 text-sm text-themed-muted">
+            Anyone with your invite link can join your crew. They see what you share with &ldquo;My Crew&rdquo;
+            only after you approve them here. Points are the same either way.
+          </p>
+          <ul className="divide-y divide-themed-border">
+            {members.map((m) => (
+              <li key={m.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5">
+                <PersonLink person={{ user_id: m.id, created_at: "", display_name: m.display_name, avatar_url: null }} />
+                {m.approved ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setApproval(m.id, false)}
+                    aria-label={`Remove ${nameOf(m)} from your My Crew audience`}
+                    className={ROW_BUTTON}
+                  >
+                    Approved · Remove
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setApproval(m.id, true)}
+                    aria-label={`Approve ${nameOf(m)} for your My Crew audience`}
+                    className={ROW_BUTTON_PRIMARY}
+                  >
+                    Approve
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <p role="status" aria-live="polite" className="min-h-5 border-t border-themed-border px-4 py-2 text-sm text-themed-muted">
         {message}

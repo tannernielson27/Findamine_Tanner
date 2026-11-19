@@ -46,7 +46,7 @@ export const SOCIAL_AUDIENCE_LABELS: Readonly<
   Record<VisibilityLevel, { label: string; icon: string; description: string }>
 > = {
   nobody: { label: "Only Me", icon: "🔒", description: "Nobody else can see this" },
-  team: { label: "My Crew", icon: "👥", description: "Your crew, and teammates on team hunts" },
+  team: { label: "My Crew", icon: "👥", description: "Crew members you approve, your recruiter, and teammates" },
   class: { label: "Crew + Following", icon: "🤝", description: "Your crew, plus players you follow" },
   everyone: { label: "Everyone", icon: "🌍", description: "All findamine users" },
 };
@@ -60,6 +60,8 @@ export function audienceLabelsFor(
 
 /** `notifications.type` written when someone starts following a player. */
 export const NEW_FOLLOWER_TYPE = "new_follower";
+/** `notifications.type` written to a recruiter when someone joins their crew. */
+export const CREW_JOINED_TYPE = "crew_joined";
 /** Where the lists of followers and followed players live. */
 export const FOLLOWS_PAGE_PATH = "/dashboard/social";
 

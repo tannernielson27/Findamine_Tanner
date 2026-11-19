@@ -91,6 +91,23 @@ export function unfollowUser(userId: string): Promise<FriendActionResult> {
   );
 }
 
+/** One member of the viewer's crew, as GET /api/v1/social/referrals lists them. */
+export interface CrewMember {
+  created_at: string;
+  /** The viewer has let this member into their "My Crew" audience. */
+  audience_approved?: boolean;
+  user: { id: string; display_name: string | null; avatar_url: string | null } | null;
+}
+
+/** Let a crew member into the viewer's "My Crew" audience, or take them out. */
+export function setCrewAudience(minionId: string, approved: boolean): Promise<FriendActionResult> {
+  return followCall(
+    "/api/v1/social/referrals/audience",
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ minion_id: minionId, approved }) },
+    "Couldn't update that crew member. Try again."
+  );
+}
+
 /** Stop someone following the viewer. */
 export function removeFollower(userId: string): Promise<FriendActionResult> {
   return followCall(

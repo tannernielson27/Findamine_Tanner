@@ -12,6 +12,7 @@ import { trackEvent } from "@/lib/utils/track-event";
 import { canViewField } from "@/lib/utils/privacy";
 import { RECRUIT_BONUS, WELCOME_BONUS } from "@/lib/utils/referral-rewards";
 import { getIsActiveParticipant } from "@/lib/services/participant-conditions";
+import { notifyCrewJoined } from "@/lib/social/crew-audience";
 
 /** Share of a minion's score awarded to their recruiter. Calibration knob. */
 export const REFERRAL_FRACTION = 0.15;
@@ -209,6 +210,9 @@ export async function redeemReferral(
       eventType: "referral_redeemed",
       payload: { recruiter_id: recruiterId, code: normalized, welcome_bonus: WELCOME_BONUS },
     });
+
+    // The recruiter decides whether this member joins their "My Crew" audience.
+    await notifyCrewJoined(supabase, recruiterId, minionUserId);
 
     return { ok: true, recruiterId };
   } catch {

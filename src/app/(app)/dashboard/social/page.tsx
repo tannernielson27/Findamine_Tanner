@@ -30,6 +30,8 @@ interface Kudos {
 
 interface ReferralPerson {
   created_at: string;
+  /** Crew members only: let into the viewer's "My Crew" audience. */
+  audience_approved?: boolean;
   user: { id: string; display_name: string | null; avatar_url: string | null } | null;
 }
 
@@ -441,7 +443,7 @@ export default function SocialPage() {
           )}
 
           {/* One-way follows: who you keep an eye on, and who watches you */}
-          <FollowsPanel />
+          <FollowsPanel crew={referral?.minions ?? []} />
 
           <div className="grid gap-6 lg:grid-cols-2">
             {/* Friends */}

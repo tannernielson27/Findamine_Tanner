@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
 
     const { data: minionRows } = await supabase
       .from("minion_links")
-      .select("minion_id, created_at, users:minion_id(id, display_name, avatar_url, profile_visibility)")
+      .select("minion_id, created_at, audience_approved_at, users:minion_id(id, display_name, avatar_url, profile_visibility)")
       .eq("recruiter_id", user.id)
       .order("created_at", { ascending: false });
 
@@ -69,6 +69,8 @@ export async function GET(request: NextRequest) {
 
     const minions = (minionRows || []).map((r) => ({
       created_at: r.created_at,
+      // Has the viewer let this member into their "My Crew" audience (091)?
+      audience_approved: Boolean(r.audience_approved_at),
       user: present(asUser(r.users)),
     }));
 
