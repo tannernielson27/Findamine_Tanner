@@ -3,6 +3,7 @@ import {
   REAL_NAMES_PARAM,
   boardRequestPath,
   canViewRealNames,
+  otherPlayersNote,
   realNameLabel,
   realNamesRequested,
   resolveRealName,
@@ -141,6 +142,22 @@ describe("withRealNames", () => {
     const before = JSON.stringify(entries);
     withRealNames(entries, names, new Map());
     expect(JSON.stringify(entries)).toBe(before);
+  });
+});
+
+describe("otherPlayersNote", () => {
+  it("says what other players see when it differs from the row's own name", () => {
+    expect(otherPlayersNote("ada_l", "Swift Fox")).toBe("Players see: Swift Fox");
+    expect(otherPlayersNote("bo", "Anonymous")).toBe("Players see: Anonymous");
+  });
+
+  it("adds nothing when the row already shows that name", () => {
+    expect(otherPlayersNote("ada_l", "ada_l")).toBeNull();
+    expect(otherPlayersNote("ada_l", undefined)).toBeNull();
+  });
+
+  it("says when a player's settings keep them off other players' boards", () => {
+    expect(otherPlayersNote("hank", null)).toBe("Hidden from other players' boards");
   });
 });
 

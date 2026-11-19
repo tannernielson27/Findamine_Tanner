@@ -4,6 +4,8 @@ import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { generalLimiter } from "@/lib/utils/rate-limit";
 import { resolveLeaderboardVisibility } from "@/lib/utils/leaderboard-visibility";
 import { standingAmong, type ServerMe } from "@/lib/social/standing";
+import { canViewRealNames, realNamesRequested } from "@/lib/social/real-names";
+import { boardWithRealNames, REAL_NAMES_RESPONSE_HEADERS } from "@/lib/social/real-names-access";
 
 // Roles whose names are never shown publicly on leaderboards
 const PROTECTED_ROLES = ["child", "teen"];
@@ -58,6 +60,39 @@ function redactEntry(
   return { display_name: user.display_name, avatar_url: user.avatar_url, named: Boolean(user.display_name) };
 }
 
+/** The users row joined to a play session; Supabase returns it as an array or an object. */
+function joinedUser(row: Record<string, unknown>): LeaderboardUser | null {
+  const raw = row.users;
+  return Array.isArray(raw) ? (raw[0] as LeaderboardUser) ?? null : (raw as LeaderboardUser) ?? null;
+}
+
+/**
+ * For the real-names view of a hunt board: the name each row shows a player
+ * with no team or class tie to that person, worked out by the same rules that
+ * build such a player's board (their visibility settings, then redactEntry).
+ * null means their settings leave them off that player's board altogether.
+ */
+async function namesOtherPlayersSee(
+  rows: Record<string, unknown>[],
+  identityMode: string
+): Promise<Map<string, string | null>> {
+  const vis = await resolveLeaderboardVisibility(null, rows.map((row) => row.user_id as string));
+  return new Map(
+    rows.map((row): [string, string | null] => {
+      const userId = row.user_id as string;
+      if (vis.drop.has(userId)) return [userId, null];
+      const nameAllowed = vis.nameAllowed.get(userId) ?? false;
+      const shown = redactEntry(
+        joinedUser(row),
+        row.codename as string | null,
+        nameAllowed ? identityMode : "codename_assigned",
+        nameAllowed
+      );
+      return [userId, shown.display_name ?? "Anonymous"];
+    })
+  );
+}
+
 /** A row of the overall_leaderboard() SQL function (migration 010). */
 interface OverallRow {
   user_id: string;
@@ -77,6 +112,10 @@ export async function GET(request: NextRequest) {
     const entryType = searchParams.get("type") || "user";
     const period = searchParams.get("period") || "all_time";
     const limit = Math.min(Math.max(parseInt(searchParams.get("limit") || "25") || 25, 1), 100);
+    // Real names (issue #13) are added only for a caller who asks AND is
+    // allowed (canViewRealNames, checked below once the caller is known).
+    // Without both, the response is the one built here for everyone else.
+    const wantsRealNames = realNamesRequested(searchParams);
 
     const supabase = await createSupabaseServiceClient();
 
@@ -141,11 +180,7 @@ export async function GET(request: NextRequest) {
       const entries = (data || [])
         .filter((row) => isHuntOwner || !vis.drop.has(row.user_id as string))
         .map((row: Record<string, unknown>) => {
-          // Supabase returns joined users as array or object depending on relation type
-          const rawUsers = row.users;
-          const user: LeaderboardUser | null = Array.isArray(rawUsers)
-            ? (rawUsers[0] as LeaderboardUser) ?? null
-            : (rawUsers as LeaderboardUser) ?? null;
+          const user = joinedUser(row);
 
           const codename = row.codename as string | null;
 
@@ -208,12 +243,24 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      return Response.json({
+      const board = {
         entries,
         identity_mode: identityMode,
         viewer_id: currentUser?.id ?? null,
         me,
-      });
+      };
+
+      // Real names: this hunt's creator, or an admin or researcher, on request.
+      if (wantsRealNames && currentUser && hunt && canViewRealNames(currentUser, hunt.created_by)) {
+        const named = await boardWithRealNames(supabase, board, {
+          viewer: currentUser,
+          huntId,
+          shownAs: await namesOtherPlayersSee(data || [], identityMode),
+        });
+        return Response.json(named, { headers: REAL_NAMES_RESPONSE_HEADERS });
+      }
+
+      return Response.json(board);
     }
 
     currentUser = await getAuthUser(request);
@@ -285,12 +332,25 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return Response.json({
+    const board = {
       entries,
       identity_mode: "codename_assigned",
       viewer_id: currentUser?.id ?? null,
       me,
-    });
+    };
+
+    // Real names on the overall board: admins and researchers only, on request.
+    // The rows are the ones this viewer already gets; nobody is added.
+    if (wantsRealNames && currentUser && canViewRealNames(currentUser)) {
+      const named = await boardWithRealNames(supabase, board, {
+        viewer: currentUser,
+        huntId: null,
+        shownAs: new Map(entries.map((entry) => [entry.user_id, entry.display_name ?? "Anonymous"])),
+      });
+      return Response.json(named, { headers: REAL_NAMES_RESPONSE_HEADERS });
+    }
+
+    return Response.json(board);
   } catch (error) {
     return errorResponse(error);
   }
