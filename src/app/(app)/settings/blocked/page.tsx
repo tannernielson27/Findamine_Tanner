@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { Ban } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import { socialErrorMessage } from "@/lib/social/friends";
 
 interface BlockedPlayer {
@@ -55,12 +55,7 @@ export default function BlockedPlayersPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-5">
-      <Link
-        href="/settings"
-        className="inline-flex min-h-11 items-center text-sm font-medium text-link hover:text-link-dark hover:underline"
-      >
-        &larr; Settings
-      </Link>
+      <BackButton fallbackHref="/settings" className="mb-3" />
       <h1 className="font-[family-name:var(--font-display)] text-3xl font-bold text-themed-text text-balance">
         Blocked players
       </h1>

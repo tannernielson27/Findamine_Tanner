@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { MapPinOff, RotateCcw } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import { Button, ButtonLink } from "@/components/ui/button";
 import type { StartOptions } from "@/lib/play/play-types";
 
@@ -55,6 +56,8 @@ export function CodenameForm({ value: codenameInput, onChange: setCodenameInput,
           if (trimmedCodename) onStart({ codename: trimmedCodename });
         }}
       >
+        {/* The only way out of this full-screen step without starting the hunt. */}
+        <BackButton fallbackHref="/browse" className="mb-4" />
         <h1 className="mb-2 font-[family-name:var(--font-display)] text-[26px] font-semibold leading-tight">Choose your explorer name</h1>
         <p className="mb-4 text-base">
           This hunt shows players by an explorer name instead of their real name. Pick yours to start.
