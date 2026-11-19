@@ -5,6 +5,7 @@ import { playLimiter } from "@/lib/utils/rate-limit";
 import { internalError } from "@/lib/utils/internal-error";
 import { assertStopOpen } from "../../_lib/stop-access";
 import { assertStopStarted } from "../../_lib/stop-start";
+import { HINT_COSTS, readScoringVersion } from "@/lib/hunts/scoring-version";
 
 export async function POST(
   request: NextRequest,
@@ -40,13 +41,11 @@ export async function POST(
     // A hint is about where the stop is: none before the stop is started.
     const completion = await assertStopStarted(supabase, session.id, find_id);
 
-    // Get the find's clue hints
-    const { data: find } = await supabase
-      .from("finds")
-      .select("clue_hints")
-      .eq("id", find_id)
-      .eq("hunt_id", huntId)
-      .single();
+    // Get the find's clue hints, and the hunt's scoring version for the cost shown.
+    const [{ data: find }, { data: hunt }] = await Promise.all([
+      supabase.from("finds").select("clue_hints").eq("id", find_id).eq("hunt_id", huntId).single(),
+      supabase.from("hunts").select("metadata").eq("id", huntId).maybeSingle(),
+    ]);
 
     if (!find) throw new ApiError(404, "Find not found");
 
@@ -73,7 +72,7 @@ export async function POST(
       hint,
       level: hintIndex + 1,
       total_hints: hints.length,
-      penalty_per_hint: 2,
+      penalty_per_hint: HINT_COSTS[readScoringVersion(hunt?.metadata as Record<string, unknown> | null)].clue,
     });
   } catch (error) {
     return errorResponse(error);

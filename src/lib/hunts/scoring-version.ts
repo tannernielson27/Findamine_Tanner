@@ -118,6 +118,33 @@ export function toComparablePoints(score: number | null | undefined, version: Sc
   return Math.round((score * COMPARABLE_STOP_MAX) / STOP_MAX_SCORE[version]);
 }
 
+/**
+ * The combined score of several play sessions on the common scale: the sum
+ * overall_leaderboard() makes in SQL (migration 085), rounded once at the end.
+ */
+export function comparableTotal(
+  sessions: ReadonlyArray<{ score: number | null | undefined; version: ScoringVersion }>
+): number {
+  const sum = sessions.reduce((total, s) => {
+    if (typeof s.score !== "number" || !Number.isFinite(s.score)) return total;
+    return total + (s.score * COMPARABLE_STOP_MAX) / STOP_MAX_SCORE[s.version];
+  }, 0);
+  return Math.round(sum);
+}
+
+/**
+ * The metadata of a hunt embedded in a query result (`hunts(metadata)`), which
+ * arrives as an object or a one-item array depending on the relation.
+ */
+export function embeddedHuntMetadata(embedded: unknown): Record<string, unknown> | null {
+  const hunt = Array.isArray(embedded) ? embedded[0] : embedded;
+  if (!hunt || typeof hunt !== "object") return null;
+  const metadata = (hunt as { metadata?: unknown }).metadata;
+  return metadata && typeof metadata === "object" && !Array.isArray(metadata)
+    ? (metadata as Record<string, unknown>)
+    : null;
+}
+
 /** What one clue hint and one challenge hint cost, for the labels players see. */
 export const HINT_COSTS: Readonly<Record<ScoringVersion, { clue: number; challenge: number }>> = {
   1: { clue: DEFAULT_SCORING.clueHintPenalty, challenge: DEFAULT_SCORING.challengeHintPenalty },

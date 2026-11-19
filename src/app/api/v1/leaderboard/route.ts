@@ -3,7 +3,8 @@ import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { generalLimiter } from "@/lib/utils/rate-limit";
 import { resolveLeaderboardVisibility } from "@/lib/utils/leaderboard-visibility";
-import { standingAmong, type ServerMe } from "@/lib/social/standing";
+import { boardRanks, compareStanding, standingAmong, type ServerMe, type StandingKey } from "@/lib/social/standing";
+import { comparableTotal, embeddedHuntMetadata, readScoringVersion } from "@/lib/hunts/scoring-version";
 
 // Roles whose names are never shown publicly on leaderboards
 const PROTECTED_ROLES = ["child", "teen"];
@@ -58,7 +59,43 @@ function redactEntry(
   return { display_name: user.display_name, avatar_url: user.avatar_url, named: Boolean(user.display_name) };
 }
 
-/** A row of the overall_leaderboard() SQL function (migration 010). */
+/** What a completed session is ordered by on a board. */
+function standingKey(row: Record<string, unknown>): StandingKey {
+  return {
+    score: (row.total_score as number | null) ?? 0,
+    solveMs: typeof row.total_solve_ms === "number" ? row.total_solve_ms : null,
+    completedAt: typeof row.completed_at === "string" ? row.completed_at : null,
+  };
+}
+
+/**
+ * Among the hunt's other finished sessions on exactly the viewer's score: how
+ * many are ahead on the tiebreak, and whether any can't be separated from the
+ * viewer at all. Equal scores are rare on version 2, so this set is small.
+ */
+async function levelWith(
+  supabase: Awaited<ReturnType<typeof createSupabaseServiceClient>>,
+  huntId: string,
+  userId: string,
+  mine: StandingKey
+): Promise<{ ahead: number; tied: boolean }> {
+  const { data } = await supabase
+    .from("play_sessions")
+    .select("user_id, total_score, total_solve_ms, completed_at")
+    .eq("hunt_id", huntId)
+    .eq("status", "completed")
+    .eq("total_score", mine.score)
+    .neq("user_id", userId)
+    .limit(STANDING_SCAN_LIMIT);
+  const others = ((data || []) as Record<string, unknown>[]).map((row) => compareStanding(standingKey(row), mine));
+  return { ahead: others.filter((c) => c < 0).length, tied: others.some((c) => c === 0) };
+}
+
+/**
+ * A row of the overall_leaderboard() SQL function (migrations 010 and 085).
+ * total_score is already on the common scale: a stop counts out of 100
+ * whichever scoring version its hunt uses.
+ */
 interface OverallRow {
   user_id: string;
   total_score: number;
@@ -91,22 +128,25 @@ export async function GET(request: NextRequest) {
       const authPromise = getAuthUser(request);
       const [user, { data: hunt }, { data }, mySessionResult] = await Promise.all([
         authPromise,
-        supabase.from("hunts").select("identity_mode, created_by").eq("id", huntId).single(),
-        // Hunt-specific: join play_sessions for codenames
+        supabase.from("hunts").select("identity_mode, created_by, metadata").eq("id", huntId).single(),
+        // Hunt-specific: join play_sessions for codenames. Ordered by score,
+        // then total solve time, then finish time (issue #11).
         supabase
           .from("play_sessions")
           .select(
-            "user_id, total_score, codename, users(id, display_name, avatar_url, role, profile_visibility)"
+            "user_id, total_score, total_solve_ms, completed_at, codename, users(id, display_name, avatar_url, role, profile_visibility)"
           )
           .eq("hunt_id", huntId)
           .eq("status", "completed")
           .order("total_score", { ascending: false })
+          .order("total_solve_ms", { ascending: true, nullsFirst: false })
+          .order("completed_at", { ascending: true, nullsFirst: false })
           .limit(limit),
         authPromise.then((u) =>
           u
             ? supabase
                 .from("play_sessions")
-                .select("total_score")
+                .select("total_score, total_solve_ms, completed_at")
                 .eq("hunt_id", huntId)
                 .eq("user_id", u.id)
                 .eq("status", "completed")
@@ -117,6 +157,10 @@ export async function GET(request: NextRequest) {
       currentUser = user;
 
       const identityMode = hunt?.identity_mode || "codename_assigned";
+      // Version 2 hunts break ties, so equal scores get separate ranks.
+      // Version 1 boards keep sharing a rank on equal scores, as they always
+      // have; only the order of their tied rows is now fixed.
+      const splitTies = readScoringVersion(hunt?.metadata as Record<string, unknown> | null) === 2;
 
       if (
         currentUser &&
@@ -138,9 +182,16 @@ export async function GET(request: NextRequest) {
             (data || []).map((r) => r.user_id as string)
           );
 
-      const entries = (data || [])
+      // Ranks are worked out over the rows this viewer sees, so a hidden
+      // player never leaves a gap in the numbers.
+      const visible = (data || [])
         .filter((row) => isHuntOwner || !vis.drop.has(row.user_id as string))
-        .map((row: Record<string, unknown>) => {
+        .map((row) => ({ row: row as Record<string, unknown>, key: standingKey(row) }))
+        .sort((a, b) => compareStanding(a.key, b.key));
+      const ranks = boardRanks(visible.map((v) => v.key), { splitTies });
+
+      const entries = visible
+        .map(({ row }, index) => {
           // Supabase returns joined users as array or object depending on relation type
           const rawUsers = row.users;
           const user: LeaderboardUser | null = Array.isArray(rawUsers)
@@ -156,6 +207,7 @@ export async function GET(request: NextRequest) {
             return {
               user_id: row.user_id as string,
               score: row.total_score as number,
+              rank: ranks[index],
               display_name: user?.display_name ?? null,
               avatar_url: user?.avatar_url ?? null,
               codename,
@@ -167,6 +219,7 @@ export async function GET(request: NextRequest) {
           return {
             user_id: row.user_id as string,
             score: row.total_score as number,
+            rank: ranks[index],
             ...identity,
             // Only rows that already show the player's own name link to their
             // profile; linking a codename row would unmask the codename.
@@ -182,7 +235,7 @@ export async function GET(request: NextRequest) {
 
         if (mySession) {
           const myScore = (mySession.total_score as number) ?? 0;
-          const [{ count }, { data: nextRow }] = await Promise.all([
+          const [{ count }, { data: nextRow }, level] = await Promise.all([
             supabase
               .from("play_sessions")
               .select("user_id", { count: "exact", head: true })
@@ -198,12 +251,17 @@ export async function GET(request: NextRequest) {
               .order("total_score", { ascending: true })
               .limit(1)
               .maybeSingle(),
+            // Version 2: everyone else on the same score, to place the viewer among them.
+            splitTies
+              ? levelWith(supabase, huntId, currentUser.id, standingKey(mySession))
+              : Promise.resolve(null),
           ]);
 
           me = {
-            rank: (count ?? 0) + 1,
+            rank: (count ?? 0) + (level?.ahead ?? 0) + 1,
             score: myScore,
-            gap_to_next: nextRow ? (nextRow.total_score as number) - myScore : null,
+            gap_to_next: level && level.ahead > 0 ? 0 : nextRow ? (nextRow.total_score as number) - myScore : null,
+            ...(level ? { tied: level.tied } : {}),
           };
         }
       }
@@ -270,11 +328,17 @@ export async function GET(request: NextRequest) {
         // Ranked, but below everyone the scan returned.
         const { data: own } = await supabase
           .from("play_sessions")
-          .select("total_score")
+          .select("total_score, hunts(metadata)")
           .eq("user_id", currentUser.id)
           .eq("status", "completed");
         if (own && own.length > 0) {
-          const score = own.reduce((sum, s) => sum + ((s.total_score as number) || 0), 0);
+          // The same sum overall_leaderboard() makes: every stop out of 100.
+          const score = comparableTotal(
+            (own as Record<string, unknown>[]).map((s) => ({
+              score: s.total_score as number | null,
+              version: readScoringVersion(embeddedHuntMetadata(s.hunts)),
+            }))
+          );
           const floor = Number(rankedRows[rankedRows.length - 1].total_score);
           me = {
             rank: rankedRows.length + 1,

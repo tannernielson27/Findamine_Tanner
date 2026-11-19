@@ -12,6 +12,7 @@ import { CLUE_ORDERS_KEY, readClueOrders, withoutClueOrders } from "@/lib/play/c
 import { remapClueOrders, withStudyFlagFor } from "@/lib/hunts/delivery-lock";
 import { fullDeliveryMetadata, saveClueOrders } from "@/lib/hunts/clue-orders-store";
 import { isReviewer } from "@/lib/hunts/review";
+import { withNewHuntScoring } from "@/lib/hunts/scoring-version";
 
 type Row = Record<string, unknown>;
 
@@ -74,9 +75,15 @@ export async function POST(
       ? readClueOrders(await fullDeliveryMetadata(supabase, source as Row & { id: string }, "/api/v1/hunts/[id]/clone"))
       : [];
     // A copy is a study hunt only when an admin or researcher makes it.
-    huntData.metadata = withStudyFlagFor(
-      user.role,
-      withoutClueOrders((huntData.metadata as Record<string, unknown> | null) ?? null)
+    // A copy is a new hunt with no play sessions. It keeps a scoring version
+    // the source names; a source from before versions (version 1 by default)
+    // gives a copy on version 2, like any hunt created now. The owner can
+    // change it on the hunt page until the copy is first played.
+    huntData.metadata = withNewHuntScoring(
+      withStudyFlagFor(
+        user.role,
+        withoutClueOrders((huntData.metadata as Record<string, unknown> | null) ?? null)
+      )
     );
 
     const { data: newHunt, error: huntError } = await supabase

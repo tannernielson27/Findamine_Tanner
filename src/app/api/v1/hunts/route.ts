@@ -14,6 +14,7 @@ import { withoutInternalReviewFields } from "@/lib/hunts/review";
 import { logger } from "@/lib/utils/logger";
 import { withoutClueOrders } from "@/lib/play/clue-delivery";
 import { withStudyFlagFor } from "@/lib/hunts/delivery-lock";
+import { withNewHuntScoring } from "@/lib/hunts/scoring-version";
 
 /** Catalogue rows without review bookkeeping (who reviewed/affirmed, notes) or assigned clue orders. */
 function publicRows(rows: unknown): unknown {
@@ -167,7 +168,8 @@ export async function POST(request: NextRequest) {
         is_template: body.is_template || false,
         // Assigned clue orders are saved on the hunt page (they need stops), never in metadata.
         // Only admins and researchers may create a study hunt.
-        metadata: withStudyFlagFor(user.role, withoutClueOrders(body.metadata || {})),
+        // New hunts are scored with version 2 unless they name a version (issue #11).
+        metadata: withNewHuntScoring(withStudyFlagFor(user.role, withoutClueOrders(body.metadata || {}))),
         theme: body.theme || null,
         theme_narrative: body.theme_narrative || null,
         // Column has a CHECK constraint; anything else falls back to the DB default.

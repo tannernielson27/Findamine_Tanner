@@ -84,6 +84,8 @@ export async function GET(
         metadata,
         delivery_locked,
         has_play_sessions,
+        // Scoring version and solve window can change only before the first play session.
+        scoring_locked: has_play_sessions,
         stops_frozen: stopsFrozen({ locked: delivery_locked, metadata }),
         viewer_can_set_study_hunt: isReviewer(user.role),
       },
