@@ -3,9 +3,12 @@
 import { useState, useEffect } from "react";
 import { ChevronDown } from "lucide-react";
 import { Collapse } from "@/components/ui/collapse";
+import { stopScorePercent, type ScoringVersion } from "@/lib/hunts/scoring-version";
 
 interface Analytics {
   analytics_available: boolean;
+  /** Which scoring version the hunt is on: a stop is out of 100 (1) or 1000 (2). */
+  scoring_version?: number;
   total_plays: number;
   avg_score?: number;
   completion_rate?: number;
@@ -22,9 +25,10 @@ interface HuntAnalyticsProps {
   compact?: boolean;
 }
 
-function scoreBarClass(score: number): string {
-  if (score >= 70) return "bg-success";
-  if (score >= 40) return "bg-warning";
+/** Colour by share of the stop's maximum, so it reads the same on either scoring version. */
+function scoreBarClass(percent: number): string {
+  if (percent >= 70) return "bg-success";
+  if (percent >= 40) return "bg-warning";
   return "bg-error";
 }
 
@@ -50,6 +54,8 @@ export default function HuntAnalytics({ huntId, compact = false }: HuntAnalytics
       </p>
     );
   }
+
+  const version: ScoringVersion = data.scoring_version === 2 ? 2 : 1;
 
   if (compact) {
     return (
@@ -99,8 +105,8 @@ export default function HuntAnalytics({ huntId, compact = false }: HuntAnalytics
                     <div className="h-2 min-w-0 flex-1 rounded-full bg-themed-bg">
                       {stop.avg_score !== null && (
                         <div
-                          className={`h-2 rounded-full ${scoreBarClass(stop.avg_score)}`}
-                          style={{ width: `${Math.min(stop.avg_score, 100)}%` }}
+                          className={`h-2 rounded-full ${scoreBarClass(stopScorePercent(stop.avg_score, version))}`}
+                          style={{ width: `${stopScorePercent(stop.avg_score, version)}%` }}
                         />
                       )}
                     </div>

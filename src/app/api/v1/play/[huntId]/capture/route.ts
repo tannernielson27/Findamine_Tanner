@@ -1,4 +1,5 @@
 import { NextRequest, after } from "next/server";
+import { assertStopOpen } from "../../_lib/stop-access";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { getCompletion } from "../../_lib/completions";
@@ -37,6 +38,8 @@ export async function POST(
     const caption = formData.get("caption");
 
     if (typeof findId !== "string" || !findId) throw new ApiError(400, "find_id required");
+    // The player's own stop, released and (unless they already finished it) inside the hunt's window.
+    await assertStopOpen(supabase, { huntId, userId: user.id, session, findId, route: ROUTE });
 
     // A row also exists after a primer view or clue hint, so check the arrival
     // itself: a photo is only taken at the stop.

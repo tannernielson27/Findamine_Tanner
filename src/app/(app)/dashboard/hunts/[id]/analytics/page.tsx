@@ -3,9 +3,13 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { stopScorePercent, type ScoringVersion } from "@/lib/hunts/scoring-version";
 
 interface AnalyticsData {
   analytics_available: boolean;
+  /** Which scoring version the hunt is on: a stop is out of 100 (1) or 1000 (2). */
+  scoring_version?: number;
+  stop_max_score?: number;
   total_plays: number;
   avg_score: number;
   completion_rate: number;
@@ -29,6 +33,16 @@ interface StopRow {
 function stopLabel(stop: StopRow): string {
   return stop.name ? `Stop ${stop.stop_number}: ${stop.name}` : `Stop ${stop.stop_number}`;
 }
+
+/** Share of the stop maximum, so colours read the same on either scoring version. */
+function scoreTone(percent: number): "good" | "middling" | "poor" {
+  if (percent >= 70) return "good";
+  if (percent >= 40) return "middling";
+  return "poor";
+}
+
+const BAR_COLOR = { good: "#22c55e", middling: "#f59e0b", poor: "#ef4444" } as const;
+const TEXT_COLOR = { good: "text-green-600", middling: "text-amber-600", poor: "text-red-600" } as const;
 
 function csvCell(value: string | number | null): string {
   if (value === null) return "";
@@ -64,11 +78,16 @@ export default function HuntAnalyticsPage() {
     return <main className="mx-auto max-w-4xl px-4 py-4"><p className="text-sm text-gray-500">Loading analytics...</p></main>;
   }
 
+  const version: ScoringVersion = data?.scoring_version === 2 ? 2 : 1;
+
   function handleExportCSV() {
     if (!data?.stops) return;
-    const headers = "Stop,Name,Avg Score,Avg Hints,Completions";
+    // "Max Score" is what a stop is out of on this hunt (100 or 1000), so a
+    // file from one hunt is not pooled with another's on a different scale.
+    const headers = "Stop,Name,Avg Score,Max Score,Avg Hints,Completions";
+    const stopMax = data.stop_max_score ?? null;
     const rows = data.stops.map((s) =>
-      [s.stop_number, s.name, s.avg_score, s.avg_hints, s.completion_count].map(csvCell).join(",")
+      [s.stop_number, s.name, s.avg_score, stopMax, s.avg_hints, s.completion_count].map(csvCell).join(",")
     );
     const csv = [headers, ...rows].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -128,7 +147,10 @@ export default function HuntAnalyticsPage() {
           {data.stops.length > 0 && (
             <div className="mb-6">
               <div className="flex items-center justify-between mb-2">
-                <h2 className="text-sm font-semibold text-gray-900">Per-Stop Breakdown</h2>
+                <h2 className="text-sm font-semibold text-gray-900">
+                  Per-Stop Breakdown
+                  {data.stop_max_score ? <span className="ml-2 font-normal text-gray-500">out of {data.stop_max_score.toLocaleString("en-US")} per stop</span> : null}
+                </h2>
                 <button onClick={handleExportCSV} className="text-xs text-sky-600 hover:underline">
                   Export CSV
                 </button>
@@ -144,8 +166,8 @@ export default function HuntAnalyticsPage() {
                         <div
                           className="h-4 rounded-full transition-[width] flex items-center justify-end pr-1"
                           style={{
-                            width: `${Math.min(Math.max(stop.avg_score, 5), 100)}%`,
-                            backgroundColor: stop.avg_score >= 70 ? "#22c55e" : stop.avg_score >= 40 ? "#f59e0b" : "#ef4444",
+                            width: `${Math.max(stopScorePercent(stop.avg_score, version), 5)}%`,
+                            backgroundColor: BAR_COLOR[scoreTone(stopScorePercent(stop.avg_score, version))],
                           }}
                         >
                           <span className="text-[10px] text-white font-medium">{stop.avg_score}</span>
@@ -176,7 +198,7 @@ export default function HuntAnalyticsPage() {
                         <td className="py-1.5 pr-3 text-gray-900">{stopLabel(stop)}</td>
                         <td className="text-right py-1.5 px-3">
                           {stop.avg_score !== null ? (
-                            <span className={`font-medium ${stop.avg_score >= 70 ? "text-green-600" : stop.avg_score >= 40 ? "text-amber-600" : "text-red-600"}`}>
+                            <span className={`font-medium ${TEXT_COLOR[scoreTone(stopScorePercent(stop.avg_score, version))]}`}>
                               {stop.avg_score}
                             </span>
                           ) : (

@@ -42,3 +42,27 @@ export function redactAnswerKeys<T extends FindWithTask>(finds: T[]): T[] {
       : find
   );
 }
+
+/** All a hunt API tells a non-editor about a stop: that it exists, and the creator's order. */
+export interface StopStub {
+  id: string;
+  sort_order: number;
+}
+
+/**
+ * A hunt's stops as the hunt APIs may send them to this viewer.
+ *
+ * The people who can edit the hunt (owner, admins, researchers) get every
+ * field. Everyone else gets ids and order only: clues, hints, places,
+ * challenges and primers are spoilers, and since issue #16 a player receives a
+ * stop's details from the play API alone, once they have started that stop
+ * (GET /api/v1/play/[huntId]/stops).
+ */
+export function findsForViewer<T extends StopStub>(
+  finds: T[],
+  viewer: Viewer | null,
+  huntCreatedBy: string | null
+): T[] | StopStub[] {
+  if (canSeeAnswerKeys(viewer, huntCreatedBy)) return finds;
+  return finds.map((find) => ({ id: find.id, sort_order: find.sort_order }));
+}

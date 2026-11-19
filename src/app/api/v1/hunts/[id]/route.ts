@@ -6,7 +6,7 @@ import {
   errorResponse,
   ApiError,
 } from "@/lib/utils/api-auth";
-import { canSeeAnswerKeys, redactAnswerKeys } from "../redact-finds";
+import { findsForViewer } from "../redact-finds";
 import {
   canAccessHunt,
   changedReviewedHuntFields,
@@ -20,9 +20,14 @@ import {
 import { firstFlagged } from "@/lib/hunts/text-filter";
 import { logger } from "@/lib/utils/logger";
 import { huntHasPlaySessions, prepareMetadataUpdate } from "../delivery-guard";
+import { settleNavigationHelp } from "../navigation-help-guard";
 import { isDeliveryLocked, stopsFrozen } from "@/lib/hunts/delivery-lock";
 import { fullDeliveryMetadata, saveClueOrders, storedMetadata } from "@/lib/hunts/clue-orders-store";
-import { withoutClueOrders } from "@/lib/play/clue-delivery";
+import { readClueDelivery, withoutClueOrders } from "@/lib/play/clue-delivery";
+import { isScheduledHunt, type HuntWindowSource } from "@/lib/hunts/schedule";
+
+const SCHEDULED_DELIVERY_MESSAGE =
+  "A scheduled hunt gives out every released clue at once. Remove the schedule to use a different clue order.";
 
 const ROUTE = "/api/v1/hunts/[id]";
 type Meta = Record<string, unknown> | null;
@@ -55,13 +60,13 @@ export async function GET(
     }
 
     // Removed stops are soft-deleted; never hand them back. Then sort by order.
+    // Only the hunt's editors get the stops' content: players get ids and
+    // order here, and each stop's details from the play API once it is started.
     if (hunt.finds) {
-      hunt.finds = (hunt.finds as { sort_order: number; deleted_at: string | null }[])
+      const live = (hunt.finds as { id: string; sort_order: number; deleted_at: string | null }[])
         .filter((f) => !f.deleted_at)
         .sort((a, b) => a.sort_order - b.sort_order);
-      if (!canSeeAnswerKeys(user, hunt.created_by)) {
-        hunt.finds = redactAnswerKeys(hunt.finds);
-      }
+      hunt.finds = findsForViewer(live, user, hunt.created_by);
     }
 
     const insider = !!user && (user.id === hunt.created_by || isReviewer(user.role));
@@ -84,7 +89,10 @@ export async function GET(
         metadata,
         delivery_locked,
         has_play_sessions,
-        stops_frozen: stopsFrozen({ locked: delivery_locked, metadata }),
+        // Scoring version and solve window can change only before the first play session.
+        scoring_locked: has_play_sessions,
+        // A locked scheduled hunt freezes its stops too (issue #14).
+        stops_frozen: stopsFrozen({ locked: delivery_locked, metadata }) || (delivery_locked && isScheduledHunt(hunt as HuntWindowSource)),
         viewer_can_set_study_hunt: isReviewer(user.role),
       },
     });
@@ -108,7 +116,7 @@ export async function PUT(
     // Verify ownership
     const { data: existingRow } = await supabase
       .from("hunts")
-      .select(`created_by, status, review_status, metadata, ${REVIEWED_HUNT_FIELDS.join(", ")}`)
+      .select(`created_by, status, review_status, metadata, starts_at, ends_at, ${REVIEWED_HUNT_FIELDS.join(", ")}`)
       .eq("id", id)
       .is("deleted_at", null)
       .single();
@@ -161,6 +169,20 @@ export async function PUT(
         canSetStudyFlag: isReviewer(user.role),
         route: ROUTE,
       });
+      // Difficulty (navigation help) shares that lock: it can't change once
+      // the hunt is published or played.
+      const settled = await settleNavigationHelp(supabase, {
+        hunt: { id, status: existing.status },
+        before: delivery.before,
+        after: delivery.after,
+        route: ROUTE,
+      });
+      delivery = { before: delivery.before, after: settled };
+      // A scheduled hunt hands out every released clue at once (issue #14):
+      // a set order could put a player on a stop that is not out yet.
+      if (isScheduledHunt(existing as HuntWindowSource) && readClueDelivery(delivery.after) !== "all_at_once") {
+        throw new ApiError(400, SCHEDULED_DELIVERY_MESSAGE);
+      }
       updates.metadata = storedMetadata(delivery.after);
     }
 

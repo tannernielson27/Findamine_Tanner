@@ -11,6 +11,11 @@ interface DetailCtaBarProps {
   signedIn: boolean;
   /** The viewer runs this team hunt and isn't on a team (see cta-state). */
   ownerPreview: boolean;
+  /**
+   * Scheduled hunts: why the hunt can't be started right now (it hasn't
+   * started, or it has ended). Null when it can, and on play-anytime hunts.
+   */
+  scheduleNote?: string | null;
 }
 
 /**
@@ -21,14 +26,16 @@ interface DetailCtaBarProps {
  * team), so the bar scrolls to it instead of offering a second Start. A hunt
  * manager who isn't on a team gets Preview here, matching the panel.
  */
-export function DetailCtaBar({ huntId, status, playable, teamHunt, signedIn, ownerPreview }: DetailCtaBarProps) {
+export function DetailCtaBar({ huntId, status, playable, teamHunt, signedIn, ownerPreview, scheduleNote = null }: DetailCtaBarProps) {
   const loginHref = `/login?next=${encodeURIComponent(`/browse/${huntId}`)}`;
   const playHref = `/play/${huntId}`;
   const closedNote =
     status === "draft"
       ? "This hunt is still a draft. Publish it before anyone can play."
-      : "This hunt has ended and can no longer be played.";
-  const cta = detailCta({ playable, signedIn, teamHunt, ownerPreview });
+      : scheduleNote ?? "This hunt has ended and can no longer be played.";
+  // Outside a scheduled hunt's window nobody can start it (the play API
+  // refuses too), so the bar says when instead of offering Start.
+  const cta = detailCta({ playable: playable && !scheduleNote, signedIn, teamHunt, ownerPreview });
 
   return (
     <div className="fm-glass fixed inset-x-0 bottom-0 z-40 border-t border-themed-border pt-3.5 pb-[calc(14px+env(safe-area-inset-bottom))]">

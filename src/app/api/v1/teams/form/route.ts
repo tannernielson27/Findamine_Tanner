@@ -3,6 +3,7 @@ import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, requireRole, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { assertCleanText } from "@/lib/moderation/guard";
 import { formationMethodFor, latestPerUser, liveTeams } from "../team-rules";
+import { withComparableTotals } from "@/lib/hunts/scoring-version";
 
 type FormationStrategy = "random" | "teacher_assigned" | "personality_similar" |
   "personality_diverse" | "performance_similar" | "performance_diverse" | "balanced";
@@ -166,15 +167,17 @@ export async function POST(request: NextRequest) {
 
       case "performance_similar":
       case "performance_diverse": {
-        // Get past scores
-        const { data: sessions } = await supabase
+        // Past scores. Totals go on the common scale first (a stop out of 100 on either
+        // scoring version), so a student who played a version 2 hunt is not
+        // ranked ten times stronger than one who played a version 1 hunt.
+        const { data: rawSessions } = await supabase
           .from("play_sessions")
-          .select("user_id, total_score")
+          .select("user_id, total_score, hunts(metadata)")
           .in("user_id", studentIds)
-          .eq("status", "completed")
-          .order("total_score", { ascending: false });
+          .eq("status", "completed");
+        const sessions = withComparableTotals(rawSessions ?? []);
 
-        if (!sessions || sessions.length === 0) {
+        if (sessions.length === 0) {
           groupedStudents = shuffleAndChunk(studentIds, teamSizeClamped);
         } else {
           // Average score per student

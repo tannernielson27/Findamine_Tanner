@@ -39,7 +39,7 @@ export function ShuffleBadge({ variant = "pill", className }: ShuffleBadgeProps)
 }
 
 const DELIVERY_BADGE: Partial<Record<ClueDelivery, { pill: string; compact: string; title: string }>> = {
-  all_at_once: { pill: "All clues at once", compact: "Any order", title: "Every clue is open; players choose which to work on" },
+  all_at_once: { pill: "All clues at once", compact: "Any order", title: "Every stop is open; players choose which to work on" },
   assigned_order: { pill: "Assigned orders", compact: "Assigned", title: "Each player is assigned one of several stop orders" },
 };
 

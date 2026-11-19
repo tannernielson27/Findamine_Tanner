@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { generalLimiter } from "@/lib/utils/rate-limit";
+import { STOP_MAX_SCORE, readScoringVersion } from "@/lib/hunts/scoring-version";
 
 const MIN_PLAYS_FOR_PUBLIC = 5;
 
@@ -35,13 +36,14 @@ export async function GET(
     // Get hunt info
     const { data: hunt } = await supabase
       .from("hunts")
-      .select("id, title, created_by, status")
+      .select("id, title, created_by, status, metadata")
       .eq("id", id)
       .is("deleted_at", null)
       .single();
 
     if (!hunt) throw new ApiError(404, "Hunt not found");
 
+    const scoringVersion = readScoringVersion(hunt.metadata as Record<string, unknown> | null);
     const isOwner = user && (hunt.created_by === user.id || ["admin", "researcher"].includes(user.role));
 
     // Get all completed play sessions for this hunt
@@ -134,6 +136,9 @@ export async function GET(
     return Response.json({
       hunt_id: id,
       analytics_available: true,
+      // Scores below are the hunt's own: a stop is out of stop_max_score.
+      scoring_version: scoringVersion,
+      stop_max_score: STOP_MAX_SCORE[scoringVersion],
       total_plays: totalPlays,
       avg_score: avgScore,
       completion_rate: completionRate,

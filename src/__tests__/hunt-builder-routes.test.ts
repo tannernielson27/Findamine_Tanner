@@ -202,6 +202,47 @@ describe("POST /hunts/{id}/clone", () => {
     const res = await cloneHunt(req("POST", `/api/v1/hunts/${HUNT_ID}/clone`), huntParams);
     expect(res.status).toBe(404);
   });
+
+  describe("a scheduled hunt (issue #14)", () => {
+    const DAY = 86_400_000;
+    const scheduled = (startsInDays: number, endsInDays: number) => ({
+      ...source,
+      starts_at: new Date(Date.now() + startsInDays * DAY).toISOString(),
+      ends_at: new Date(Date.now() + endsInDays * DAY).toISOString(),
+      finds: source.finds.map((f) => ({ ...f, release_at: new Date(Date.now() + 2 * DAY).toISOString() })),
+    });
+
+    it("can't be copied by someone else while it is running or yet to start: its stops aren't all released", async () => {
+      for (const running of [scheduled(-1, 10), scheduled(3, 10)]) {
+        const made = install({ hunts: [ok(running)] });
+        const res = await cloneHunt(req("POST", `/api/v1/hunts/${HUNT_ID}/clone`), huntParams);
+        expect(res.status).toBe(409);
+        expect((await res.json()).error).toMatch(/once it has ended/);
+        // Only the read of the source happened: nothing was copied.
+        expect(made.hunts).toHaveLength(1);
+        expect(made.finds).toBeUndefined();
+      }
+    });
+
+    it("can be copied by its owner and by reviewers at any time, and the copy has no schedule", async () => {
+      for (const user of [{ id: "someone-else", role: "teacher" }, { id: "adm", role: "admin" }]) {
+        h.user = user;
+        const made = install({ hunts: [ok(scheduled(-1, 10)), ok({ id: "new-hunt", title: "Campus Walk (Copy)" })] });
+        const res = await cloneHunt(req("POST", `/api/v1/hunts/${HUNT_ID}/clone`), huntParams);
+        expect(res.status).toBe(201);
+        const huntInsert = made.hunts[1].insert.mock.calls[0][0];
+        expect(huntInsert).not.toHaveProperty("starts_at");
+        expect(huntInsert).not.toHaveProperty("ends_at");
+        expect(made.finds[0].insert.mock.calls[0][0]).not.toHaveProperty("release_at");
+      }
+    });
+
+    it("can be copied by anyone who can see it once it has ended", async () => {
+      install({ hunts: [ok(scheduled(-20, -1)), ok({ id: "new-hunt", title: "Campus Walk (Copy)" })] });
+      const res = await cloneHunt(req("POST", `/api/v1/hunts/${HUNT_ID}/clone`), huntParams);
+      expect(res.status).toBe(201);
+    });
+  });
 });
 
 describe("POST /hunts/{id}/finds", () => {

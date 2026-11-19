@@ -15,8 +15,9 @@ interface PlayMapProps {
  * NavigateMap stretched to fill the screen behind the HUD. NavigateMap sizes
  * itself to a 280px card, so the wrapper overrides its container height and
  * radius, and moves its "Recenter" button to the right edge, clear of the HUD
- * and the thumb zone. Without a map (no key, load error, no location) the
- * plain map-ground colour shows instead; the clue and "I'm here" still work.
+ * and the thumb zone. Without a map (no key, load error, no location, or a
+ * Medium or Hard hunt, where the stop's coordinates never reach the device)
+ * the plain map-ground colour shows instead; the clue and "I'm here" still work.
  */
 export function PlayMap({ location, userPos, zone }: PlayMapProps) {
   const { unavailableReason } = useGoogleMaps();
@@ -31,7 +32,7 @@ export function PlayMap({ location, userPos, zone }: PlayMapProps) {
         "[&>div>button]:!text-ink [&>div>button]:!shadow-raised",
       ].join(" ")}
     >
-      {location && !unavailableReason && (
+      {location && location.latitude != null && location.longitude != null && !unavailableReason && (
         <NavigateMap
           targetLat={location.latitude}
           targetLng={location.longitude}

@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
-import { calculateScore, getGrowthMindsetMessage } from "@/lib/services/scoring";
+import { getGrowthMindsetMessage } from "@/lib/services/scoring";
+import { scoreAnswer, totalSolveMs, type TimedCompletion } from "../../_lib/answer-scoring";
 import { awardReferralPoints } from "@/lib/services/referral";
 import { recordPrivacyNotice, type PrivacyNotice } from "@/lib/services/privacy-notice";
 import { logger } from "@/lib/utils/logger";
@@ -54,7 +55,9 @@ export async function POST(
     if (!session) throw new ApiError(404, "No active play session");
 
     // Clue delivery: only the player's current stop (any stop in all-at-once mode).
-    await assertStopOpen(supabase, { huntId, userId: user.id, session, findId: find_id, route: "/api/v1/play/[huntId]/answer" });
+    // On a scheduled hunt this also refuses a stop that is not released, and
+    // any answer once the hunt has ended; it returns when the stop was released.
+    const { releasedAt } = await assertStopOpen(supabase, { huntId, userId: user.id, session, findId: find_id, route: "/api/v1/play/[huntId]/answer" });
 
     // Get completion record (may already exist from prime-viewed/arrive steps)
     const completion = await getCompletion(supabase, session.id, find_id);
@@ -96,27 +99,29 @@ export async function POST(
       throw new ApiError(400, "Please enter an answer before submitting");
     }
 
-    // Calculate score with full engine
-    const timeSpent = Math.round(
-      (Date.now() - new Date(session.started_at).getTime()) / 1000
-    );
-
-    const scoringResult = calculateScore({
+    // Score under the hunt's scoring version (issue #11). All times are the
+    // server's: version 2 measures this stop from its own start, version 1
+    // from the start of the session as it always has. A hunt's version can't
+    // change once it has play sessions, so one board never mixes scales.
+    const answeredAt = Date.now();
+    const scored = scoreAnswer({
+      huntMetadata: (hunt?.metadata as Record<string, unknown> | null) ?? null,
       isCorrect,
       partialCredit,
       attemptNumber: attemptCount,
-      hintsUsed: completion.hints_used || 0,
-      clueHintsUsed: completion.clue_hints_used || 0,
-      challengeHintsUsed: completion.hints_used || 0,
-      timeSpentSeconds: timeSpent,
+      completion,
+      sessionStartedAt: session.started_at,
+      answeredAt,
       expectedTimeSeconds: (task?.content?.expected_time_seconds as number) || undefined,
-      isFirstAttempt: attemptCount === 1,
       challengeType: task?.challenge_type || "short_text",
+      // Scheduled hunts: half the time points are for how soon after the
+      // stop's release it was solved (version 2 only). Null on other hunts.
+      releasedAt,
     });
 
     const ageBand = bandForUser(profile?.effective_band, user.role);
     const gmMessage = getGrowthMindsetMessage(
-      scoringResult.feedback.type,
+      scored.feedbackType,
       ageBand,
       attemptCount
     );
@@ -128,13 +133,14 @@ export async function POST(
       .from("find_completions")
       .update({
         answer_value: String(answer),
-        score: scoringResult.totalScore,
+        score: scored.totalScore,
         feedback: gmMessage.main,
-        completed_at: isNowComplete ? new Date().toISOString() : null,
+        completed_at: isNowComplete ? new Date(answeredAt).toISOString() : null,
         metadata: {
           ...metadata,
           attempt_count: attemptCount,
-          scoring_breakdown: scoringResult.breakdown,
+          // scoring_version, scoring_breakdown and, on version 2, scoring_timing.
+          ...scored.record,
           last_answer: String(answer),
           is_correct: isCorrect,
         },
@@ -150,7 +156,7 @@ export async function POST(
     // run it together.
     const storeFeedback = supabase.from("answer_feedback").insert({
       completion_id: completion.id,
-      feedback_type: scoringResult.feedback.type,
+      feedback_type: scored.feedbackType,
       main_message: gmMessage.main,
       explanation: gmMessage.explanation,
       next_steps: gmMessage.nextSteps,
@@ -186,28 +192,41 @@ export async function POST(
         }
       };
 
-      // Update session total from all completions.
+      // Update the session's total score and total solve time (the leaderboard
+      // tiebreak) from all its completions.
       const updateTotal = async () => {
         const { data: allCompletions } = await supabase
           .from("find_completions")
-          .select("score")
+          .select("score, started_at, arrived_at, created_at, completed_at")
           .eq("play_session_id", session.id);
-        const totalScore = (allCompletions || []).reduce(
-          (sum: number, c: { score: number }) => sum + (c.score || 0),
-          0
-        );
-        await supabase.from("play_sessions").update({ total_score: totalScore }).eq("id", session.id);
+        const rows = (allCompletions || []) as (TimedCompletion & { score: number | null })[];
+        const totalScore = rows.reduce((sum, c) => sum + (c.score || 0), 0);
+        const { error: totalError } = await supabase
+          .from("play_sessions")
+          .update({ total_score: totalScore, total_solve_ms: totalSolveMs(rows) })
+          .eq("id", session.id);
+        if (totalError) {
+          // total_solve_ms comes with migration 085. Without it, still save
+          // the score: a missing tiebreak must never cost a player their total.
+          logger.warn("play.answer.total_solve_ms_failed", { huntId, error: totalError.message });
+          await supabase.from("play_sessions").update({ total_score: totalScore }).eq("id", session.id);
+        }
       };
 
       const [, , , notice, badges] = await Promise.all([
         storeFeedback,
+        // The ledger adds up points from hunts on either scoring version (tiers,
+        // profile totals), so a stop is entered out of 100 whatever its version.
         supabase.from("points_ledger").insert({
           user_id: user.id,
-          amount: scoringResult.totalScore,
+          amount: scored.comparablePoints,
           source_type: "challenge",
           source_id: find_id,
           hunt_id: huntId,
-          description: `Scored ${scoringResult.totalScore} on find`,
+          description:
+            scored.version === 1
+              ? `Scored ${scored.totalScore} on find`
+              : `Scored ${scored.totalScore} of ${scored.maxScore} on find (${scored.comparablePoints} points)`,
         }),
         updateTotal(),
         huntHidesScores
@@ -220,24 +239,29 @@ export async function POST(
 
       // Referral economy: a recruiter earns a share when their minion scores.
       // Not part of the response, so it runs after it is sent.
+      // The share is taken from the common-scale points, like the ledger entry.
       runAfter("referral_points", () =>
-        awardReferralPoints(user.id, scoringResult.totalScore, find_id, huntId)
+        awardReferralPoints(user.id, scored.comparablePoints, find_id, huntId)
       );
     }
 
-    logger.info("play.answer", { userId: user.id, huntId, findId: find_id, score: scoringResult.totalScore, correct: isCorrect, attempt: attemptCount, durationMs: Math.round(performance.now() - start) });
+    logger.info("play.answer", { userId: user.id, huntId, findId: find_id, score: scored.totalScore, scoringVersion: scored.version, correct: isCorrect, attempt: attemptCount, durationMs: Math.round(performance.now() - start) });
 
     return Response.json({
-      score: scoringResult.totalScore,
-      breakdown: scoringResult.breakdown,
+      score: scored.totalScore,
+      scoring_version: scored.version,
+      max_score: scored.maxScore,
+      // Version 2 only: how long this stop took, for the plain-language breakdown.
+      solve_ms: scored.solveMs,
+      breakdown: scored.breakdown,
       feedback: {
-        type: scoringResult.feedback.type,
+        type: scored.feedbackType,
         main: gmMessage.main,
         explanation: gmMessage.explanation,
         next_steps: gmMessage.nextSteps,
       },
       attempt: attemptCount,
-      can_retry: scoringResult.feedback.canRetry,
+      can_retry: scored.canRetry,
       is_complete: isNowComplete,
       privacy_notice: privacyNotice,
       badges_earned: badgesEarned,
