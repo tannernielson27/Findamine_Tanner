@@ -235,9 +235,11 @@ describe("GET /api/v1/leaderboard?real_names=1: who is refused", () => {
   it("the hunt's creator still gets the board they get today, with or without asking", async () => {
     as(CREATOR);
     const expected = {
-      entries: SESSIONS.filter((s) => s.hunt_id === HUNT).map((s) => ({
+      entries: SESSIONS.filter((s) => s.hunt_id === HUNT).map((s, i) => ({
         user_id: s.user_id,
         score: s.total_score,
+        // Scoring (issue #11) sends each row's rank; these scores are all different.
+        rank: i + 1,
         display_name: USERS.find((u) => u.id === s.user_id)!.display_name,
         avatar_url: null,
         codename: s.codename,
@@ -285,9 +287,11 @@ describe("GET /api/v1/leaderboard without real_names: unchanged for staff", () =
     expect(body.viewer_id).toBe(ADMIN);
     expect(body.me).toBeNull();
     expect(body.entries).toEqual(
-      SESSIONS.filter((s) => s.hunt_id === HUNT).map((s) => ({
+      SESSIONS.filter((s) => s.hunt_id === HUNT).map((s, i) => ({
         user_id: s.user_id,
         score: s.total_score,
+        // Scoring (issue #11) sends each row's rank; these scores are all different.
+        rank: i + 1,
         display_name: USERS.find((u) => u.id === s.user_id)!.display_name,
         avatar_url: null,
         codename: s.codename,

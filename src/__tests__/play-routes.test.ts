@@ -259,16 +259,16 @@ describe("POST /play/[huntId]/arrive hot/cold scale", () => {
   const ping = async (body: Row) => (await arrive(post("/arrive", { find_id: FIND, ...body }), playParams)).json();
 
   it("starts the meter at the first reading and stores nothing about it", async () => {
-    const db = seed();
+    const db = seedStarted();
     const body = await ping(FAR);
     expect(body.hot_cold).toMatchObject({ zone: "icy", markerPercent: 10, distanceLabel: "1.1km" });
     // The client keeps the start of the leg; the privacy policy says only arrivals are stored.
-    expect(db.table("find_completions")).toHaveLength(0);
+    expect(arrivals(db)).toHaveLength(0);
     expect(db.log.every((entry) => entry.op === "select")).toBe(true);
   });
 
   it("scales later readings against the leg start the client echoes back", async () => {
-    const db = seed();
+    const db = seedStarted();
     const first = await ping(FAR);
     const legStart = Math.round(first.distance);
     expect(legStart).toBe(1112);
@@ -279,11 +279,11 @@ describe("POST /play/[huntId]/arrive hot/cold scale", () => {
     for (let i = 1; i < markers.length; i++) expect(markers[i]).toBeGreaterThan(markers[i - 1]);
     expect(markers[0]).toBeGreaterThan(10);
     expect(markers[markers.length - 1]).toBeGreaterThan(70);
-    expect(db.table("find_completions")).toHaveLength(0);
+    expect(arrivals(db)).toHaveLength(0);
   });
 
   it("reads the same spot differently on a short leg and a long one", async () => {
-    seed();
+    seedStarted();
     const onShortLeg = await ping({ ...north(150), leg_start: 300 });
     const onLongLeg = await ping({ ...north(150), leg_start: 3000 });
     expect(onShortLeg.hot_cold.markerPercent).toBeLessThan(onLongLeg.hot_cold.markerPercent);
@@ -293,7 +293,7 @@ describe("POST /play/[huntId]/arrive hot/cold scale", () => {
   });
 
   it("ignores a leg start that isn't a usable number", async () => {
-    seed();
+    seedStarted();
     const plain = (await ping(north(400))).hot_cold;
     for (const leg_start of ["3000", null, 0, -50, "abc"]) {
       expect((await ping({ ...north(400), leg_start })).hot_cold).toEqual(plain);
@@ -301,7 +301,7 @@ describe("POST /play/[huntId]/arrive hot/cold scale", () => {
   });
 
   it("can't be talked into burning by a made-up leg start", async () => {
-    seed();
+    seedStarted();
     for (const leg_start of [1, 51, 1e12]) {
       // 61 m from a 50 m radius: close, but not there.
       const body = await ping({ ...JUST_OUTSIDE, accuracy: 5, leg_start });
@@ -312,7 +312,7 @@ describe("POST /play/[huntId]/arrive hot/cold scale", () => {
   });
 
   it("says burning only inside the stop's radius, and always when the arrival is confirmed", async () => {
-    seed();
+    seedStarted();
     expect((await ping({ ...JUST_OUTSIDE, accuracy: 5 })).hot_cold.zone).toBe("hot");
     // The same fix with ±15 m GPS error passes the arrival check.
     const confirmed = await ping({ ...JUST_OUTSIDE, accuracy: 15 });
@@ -321,7 +321,7 @@ describe("POST /play/[huntId]/arrive hot/cold scale", () => {
   });
 
   it("says burning at the stop even when the fix is too vague to confirm the arrival", async () => {
-    seed();
+    seedStarted();
     const body = await ping({ ...AT_STOP, accuracy: 120 });
     expect(body).toMatchObject({ arrived: false, reason: "weak_gps" });
     expect(body.hot_cold.zone).toBe("burning");
@@ -329,7 +329,7 @@ describe("POST /play/[huntId]/arrive hot/cold scale", () => {
 
   it("holds the zone the client last showed while readings wobble on a boundary", async () => {
     // With a 1112 m start and a 50 m radius, cold turns to warm at about 294 m.
-    seed();
+    seedStarted();
     const at = (meters: number, last_zone?: string) => ping({ ...north(meters), leg_start: 1112, last_zone });
     expect((await at(290)).hot_cold.zone).toBe("warm");
     const held = await at(290, "cold");
@@ -341,7 +341,7 @@ describe("POST /play/[huntId]/arrive hot/cold scale", () => {
   });
 
   it("sends no reading for a stop with hot/cold turned off, whatever the client sends", async () => {
-    seed({ finds: [{ id: FIND, hunt_id: HUNT, task_id: "task-1", location_id: "loc-1", hot_cold_enabled: false }] });
+    seedStarted({ finds: [{ id: FIND, hunt_id: HUNT, task_id: "task-1", location_id: "loc-1", hot_cold_enabled: false }] });
     const body = await ping({ ...FAR, leg_start: 2000, last_zone: "cold" });
     expect(body.hot_cold).toBeNull();
     expect(body.distance).toBeNull();
