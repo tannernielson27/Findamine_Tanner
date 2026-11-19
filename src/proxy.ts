@@ -13,6 +13,7 @@ const CONSENT_ALLOWED_PATHS = [
   "/forgot-password",
   "/reset-password",
   "/email-confirmed",
+  "/confirm-email",
   // Legal pages: parents and pending accounts must be able to read them.
   "/privacy",
   "/terms",

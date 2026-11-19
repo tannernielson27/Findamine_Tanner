@@ -29,7 +29,7 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 vi.mock("@/lib/utils/rate-limit", () => ({ consentVerifyLimiter: { check: h.limiterCheck } }));
 
-import { GET as confirm } from "@/app/api/auth/confirm/route";
+import { GET as confirm, POST as confirmPress } from "@/app/api/auth/confirm/route";
 import { GET as verifyConsent } from "@/app/api/v1/consent/coppa/verify/route";
 import { ApiError } from "@/lib/utils/api-auth";
 
@@ -60,56 +60,35 @@ beforeEach(() => {
   h.consentRecord = null;
 });
 
-describe("GET /api/auth/confirm", () => {
-  it("signs the user in and honors a same-origin next path", async () => {
-    h.verifyOtp.mockResolvedValue({ error: null });
-
-    const res = await confirm(confirmRequest({ token_hash: "tok", type: "signup", next: "/dashboard/join-class" }));
-
-    expect(h.verifyOtp).toHaveBeenCalledWith({ token_hash: "tok", type: "signup" });
-    expect(locationOf(res).pathname).toBe("/dashboard/join-class");
-  });
-
-  it("never follows an off-site next", async () => {
-    h.verifyOtp.mockResolvedValue({ error: null });
-
-    const res = await confirm(confirmRequest({ token_hash: "tok", type: "signup", next: "//evil.example" }));
-
-    expect(locationOf(res).origin).toBe(ORIGIN);
-    expect(locationOf(res).pathname).toBe("/dashboard");
-  });
-
-  it("says 'confirmed, please sign in' when the link was already used (e.g. by a mail scanner)", async () => {
-    h.verifyOtp.mockResolvedValue({ error: { code: "otp_expired", message: "Email link is invalid or has expired" } });
-    h.getUserById.mockResolvedValue({ data: { user: { email_confirmed_at: "2026-10-01T00:00:00Z" } }, error: null });
-
-    const res = await confirm(confirmRequest({ token_hash: "tok", type: "signup", next: "/dashboard", uid: UID }));
-
-    expect(h.getUserById).toHaveBeenCalledWith(UID);
-    const url = locationOf(res);
-    expect(url.pathname).toBe("/login");
-    expect(url.searchParams.get("notice")).toBe("confirmed");
-    expect(url.searchParams.get("error")).toBeNull();
-    expect(url.searchParams.get("next")).toBe("/dashboard");
-  });
-
-  it("offers a resend when the link is dead and the account is still unconfirmed", async () => {
-    h.verifyOtp.mockResolvedValue({ error: { code: "otp_expired", message: "expired" } });
-    h.getUserById.mockResolvedValue({ data: { user: { email_confirmed_at: null } }, error: null });
-
-    const res = await confirm(confirmRequest({ token_hash: "tok", type: "magiclink", uid: UID }));
-
-    expect(locationOf(res).pathname).toBe("/login");
-    expect(locationOf(res).searchParams.get("error")).toBe("confirm_link_invalid");
-  });
-
-  it("does not look anyone up for a link without a well-formed uid", async () => {
-    h.verifyOtp.mockResolvedValue({ error: { code: "otp_expired", message: "expired" } });
-
-    const res = await confirm(confirmRequest({ token_hash: "tok", type: "signup", uid: "not-a-uuid" }));
-
+describe("GET /api/auth/confirm (opening the emailed link)", () => {
+  it("does not spend a confirmation token: it hands the link to the confirm page", async () => {
+    for (const type of ["signup", "magiclink"]) {
+      const res = await confirm(
+        confirmRequest({ token_hash: "tok", type, next: "/dashboard/join-class", uid: UID, app: "1" }, IPHONE_SAFARI)
+      );
+      const url = locationOf(res);
+      expect(url.origin).toBe(ORIGIN);
+      expect(url.pathname).toBe("/confirm-email");
+      expect(Object.fromEntries(url.searchParams)).toEqual({
+        token_hash: "tok",
+        type,
+        next: "/dashboard/join-class",
+        uid: UID,
+        app: "1",
+      });
+    }
+    // What a mail scanner does (open the link, any user agent) changes nothing.
+    await confirm(confirmRequest({ token_hash: "tok", type: "signup" }));
+    expect(h.verifyOtp).not.toHaveBeenCalled();
     expect(h.getUserById).not.toHaveBeenCalled();
-    expect(locationOf(res).searchParams.get("error")).toBe("confirm_link_invalid");
+  });
+
+  it("drops an off-site next and a malformed uid on the way to the confirm page", async () => {
+    const res = await confirm(confirmRequest({ token_hash: "tok", type: "signup", next: "//evil.example", uid: "not-a-uuid" }));
+    const url = locationOf(res);
+    expect(url.pathname).toBe("/confirm-email");
+    expect(url.searchParams.has("next")).toBe(false);
+    expect(url.searchParams.has("uid")).toBe(false);
   });
 
   it("does not spend a password-reset token on the GET", async () => {
@@ -120,25 +99,6 @@ describe("GET /api/auth/confirm", () => {
     expect(locationOf(res).searchParams.get("token_hash")).toBe("tok-recovery");
   });
 
-  it("tells a phone browser to go back to the app when the link was asked for in the app", async () => {
-    h.verifyOtp.mockResolvedValue({ error: null });
-
-    const res = await confirm(
-      confirmRequest({ token_hash: "tok", type: "signup", next: "/dashboard/join-class", app: "1" }, IPHONE_SAFARI)
-    );
-
-    expect(locationOf(res).pathname).toBe("/email-confirmed");
-    expect(locationOf(res).searchParams.get("continue")).toBe("/dashboard/join-class");
-  });
-
-  it("leaves a phone browser alone when the link was asked for on the web", async () => {
-    h.verifyOtp.mockResolvedValue({ error: null });
-
-    const res = await confirm(confirmRequest({ token_hash: "tok", type: "signup", next: "/dashboard" }, IPHONE_SAFARI));
-
-    expect(locationOf(res).pathname).toBe("/dashboard");
-  });
-
   it("goes straight on inside the app (a universal link)", async () => {
     h.verifyOtp.mockResolvedValue({ error: null });
 
@@ -146,6 +106,7 @@ describe("GET /api/auth/confirm", () => {
       confirmRequest({ token_hash: "tok", type: "signup", next: "/dashboard", app: "1" }, IPHONE_APP)
     );
 
+    expect(h.verifyOtp).toHaveBeenCalledWith({ token_hash: "tok", type: "signup" });
     expect(locationOf(res).pathname).toBe("/dashboard");
   });
 
@@ -157,12 +118,102 @@ describe("GET /api/auth/confirm", () => {
     expect(h.verifyOtp).not.toHaveBeenCalled();
   });
 
+  it("rejects a link with a missing token or unknown type", async () => {
+    const res = await confirm(confirmRequest({ type: "invite", token_hash: "tok" }));
+
+    expect(h.verifyOtp).not.toHaveBeenCalled();
+    expect(locationOf(res).searchParams.get("error")).toBe("link_invalid");
+  });
+});
+
+describe("POST /api/auth/confirm (pressing Confirm my email)", () => {
+  function press(fields: Record<string, string>, headers: Record<string, string> = {}): NextRequest {
+    return new NextRequest(`${ORIGIN}/api/auth/confirm`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN, ...headers },
+      body: new URLSearchParams(fields).toString(),
+    });
+  }
+
+  it("signs the user in and honors a same-origin next path", async () => {
+    h.verifyOtp.mockResolvedValue({ error: null });
+
+    const res = await confirmPress(press({ token_hash: "tok", type: "signup", next: "/dashboard/join-class" }));
+
+    expect(h.verifyOtp).toHaveBeenCalledWith({ token_hash: "tok", type: "signup" });
+    // 303, so the browser follows the form post with a GET.
+    expect(res.status).toBe(303);
+    expect(locationOf(res).pathname).toBe("/dashboard/join-class");
+  });
+
+  it("never follows an off-site next", async () => {
+    h.verifyOtp.mockResolvedValue({ error: null });
+
+    const res = await confirmPress(press({ token_hash: "tok", type: "signup", next: "//evil.example" }));
+
+    expect(locationOf(res).origin).toBe(ORIGIN);
+    expect(locationOf(res).pathname).toBe("/dashboard");
+  });
+
+  it("says 'confirmed, please sign in' when the token was already used (e.g. the emailed code)", async () => {
+    h.verifyOtp.mockResolvedValue({ error: { code: "otp_expired", message: "Email link is invalid or has expired" } });
+    h.getUserById.mockResolvedValue({ data: { user: { email_confirmed_at: "2026-10-01T00:00:00Z" } }, error: null });
+
+    const res = await confirmPress(press({ token_hash: "tok", type: "signup", next: "/dashboard", uid: UID }));
+
+    expect(h.getUserById).toHaveBeenCalledWith(UID);
+    const url = locationOf(res);
+    expect(res.status).toBe(303);
+    expect(url.pathname).toBe("/login");
+    expect(url.searchParams.get("notice")).toBe("confirmed");
+    expect(url.searchParams.get("error")).toBeNull();
+    expect(url.searchParams.get("next")).toBe("/dashboard");
+  });
+
+  it("offers a resend when the link is dead and the account is still unconfirmed", async () => {
+    h.verifyOtp.mockResolvedValue({ error: { code: "otp_expired", message: "expired" } });
+    h.getUserById.mockResolvedValue({ data: { user: { email_confirmed_at: null } }, error: null });
+
+    const res = await confirmPress(press({ token_hash: "tok", type: "magiclink", uid: UID }));
+
+    expect(locationOf(res).pathname).toBe("/login");
+    expect(locationOf(res).searchParams.get("error")).toBe("confirm_link_invalid");
+  });
+
+  it("does not look anyone up for a link without a well-formed uid", async () => {
+    h.verifyOtp.mockResolvedValue({ error: { code: "otp_expired", message: "expired" } });
+
+    const res = await confirmPress(press({ token_hash: "tok", type: "signup", uid: "not-a-uuid" }));
+
+    expect(h.getUserById).not.toHaveBeenCalled();
+    expect(locationOf(res).searchParams.get("error")).toBe("confirm_link_invalid");
+  });
+
+  it("tells a phone browser to go back to the app when the link was asked for in the app", async () => {
+    h.verifyOtp.mockResolvedValue({ error: null });
+
+    const res = await confirmPress(
+      press({ token_hash: "tok", type: "signup", next: "/dashboard/join-class", app: "1" }, { "user-agent": IPHONE_SAFARI })
+    );
+
+    expect(locationOf(res).pathname).toBe("/email-confirmed");
+    expect(locationOf(res).searchParams.get("continue")).toBe("/dashboard/join-class");
+  });
+
+  it("leaves a phone browser alone when the link was asked for on the web", async () => {
+    h.verifyOtp.mockResolvedValue({ error: null });
+
+    const res = await confirmPress(press({ token_hash: "tok", type: "signup", next: "/dashboard" }, { "user-agent": IPHONE_SAFARI }));
+
+    expect(locationOf(res).pathname).toBe("/dashboard");
+  });
+
   it("sends a phone browser on an already-used link to the landing page, then to sign in", async () => {
     h.verifyOtp.mockResolvedValue({ error: { message: "Email link is invalid or has expired" } });
     h.getUserById.mockResolvedValue({ data: { user: { email_confirmed_at: "2026-09-15T00:00:00Z" } } });
 
-    const res = await confirm(
-      confirmRequest({ token_hash: "tok", type: "signup", next: "/dashboard", uid: UID, app: "1" }, IPHONE_SAFARI)
+    const res = await confirmPress(
+      press({ token_hash: "tok", type: "signup", next: "/dashboard", uid: UID, app: "1" }, { "user-agent": IPHONE_SAFARI })
     );
 
     expect(locationOf(res).pathname).toBe("/email-confirmed");
@@ -172,11 +223,56 @@ describe("GET /api/auth/confirm", () => {
     expect(continueTo.searchParams.get("next")).toBe("/dashboard");
   });
 
-  it("rejects a link with a missing token or unknown type", async () => {
-    const res = await confirm(confirmRequest({ type: "invite", token_hash: "tok" }));
+  it("decides where a post came from by Origin, then Sec-Fetch-Site, then Referer, and refuses one with none", async () => {
+    h.verifyOtp.mockResolvedValue({ error: null });
+    const bare = (headers: Record<string, string>) =>
+      new NextRequest(`${ORIGIN}/api/auth/confirm`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", ...headers },
+        body: new URLSearchParams({ token_hash: "tok", type: "signup" }).toString(),
+      });
+    const outcome = async (headers: Record<string, string>) => {
+      const url = locationOf(await confirmPress(bare(headers)));
+      return url.searchParams.get("error") ?? url.pathname;
+    };
 
+    expect(await outcome({ "sec-fetch-site": "same-origin" })).toBe("/dashboard");
+    expect(await outcome({ referer: `${ORIGIN}/confirm-email?token_hash=tok` })).toBe("/dashboard");
+    expect(await outcome({ "sec-fetch-site": "cross-site" })).toBe("link_invalid");
+    expect(await outcome({ "sec-fetch-site": "none" })).toBe("link_invalid");
+    expect(await outcome({ referer: "https://evil.example/form" })).toBe("link_invalid");
+    expect(await outcome({ referer: "not a url" })).toBe("link_invalid");
+    expect(await outcome({})).toBe("link_invalid");
+    // A cross-site Origin loses even with a friendly-looking Referer.
+    expect(await outcome({ origin: "https://evil.example", referer: `${ORIGIN}/confirm-email` })).toBe("link_invalid");
+    expect(h.verifyOtp).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends the person back to sign in, not to an error page, when the auth service can't be reached", async () => {
+    h.verifyOtp.mockRejectedValue(new Error("fetch failed"));
+
+    const res = await confirmPress(press({ token_hash: "tok", type: "signup", next: "/dashboard", uid: UID }));
+
+    expect(res.status).toBe(303);
+    expect(locationOf(res).pathname).toBe("/login");
+    expect(locationOf(res).searchParams.get("error")).toBe("confirm_link_invalid");
+    expect(h.getUserById).not.toHaveBeenCalled();
+  });
+
+  it("refuses a form posted from another site, a reset token, and a malformed form", async () => {
+    const refused = [
+      press({ token_hash: "tok", type: "signup" }, { origin: "https://evil.example" }),
+      press({ token_hash: "tok", type: "recovery" }),
+      press({ type: "signup" }),
+      press({ token_hash: "tok", type: "invite" }),
+    ];
+    for (const request of refused) {
+      const res = await confirmPress(request);
+      expect(res.status).toBe(303);
+      expect(locationOf(res).pathname).toBe("/login");
+      expect(locationOf(res).searchParams.get("error")).toBe("link_invalid");
+    }
     expect(h.verifyOtp).not.toHaveBeenCalled();
-    expect(locationOf(res).searchParams.get("error")).toBe("link_invalid");
   });
 });
 

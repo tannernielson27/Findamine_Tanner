@@ -31,6 +31,7 @@ const DISALLOWED_PATHS = [
   "/consent-verified",
   "/forgot-password",
   "/reset-password",
+  "/confirm-email",
   "/login",
   "/register",
   "/play",
