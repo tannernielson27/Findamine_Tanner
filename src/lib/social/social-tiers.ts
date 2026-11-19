@@ -11,7 +11,8 @@
  *
  * Following someone gives the follower nothing: the owner decides who is in
  * their audience by choosing who they follow. Children's and teens' audiences
- * are untouched, whoever the viewer is.
+ * are untouched, whoever the viewer is. A block in either direction closes
+ * both ties, so blocking a crew member takes them out of the owner's audience.
  */
 
 import type { createSupabaseServiceClient } from "@/lib/supabase/server";
@@ -60,12 +61,29 @@ export async function getSocialTies(
     .map((u: { id: string }) => u.id);
   if (eligible.length === 0) return ties;
 
+  // A block in either direction closes every social audience between the two:
+  // blocking is also how an owner takes someone out of their crew's audience.
+  // If the blocks can't be read, grant nothing (a missing table means no blocks).
+  const { data: blockRows, error: blockError } = await supabase
+    .from("user_blocks")
+    .select("blocker_id, blocked_id")
+    .or(`blocker_id.eq.${viewerId},blocked_id.eq.${viewerId}`);
+  if (blockError && !isMissingTable(blockError)) {
+    logReadError("user_blocks", blockError);
+    return ties;
+  }
+  const blockedWith = new Set(
+    (blockRows || []).flatMap((b: { blocker_id: string; blocked_id: string }) => [b.blocker_id, b.blocked_id])
+  );
+  const open = eligible.filter((id) => !blockedWith.has(id));
+  if (open.length === 0) return ties;
+
   const [followed, recruits, recruiters] = await Promise.all([
     // Owners who follow the viewer.
-    supabase.from("player_follows").select("follower_id").eq("followee_id", viewerId).in("follower_id", eligible),
+    supabase.from("player_follows").select("follower_id").eq("followee_id", viewerId).in("follower_id", open),
     // Owners the viewer recruited, and owners who recruited the viewer.
-    supabase.from("minion_links").select("minion_id").eq("recruiter_id", viewerId).in("minion_id", eligible),
-    supabase.from("minion_links").select("recruiter_id").eq("minion_id", viewerId).in("recruiter_id", eligible),
+    supabase.from("minion_links").select("minion_id").eq("recruiter_id", viewerId).in("minion_id", open),
+    supabase.from("minion_links").select("recruiter_id").eq("minion_id", viewerId).in("recruiter_id", open),
   ]);
   logReadError("player_follows", followed.error);
   logReadError("minion_links", recruits.error);

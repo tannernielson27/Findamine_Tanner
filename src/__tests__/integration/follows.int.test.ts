@@ -356,4 +356,22 @@ describe("social audiences", () => {
     expect(db.table("player_follows").map((f) => f.id)).toEqual(["f3"]);
     expect(await getViewerRelationship(ME, ADA)).toBe("public");
   });
+
+  it("closes the crew audience too when either player blocks the other", async () => {
+    // Bo joined Ada's crew with her code; the link itself is not removed by a block.
+    db.table("minion_links").push({ id: "m1", recruiter_id: ADA, minion_id: BO });
+    expect(await getViewerRelationship(BO, ADA)).toBe("team");
+    expect(await getViewerRelationship(ADA, BO)).toBe("team");
+
+    await blockUser(await createSupabaseServiceClient(), ADA, BO);
+    expect(db.table("minion_links")).toHaveLength(1);
+    expect(await getViewerRelationship(BO, ADA)).toBe("public");
+    expect(await getViewerRelationship(ADA, BO)).toBe("public");
+    const bulk = await getViewerRelationships(BO, [ADA, ME]);
+    expect(bulk.get(ADA)).toBe("public");
+
+    // Someone else in Ada's crew is unaffected.
+    db.table("minion_links").push({ id: "m2", recruiter_id: ADA, minion_id: ME });
+    expect(await getViewerRelationship(ME, ADA)).toBe("team");
+  });
 });
