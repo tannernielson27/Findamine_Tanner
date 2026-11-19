@@ -7,6 +7,7 @@ import {
   waveOpensAt,
   DEFAULT_T2_OPEN_DAY,
   type ParticipantSurveyState,
+  type QualtricsWave,
 } from "@/lib/research/qualtrics";
 import { isTestAccount, IN_APP_SURVEYS_ENABLED } from "@/lib/research/study-config";
 import { nextSession, formatAppVersion, SESSION_IDLE_MS } from "@/lib/telemetry/envelope";
@@ -86,13 +87,15 @@ describe("Qualtrics schedule", () => {
   });
 
   it("puts the Study ID in every link and peou=1 only on T2 for the PEOU half", () => {
-    const t2 = new URL(buildSurveyUrl("T2", "FM-ABC234", { peouBlock: true }));
+    const link = (wave: QualtricsWave, peouBlock: boolean) =>
+      new URL(buildSurveyUrl(wave, "FM-ABC234", { peouBlock }, null) ?? "missing:");
+    const t2 = link("T2", true);
     expect(t2.searchParams.get("sid")).toBe("FM-ABC234");
     expect(t2.searchParams.get("src")).toBe("app");
     expect(t2.searchParams.get("peou")).toBe("1");
     expect(t2.pathname).toBe("/jfe/form/SV_54maen9G7fb4g3Y");
-    expect(new URL(buildSurveyUrl("T1", "FM-ABC234", { peouBlock: true })).searchParams.has("peou")).toBe(false);
-    expect(new URL(buildSurveyUrl("T2", "FM-ABC234", { peouBlock: false })).searchParams.has("peou")).toBe(false);
+    expect(link("T1", true).searchParams.has("peou")).toBe(false);
+    expect(link("T2", false).searchParams.has("peou")).toBe(false);
   });
 
   it("reports open, not-yet, done and not-assigned waves", () => {

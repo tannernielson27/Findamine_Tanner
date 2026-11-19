@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
     const wave = body?.wave;
     const action = body?.action;
-    if (!isQualtricsWave(wave)) throw new ApiError(400, "wave must be T0, T1, MID or T2");
+    if (!isQualtricsWave(wave)) throw new ApiError(400, "wave is not a survey of this study");
     if (typeof action !== "string" || !ACTIONS.includes(action as Action)) {
       throw new ApiError(400, "action must be launched or marked_done");
     }
