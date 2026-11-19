@@ -1,5 +1,9 @@
 /**
- * Findamine Scoring Engine
+ * Findamine Scoring Engine, version 1
+ *
+ * Scores hunts on scoring version 1 (lib/hunts/scoring-version.ts): every hunt
+ * made before version 2 (lib/services/scoring-v2.ts). Its results must not
+ * change: stored version 1 scores are research data.
  *
  * Implements the spec from FEATURES/Hunts and Challenges:
  * score = correctness×W1 + masteryBonus×W2 + completion×W3 + speed×W4 - hintPenalty
@@ -66,11 +70,13 @@ export function calculateScore(
   // Apply scoring mode overrides
   const effectiveConfig = { ...config };
   let maxAttempts = 5;
+  // Read into a local: the caller's input is never changed.
+  let partialCredit = input.partialCredit;
 
   switch (input.scoringMode) {
     case "binary":
       // No partial credit, no retries
-      input.partialCredit = undefined;
+      partialCredit = undefined;
       maxAttempts = 1;
       break;
     case "lenient":
@@ -91,8 +97,8 @@ export function calculateScore(
   let correctness = 0;
   if (input.isCorrect) {
     correctness = 100;
-  } else if (input.partialCredit !== undefined) {
-    correctness = Math.round(input.partialCredit * 100);
+  } else if (partialCredit !== undefined) {
+    correctness = Math.round(partialCredit * 100);
   }
 
   // Attempt decay: reduce by 15% per retry
@@ -139,7 +145,7 @@ export function calculateScore(
   // Determine feedback type
   let feedbackType: "correct" | "incorrect" | "partial" = "incorrect";
   if (input.isCorrect) feedbackType = "correct";
-  else if (input.partialCredit && input.partialCredit > 0) feedbackType = "partial";
+  else if (partialCredit && partialCredit > 0) feedbackType = "partial";
 
   return {
     totalScore,
