@@ -64,17 +64,22 @@ export async function getSocialTies(
   // A block in either direction closes every social audience between the two:
   // blocking is also how an owner takes someone out of their crew's audience.
   // If the blocks can't be read, grant nothing (a missing table means no blocks).
-  const { data: blockRows, error: blockError } = await supabase
-    .from("user_blocks")
-    .select("blocker_id, blocked_id")
-    .or(`blocker_id.eq.${viewerId},blocked_id.eq.${viewerId}`);
-  if (blockError && !isMissingTable(blockError)) {
-    logReadError("user_blocks", blockError);
-    return ties;
+  // Each read is limited to the owners being checked, so the answer is
+  // complete however many people the viewer has blocked overall.
+  const [blockedByViewer, blockedViewer] = await Promise.all([
+    supabase.from("user_blocks").select("blocked_id").eq("blocker_id", viewerId).in("blocked_id", eligible),
+    supabase.from("user_blocks").select("blocker_id").eq("blocked_id", viewerId).in("blocker_id", eligible),
+  ]);
+  for (const res of [blockedByViewer, blockedViewer]) {
+    if (res.error && !isMissingTable(res.error)) {
+      logReadError("user_blocks", res.error);
+      return ties;
+    }
   }
-  const blockedWith = new Set(
-    (blockRows || []).flatMap((b: { blocker_id: string; blocked_id: string }) => [b.blocker_id, b.blocked_id])
-  );
+  const blockedWith = new Set<string>([
+    ...(blockedByViewer.data || []).map((b) => (b as { blocked_id: string }).blocked_id),
+    ...(blockedViewer.data || []).map((b) => (b as { blocker_id: string }).blocker_id),
+  ]);
   const open = eligible.filter((id) => !blockedWith.has(id));
   if (open.length === 0) return ties;
 
