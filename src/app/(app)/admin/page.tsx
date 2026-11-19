@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { BackButton } from "@/components/ui/back-button";
 import { createSupabaseServerClient, createSupabaseServiceClient } from "@/lib/supabase/server";
 
 export default async function AdminPage() {
@@ -36,6 +37,8 @@ export default async function AdminPage() {
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-4">
+      {/* Admin pages have no tab bar (shellChromeFor); Admin is opened from Profile. */}
+      <BackButton fallbackHref="/dashboard/profile" className="mb-3" />
       <h1 className="text-lg font-semibold text-gray-900 mb-4">Admin Dashboard</h1>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">

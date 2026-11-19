@@ -19,6 +19,8 @@ interface PlayHudProps {
   onShowClues?: (() => void) | null;
   /** Clue hint: null hides the button (steps without a clue hint). */
   hint: { available: boolean; onRequest: () => void } | null;
+  /** Points one clue hint costs on this hunt's scoring version (2 or 20). */
+  hintCost?: number;
   /** "More" menu: Previous stop (null on the first stop) and Report a problem. */
   more: { onPrevious: (() => void) | null; reportTargetId: string; resetKey: string };
 }
@@ -36,6 +38,7 @@ export function PlayHud({
   delivery,
   onShowClues = null,
   hint,
+  hintCost = 2,
   more,
 }: PlayHudProps) {
   const marker = delivery ? (
@@ -72,7 +75,7 @@ export function PlayHud({
 
       {hint ? (
         <IconButton
-          label={hint.available ? "Get a clue hint (costs 2 points)" : "No more clue hints for this stop"}
+          label={hint.available ? `Get a clue hint (costs ${hintCost} points)` : "No more clue hints for this stop"}
           tone="floating"
           size="lg"
           onClick={hint.onRequest}
@@ -85,7 +88,7 @@ export function PlayHud({
               aria-hidden="true"
               className="absolute -right-1 -top-1 rounded-full bg-ink px-1.5 py-0.5 text-[11px] font-bold leading-none text-white tabular-nums"
             >
-              −2
+              −{hintCost}
             </span>
           )}
         </IconButton>

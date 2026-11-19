@@ -1,4 +1,18 @@
 import Link from "next/link";
+import { BackButton } from "@/components/ui/back-button";
+
+/**
+ * This page opens from an emailed link, usually with nothing behind it, so
+ * Back falls back to the launch screen (which sends a signed-in visitor on
+ * into the app).
+ */
+function BackRow() {
+  return (
+    <div className="text-left">
+      <BackButton fallbackHref="/" />
+    </div>
+  );
+}
 
 const ERROR_COPY: Record<string, { title: string; body: string }> = {
   invalid: {
@@ -28,6 +42,7 @@ export default async function ConsentVerifiedPage({
     return (
       <main className="flex min-h-screen items-center justify-center bg-white px-4">
         <div className="w-full max-w-sm space-y-6 text-center">
+          <BackRow />
           <div className="text-5xl" aria-hidden="true">⚠️</div>
           <h1 className="text-xl font-bold text-gray-900">{problem.title}</h1>
           <p className="text-gray-600">{problem.body}</p>
@@ -45,6 +60,7 @@ export default async function ConsentVerifiedPage({
   return (
     <main className="flex min-h-screen items-center justify-center bg-white px-4">
       <div className="w-full max-w-sm space-y-6 text-center">
+        <BackRow />
         <div className="text-5xl">{alreadyVerified ? "👍" : "✅"}</div>
         <h1 className="text-xl font-bold text-gray-900">
           {alreadyVerified ? "Already Verified" : "Consent Verified!"}

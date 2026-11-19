@@ -230,7 +230,7 @@ export const CLUE_DELIVERY_LABELS: Record<ClueDelivery, string> = {
 };
 
 export const CLUE_DELIVERY_DESCRIPTIONS: Record<ClueDelivery, string> = {
-  all_at_once: "Players see every clue and choose which one to work on.",
+  all_at_once: "Players choose which stop to work on. Each clue appears when they start that stop.",
   fixed_order: "Everyone gets the stops in your order.",
   assigned_order: "Each player is assigned one of the orders you define.",
   random_order: "Each player gets the stops in their own random order.",

@@ -13,8 +13,11 @@ export interface AuditEntry {
   user_id: string;
   action: "create" | "update" | "delete";
   entity_type: string;
-  /** Must be a UUID (the affected row's id). */
-  entity_id: string;
+  /**
+   * Must be a UUID (the affected row's id), or null when the action is not
+   * about one row (the column is nullable), e.g. the overall leaderboard.
+   */
+  entity_id: string | null;
   new_values?: Record<string, unknown> | null;
   old_values?: Record<string, unknown> | null;
 }

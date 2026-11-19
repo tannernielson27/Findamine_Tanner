@@ -43,8 +43,12 @@ export async function recordArrival(
   const existing = await getCompletion(supabase, sessionId, findId);
 
   if (!existing) {
+    // The arrive routes require a started stop, so a row normally exists. If
+    // one is ever created here, the arrival is also the latest it can have started.
+    const arrivedAt = new Date().toISOString();
     const inserted = await insertCompletion(supabase, sessionId, findId, {
-      arrived_at: new Date().toISOString(),
+      started_at: arrivedAt,
+      arrived_at: arrivedAt,
       metadata: arrival,
     });
     // Lost a race: the other request's row may already carry an arrival.

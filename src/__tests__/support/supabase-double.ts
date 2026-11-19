@@ -28,6 +28,8 @@ export interface EmbedSpec {
   localKey: string;
   /** Column on the embedded table matched against localKey (default "id"). */
   foreignKey?: string;
+  /** One-to-many: embed every matching row as an array, as PostgREST does. */
+  many?: boolean;
 }
 
 export interface DoubleOptions {
@@ -117,7 +119,7 @@ function splitTop(s: string): string[] {
 class Query implements PromiseLike<Result> {
   private op: Op | null = null;
   private filters: Filter[] = [];
-  private orderBy: { col: string; asc: boolean }[] = [];
+  private orderBy: { col: string; asc: boolean; nullsFirst?: boolean }[] = [];
   private limitN: number | null = null;
   private rangeFrom: number | null = null;
   private rangeTo: number | null = null;
@@ -218,8 +220,8 @@ class Query implements PromiseLike<Result> {
     this.filters.push((r) => clauses.some((c) => c(r)));
     return this;
   }
-  order(col: string, opts: { ascending?: boolean } = {}) {
-    this.orderBy.push({ col, asc: opts.ascending !== false });
+  order(col: string, opts: { ascending?: boolean; nullsFirst?: boolean } = {}) {
+    this.orderBy.push({ col, asc: opts.ascending !== false, nullsFirst: opts.nullsFirst });
     return this;
   }
   limit(n: number) {
@@ -282,14 +284,18 @@ class Query implements PromiseLike<Result> {
       }
       if (!spec) throw new Unsupported(`embed ${this.table}.${head} (register it in DoubleOptions.embeds)`);
       const fk = spec.foreignKey ?? "id";
-      const target = this.db.table(spec.table).find((t) => eq(t[fk], row[spec!.localKey]));
-      if (!target) {
-        out[alias] = null;
+      const pick = (target: Row): Row => {
+        if (inner.trim() === "*") return { ...target };
+        const sub: Row = {};
+        for (const c of splitTop(inner)) sub[c] = c === "*" ? undefined : target[c];
+        return sub;
+      };
+      if (spec.many) {
+        out[alias] = this.db.table(spec.table).filter((t) => eq(t[fk], row[spec!.localKey])).map(pick);
         continue;
       }
-      const sub: Row = {};
-      for (const c of splitTop(inner)) sub[c] = c === "*" ? undefined : target[c];
-      out[alias] = inner.trim() === "*" ? { ...target } : sub;
+      const target = this.db.table(spec.table).find((t) => eq(t[fk], row[spec!.localKey]));
+      out[alias] = target ? pick(target) : null;
     }
     return out;
   }
@@ -297,7 +303,13 @@ class Query implements PromiseLike<Result> {
   private finish(data: Row[]): Result {
     let rows = data;
     for (const o of [...this.orderBy].reverse()) {
-      rows = [...rows].sort((a, b) => (o.asc ? 1 : -1) * cmp(a[o.col], b[o.col]));
+      rows = [...rows].sort((a, b) => {
+        // An explicit nullsFirst places nulls regardless of direction, as Postgres does.
+        if (o.nullsFirst !== undefined && (a[o.col] == null) !== (b[o.col] == null)) {
+          return (a[o.col] == null) === o.nullsFirst ? -1 : 1;
+        }
+        return (o.asc ? 1 : -1) * cmp(a[o.col], b[o.col]);
+      });
     }
     if (this.rangeFrom !== null && this.rangeTo !== null) rows = rows.slice(this.rangeFrom, this.rangeTo + 1);
     if (this.limitN !== null) rows = rows.slice(0, this.limitN);

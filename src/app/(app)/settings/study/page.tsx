@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, ClipboardList, Copy, Check, ExternalLink } from "lucide-react";
+import { ClipboardList, Copy, Check, ExternalLink } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import { useStudySurveys, type StudyWave } from "@/components/study/use-study-surveys";
 import { CONTACT_EMAIL } from "@/lib/constants/legal";
 import WithdrawControl from "@/components/study/withdraw-control";
@@ -18,13 +18,8 @@ export default function StudyPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
-      <Link
-        href="/settings"
-        className="inline-flex min-h-11 items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 mb-4"
-      >
-        <ArrowLeft aria-hidden="true" className="w-4 h-4" />
-        Settings
-      </Link>
+      {/* Reached from Settings and from survey notifications. */}
+      <BackButton fallbackHref="/settings" className="mb-4" />
 
       <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold text-gray-900 flex items-center gap-2 mb-4">
         <ClipboardList aria-hidden="true" className="w-6 h-6 shrink-0 text-brand" />

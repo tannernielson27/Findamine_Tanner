@@ -9,6 +9,8 @@ import { GRADE_BANDS, DEFAULT_GRADE_BAND, gradeBandFor } from "@/lib/utils/grade
 import { withClueDelivery, type ClueDelivery } from "@/lib/play/clue-delivery";
 import { ClueDeliveryBadge } from "@/components/hunts/shuffle-badge";
 import { ClueDeliveryPicker } from "@/components/hunts/clue-delivery-picker";
+import { DifficultyPicker } from "@/components/hunts/difficulty-picker";
+import { withNavigationHelp, type NavigationHelp } from "@/lib/play/navigation-help";
 import { DEFAULT_STOP_RADIUS_M } from "@/lib/play/arrival-check";
 
 const SUBJECTS = [
@@ -63,6 +65,18 @@ function ClueDeliveryField({ value, onChange, name }: { value: ClueDelivery; onC
   );
 }
 
+/** How much help players get finding each stop (lib/play/navigation-help), shared by the manual and AI forms. */
+function DifficultyField({ value, onChange, name }: { value: NavigationHelp; onChange: (level: NavigationHelp) => void; name: string }) {
+  return (
+    <div className="rounded-lg border border-gray-200 p-3">
+      <DifficultyPicker name={name} value={value} onChange={onChange} />
+      <p className="text-xs text-gray-500 mt-2">
+        You can change this until the hunt is published or first played; then it is locked.
+      </p>
+    </div>
+  );
+}
+
 /** POST JSON and return the parsed body, throwing the server's own message on failure. */
 async function postJson(url: string, body: unknown, failure: string) {
   const res = await fetch(url, {
@@ -100,6 +114,8 @@ export default function NewHuntPage() {
   const [identityMode, setIdentityMode] = useState("codename_assigned");
   // How clues are handed out (hunt metadata clue_delivery).
   const [clueDelivery, setClueDelivery] = useState<ClueDelivery>("fixed_order");
+  // How much navigation help players get (hunt metadata navigation_help).
+  const [difficulty, setDifficulty] = useState<NavigationHelp>("easy");
   // Set when the AI hunt was created but some of its stops could not be.
   const [partialHuntId, setPartialHuntId] = useState<string | null>(null);
 
@@ -139,7 +155,7 @@ export default function NewHuntPage() {
         estimated_duration_min: form.get("duration") ? parseInt(form.get("duration") as string) : null,
         center_latitude: centerLat,
         center_longitude: centerLng,
-        metadata: withClueDelivery(selectedPreset?.settings.metadata ?? {}, clueDelivery),
+        metadata: withNavigationHelp(withClueDelivery(selectedPreset?.settings.metadata ?? {}, clueDelivery), difficulty),
       }),
     }).catch(() => null);
 
@@ -221,7 +237,7 @@ export default function NewHuntPage() {
         theme_narrative: aiResult.theme_narrative || null,
         difficulty_progression: aiDifficulty,
         subject_domains: aiSubjects,
-        metadata: withClueDelivery({}, clueDelivery),
+        metadata: withNavigationHelp(withClueDelivery({}, clueDelivery), difficulty),
       }, "Failed to create hunt");
       if (!huntData?.hunt?.id) throw new Error("Failed to create hunt: the server returned no hunt");
       huntId = huntData.hunt.id as string;
@@ -389,6 +405,7 @@ export default function NewHuntPage() {
             <input id="duration" name="duration" type="number" min={5} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500" placeholder="30" />
           </div>
           <ClueDeliveryField name="clue_delivery" value={clueDelivery} onChange={setClueDelivery} />
+          <DifficultyField name="difficulty" value={difficulty} onChange={setDifficulty} />
           <div>
             <button
               type="button"
@@ -499,6 +516,7 @@ export default function NewHuntPage() {
           </div>
 
           <ClueDeliveryField name="ai_clue_delivery" value={clueDelivery} onChange={setClueDelivery} />
+          <DifficultyField name="ai_difficulty" value={difficulty} onChange={setDifficulty} />
 
           <div className="flex gap-3 pt-2">
             <button onClick={handleAIGenerate} disabled={loading || aiSubjects.length === 0} className="rounded-md bg-violet-600 px-6 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50">

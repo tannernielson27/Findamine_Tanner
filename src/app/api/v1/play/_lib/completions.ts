@@ -11,12 +11,17 @@ import { ApiError } from "@/lib/utils/api-auth";
  */
 
 const COMPLETION_COLUMNS =
-  "id, arrived_at, completed_at, hints_used, clue_hints_used, metadata, created_at";
+  "id, started_at, arrived_at, completed_at, hints_used, clue_hints_used, metadata, created_at";
 
 const UNIQUE_VIOLATION = "23505";
 
 export interface CompletionRow {
   id: string;
+  /**
+   * When the player started this stop (migration 084). Null only on rows the
+   * old code wrote after the backfill: read it through stopStartedAt().
+   */
+  started_at: string | null;
   arrived_at: string | null;
   completed_at: string | null;
   hints_used: number | null;

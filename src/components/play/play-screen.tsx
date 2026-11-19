@@ -1,19 +1,22 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { MapPinned } from "lucide-react";
+import { Compass, MapPinned } from "lucide-react";
 import { useGoogleMaps } from "@/components/maps/use-google-maps";
 import { PlayMap } from "@/components/play/play-map";
 import { PlayHud } from "@/components/play/play-hud";
+import { HINT_COSTS, readScoringVersion } from "@/lib/hunts/scoring-version";
 import { ProximityPanel } from "@/components/play/proximity-panel";
 import { ErrorBanner, GpsBanners, OfflineBanner, PlayBanner } from "@/components/play/play-banners";
 import { ThumbZone } from "@/components/play/thumb-zone";
 import { ChallengeSheet } from "@/components/play/challenge-sheet";
 import { StopResults } from "@/components/play/stop-results";
-import { PrimeStep, ReadingCheckStep } from "@/components/play/steps/prime-step";
+import { PrimeStep, ReadyGate, ReadingCheckStep } from "@/components/play/steps/prime-step";
 import { ClueBoard } from "@/components/play/clue-board";
 import { useWakeLock } from "@/lib/play/use-wake-lock";
 import { useHeatHaptics, useOnlineStatus } from "@/lib/play/use-play-feedback";
+import { useTicker } from "@/lib/play/use-ticker";
+import { NAVIGATION_HELP_PLAY_NOTES, navigationAids } from "@/lib/play/navigation-help";
 import type { PlaySession } from "@/lib/play/use-play-session";
 import type { StopFlow } from "@/lib/play/use-stop-flow";
 
@@ -31,7 +34,10 @@ interface PlayScreenProps {
  * No app chrome; the screen stays awake while it is mounted.
  */
 export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps) {
-  const { finds, currentIndex, completedFinds, huntMeta, delivery, clueBoardOpen, setClueBoardOpen } = session;
+  const { finds, currentIndex, completedFinds, huntMeta, delivery, navigationHelp, clueBoardOpen, setClueBoardOpen } = session;
+  const schedule = session.schedule ?? null;
+  // Countdowns run on the server's clock, re-read twice a minute.
+  const nowMs = useTicker(schedule ? 30_000 : null) + (session.clockOffsetMs ?? 0);
   const { step, hotCold, gpsStatus, userPos, locationConsent, error, setError, hints } = flow;
   const currentFind = finds[currentIndex];
   const stopNumber = currentIndex + 1;
@@ -45,8 +51,12 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
   // All clues at once: the player picks the active clue from a list, and the
   // last stop is whichever one finishes the set.
   const allAtOnce = delivery === "all_at_once";
-  const boardOpen = allAtOnce && clueBoardOpen;
-  const currentOpen = !!currentFind && !completedFinds.has(currentFind.id);
+  // Scheduled hunts: a stop that is not out yet can't be worked on, and once
+  // the hunt has ended nothing can. Both leave the player on the list.
+  const currentHeld = !!currentFind?.release_at;
+  const ended = schedule?.phase === "ended";
+  const boardOpen = allAtOnce && (clueBoardOpen || currentHeld || (ended && !completedFinds.has(currentFind?.id ?? "")));
+  const currentOpen = !!currentFind && !completedFinds.has(currentFind.id) && !currentHeld;
   const isLastStop = allAtOnce
     ? finds.every((f) => f.id === currentFind?.id || completedFinds.has(f.id))
     : currentIndex === finds.length - 1;
@@ -56,12 +66,20 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
     if (index >= 0) session.setCurrentIndex(index);
     setClueBoardOpen(false);
   };
-  const target = currentFind?.locations
-    ? { lat: currentFind.locations.latitude, lng: currentFind.locations.longitude }
-    : null;
+  // Difficulty: Easy shows the map and the meter, Medium the meter, Hard
+  // neither. The server holds back what a level hides (no coordinates on
+  // Medium or Hard, no distance or zone on Hard); this decides what to draw.
+  const aids = navigationAids(navigationHelp);
+  const helpNote = NAVIGATION_HELP_PLAY_NOTES[navigationHelp];
+  // The server sends a stop's place only once the stop is started; the check
+  // here keeps the map, pin and compass empty before that whatever arrives.
+  const place = aids.map && currentFind?.started_at ? currentFind.locations : null;
+  const target =
+    place && place.latitude != null && place.longitude != null ? { lat: place.latitude, lng: place.longitude } : null;
+  const meterReading = aids.meter ? hotCold : null;
 
   useWakeLock(true);
-  useHeatHaptics(navigating ? hotCold?.zone : null);
+  useHeatHaptics(navigating ? meterReading?.zone : null);
 
   const errorBanner = error ? <ErrorBanner message={error} onDismiss={() => setError(null)} /> : null;
   // In a step sheet the banners go inside it, so they never cover the sheet's top.
@@ -76,7 +94,7 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
 
   return (
     <main className="fixed inset-0 z-[51] overflow-hidden bg-map-ground text-ink">
-      <PlayMap location={currentFind?.locations ?? null} userPos={userPos} zone={navigating ? hotCold?.zone ?? null : null} />
+      <PlayMap location={place} userPos={userPos} zone={navigating ? meterReading?.zone ?? null : null} />
 
       <div className="absolute inset-x-4 top-[calc(12px+env(safe-area-inset-top))] z-10 flex flex-col gap-2.5">
         <PlayHud
@@ -86,21 +104,27 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
           delivery={delivery}
           onShowClues={allAtOnce ? () => setClueBoardOpen(true) : null}
           hint={hudHint}
+          hintCost={HINT_COSTS[readScoringVersion(huntMeta as Record<string, unknown>)].clue}
           more={{
             onPrevious,
             reportTargetId: currentFind?.id || String(huntId),
             resetKey: `${currentFind?.id ?? currentIndex}:${step}`,
           }}
         />
-        {navigating && granted && gpsOk && (
-          <ProximityPanel hotCold={hotCold} gpsStatus={gpsStatus} userPos={userPos} target={target} />
+        {/* The meter and its screen-reader announcements exist only where the level allows them. */}
+        {navigating && granted && gpsOk && aids.meter && (
+          <ProximityPanel hotCold={meterReading} gpsStatus={gpsStatus} userPos={userPos} target={target} />
+        )}
+        {/* Says why an aid is missing: with the clue, and in place of the meter on Hard. */}
+        {(step === "clue" || (navigating && !aids.meter)) && helpNote && (
+          <PlayBanner icon={<Compass className="h-6 w-6 text-link" aria-hidden="true" />}>{helpNote}</PlayBanner>
         )}
         {!sheetOpen && !resultsOpen && errorBanner}
         {!online && !sheetOpen && !resultsOpen && <OfflineBanner />}
         {navigating && granted && (
           <GpsBanners gpsStatus={gpsStatus} accuracy={userPos?.accuracy ?? null} onRetry={() => flow.setGpsStatus("waiting")} />
         )}
-        {navigating && unavailableReason && (
+        {navigating && aids.map && unavailableReason && (
           <PlayBanner icon={<MapPinned className="h-6 w-6 text-link" aria-hidden="true" />}>
             Map unavailable. You can still follow the clue to find this stop.
           </PlayBanner>
@@ -116,11 +140,31 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
           activeId={currentOpen ? currentFind?.id ?? null : null}
           onPick={pickClue}
           onClose={currentOpen ? () => setClueBoardOpen(false) : null}
+          schedule={schedule}
+          nowMs={nowMs}
+          onFinish={ended ? flow.handleFinishHunt : null}
+          finishing={flow.finishing}
         />
       )}
 
-      {step === "prime" && currentFind?.primers && (
-        <PrimeStep stopNumber={stopNumber} primer={currentFind.primers} onReady={flow.handlePrimeViewed} errorSlot={sheetBanners} />
+      {/* Every stop starts with "I'm ready": after its primer, or on a plain gate. */}
+      {step === "prime" && currentFind?.primers && !currentHeld && (
+        <PrimeStep
+          stopNumber={stopNumber}
+          primer={currentFind.primers}
+          onReady={flow.handleReady}
+          busy={flow.starting}
+          errorSlot={sheetBanners}
+        />
+      )}
+      {step === "prime" && currentFind && !currentFind.primers && !currentHeld && (
+        <ReadyGate
+          stopNumber={stopNumber}
+          open={currentFind.open}
+          onReady={flow.handleReady}
+          busy={flow.starting}
+          errorSlot={sheetBanners}
+        />
       )}
       {step === "reading_check" && currentFind?.reading_check && (
         <ReadingCheckStep
@@ -149,6 +193,7 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
           hideScores={!!huntMeta.hide_scores}
           feedback={flow.feedback}
           breakdown={flow.breakdown}
+          solveMs={flow.solveMs}
           alreadyCompleted={completedFinds.has(currentFind?.id || "")}
           error={error}
           noticeVisible={!!flow.privacyNotice}

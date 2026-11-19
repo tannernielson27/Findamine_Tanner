@@ -16,11 +16,15 @@ import { ShareButton } from "@/components/explore/share-button";
 import { StatRow } from "@/components/explore/stat-row";
 import { ClueDeliveryBadge } from "@/components/hunts/shuffle-badge";
 import { readClueDelivery } from "@/lib/play/clue-delivery";
+import { readNavigationHelp } from "@/lib/play/navigation-help";
+import { DifficultySummary } from "@/components/hunts/difficulty-badge";
+import { ScheduleSummary, huntScheduleView } from "@/components/hunts/schedule-summary";
 import { StartMapPreview } from "@/components/explore/start-map-preview";
 import { ChallengeChips, DetailSection, subjectLabel } from "@/components/explore/hunt-detail-parts";
 import { isPubliclyAvailable, isReviewer } from "@/lib/hunts/review";
 import { audienceLabel, shortPlayMode } from "@/lib/hunts/card-data";
 import { isCampusHunt } from "@/lib/hunts/explore-filters";
+import { canViewRealNames } from "@/lib/social/real-names";
 import { formatPlayMode } from "../hunt-meta";
 import { getBrowseViewer } from "../viewer";
 import { DetailCtaBar } from "./detail-cta-bar";
@@ -80,9 +84,17 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
 
   const finds = liveFinds(hunt.finds as DetailFind[] | null);
   const delivery = readClueDelivery(hunt.metadata as Record<string, unknown> | null);
+  // How much help players get finding each stop: shown before they start.
+  const difficulty = readNavigationHelp(hunt.metadata as Record<string, unknown> | null);
+  // Scheduled hunts (issue #14): the dates, and no Start outside the window.
+  const schedule = huntScheduleView(hunt);
   // Only the creator's fixed order has one starting stop for everyone.
   const shuffled = delivery !== "fixed_order";
-  const start = startArea(finds, hunt.center_latitude, hunt.center_longitude, { shuffled });
+  // A stop's location is released in play, when the player starts that stop,
+  // and not before: players see the hunt's general area here. Only the owner
+  // and reviewers are shown where stop 1 is.
+  const showsFirstStop = canSeeStops && !shuffled;
+  const start = startArea(finds, hunt.center_latitude, hunt.center_longitude, { firstStop: showsFirstStop });
   const tags = [
     audienceLabel(hunt.target_audience),
     ...((hunt.subject_domains as string[] | null) ?? []).map(subjectLabel),
@@ -178,17 +190,31 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
           </DetailSection>
         )}
 
+        {schedule && (
+          <DetailSection id="schedule-heading" title="Schedule">
+            <ScheduleSummary window={schedule.window} timeZone={schedule.timeZone} nowMs={schedule.nowMs} />
+          </DetailSection>
+        )}
+
+        <DetailSection id="difficulty-heading" title="Difficulty">
+          <DifficultySummary level={difficulty} />
+        </DetailSection>
+
         {start && (
           <DetailSection
             id="start-heading"
-            title={shuffled ? "Where it takes place" : "Where it starts"}
+            title={showsFirstStop ? "Where it starts" : "Where it takes place"}
             note={
               <p className="text-sm text-themed-muted">
-                {delivery === "all_at_once"
-                  ? "Every clue is open from the start, and you choose which stop to work on."
+                {schedule
+                  ? "Stops open on the hunt's schedule, and you choose which open one to work on."
+                  : delivery === "all_at_once"
+                  ? "Every stop is open from the start, and you choose which one to work on."
                   : shuffled
                   ? "Stops come in a different order for different players and stay hidden until you reach them."
-                  : "Later stops stay hidden until you reach them."}
+                  : showsFirstStop
+                  ? "This is stop 1. Players see only the hunt's general area here: each stop stays hidden until they start it."
+                  : "Each stop stays hidden until you start it."}
               </p>
             }
           >
@@ -211,7 +237,7 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
                 Only you and reviewers see the route and clues. Players see the start area.
                 {delivery === "random_order" && " Shuffled: each player gets these stops in a random order."}
                 {delivery === "assigned_order" && " Each player is assigned one of your clue orders."}
-                {delivery === "all_at_once" && " Players see every clue at once and pick their own order."}
+                {delivery === "all_at_once" && " Players pick their own order; each clue appears when they start that stop."}
               </p>
             }
           >
@@ -234,7 +260,8 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
         )}
 
         <div className="[&>div]:rounded-[18px] [&>div]:shadow-none">
-          <Leaderboard huntId={hunt.id} />
+          {/* Admins and researchers are offered real names; the hunt's creator is not. */}
+          <Leaderboard huntId={hunt.id} canShowRealNames={canViewRealNames(viewer)} />
         </div>
 
         <HuntRating huntId={hunt.id} />
@@ -256,7 +283,7 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
         </div>
       </div>
 
-      <DetailCtaBar huntId={hunt.id} status={hunt.status} playable={isPlayable} teamHunt={isTeamHunt} signedIn={!!viewer} ownerPreview={ownerPreview} />
+      <DetailCtaBar huntId={hunt.id} status={hunt.status} playable={isPlayable} teamHunt={isTeamHunt} signedIn={!!viewer} ownerPreview={ownerPreview} scheduleNote={schedule?.blockNote ?? null} />
     </main>
   );
 }

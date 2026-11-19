@@ -15,15 +15,46 @@ export interface ReadingCheckQuestion {
   correct_answer: string;
 }
 
+/**
+ * A stop as the play API sends it (GET /api/v1/play/[huntId]/stops).
+ *
+ * Until the player starts the stop (`started_at` is null) the server sends no
+ * clue, place, challenge or reading check: those fields are null. The primer
+ * is the "before you start" reading, so it comes with a stop that is `open`.
+ */
 export interface Find {
   id: string;
   sort_order: number;
+  /** When this player started the stop (server time); null until they tap "I'm ready". */
+  started_at: string | null;
+  /** The player's clue order lets them start (or keep working on) this stop now. */
+  open: boolean;
+  /**
+   * Scheduled hunts: set on a stop that has not been released yet, to the
+   * time it opens (ISO, UTC). Absent once it is out, and on play-anytime hunts.
+   */
+  release_at?: string | null;
   clue_text: string | null;
-  hot_cold_enabled: boolean;
+  hot_cold_enabled: boolean | null;
   scaffolding_level: string | null;
   reading_check: { enabled: boolean; questions: ReadingCheckQuestion[] } | null;
-  locations: { name: string; latitude: number; longitude: number; radius_meters: number; safety_notes?: string | null } | null;
+  /**
+   * The stop's place. On Medium and Hard hunts (lib/play/navigation-help) the
+   * name and coordinates are null until the player has completed the stop.
+   */
+  locations: {
+    name: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    radius_meters: number;
+    safety_notes?: string | null;
+  } | null;
   tasks: { title: string; challenge_type: string; content: Record<string, unknown> } | null;
+  /**
+   * Medium and Hard hunts: the stop has a challenge, and the server is holding
+   * it until the player has arrived. Ask start-stop for the stop again then.
+   */
+  challenge_pending?: boolean;
   primers: { title: string; content: Record<string, unknown> } | null;
 }
 
@@ -39,6 +70,22 @@ export interface HuntMetadata {
   shuffle_stops?: boolean;
   /** How clues are handed out (lib/play/clue-delivery). */
   clue_delivery?: string;
+  /** How much navigation help players get: "Difficulty" (lib/play/navigation-help). */
+  navigation_help?: string;
+}
+
+/**
+ * A scheduled hunt's window as the play API reports it (GET .../stops). Times
+ * are ISO, UTC. `server_time` is the server's clock when the reply was made:
+ * countdowns are measured against it, not the device's clock.
+ */
+export interface PlaySchedule {
+  starts_at: string;
+  ends_at: string;
+  phase: "upcoming" | "open" | "ended";
+  /** The next release still to come, or null when every stop is out. */
+  next_release_at: string | null;
+  server_time: string;
 }
 
 export interface HotCold {
@@ -47,6 +94,8 @@ export interface HotCold {
   label: string;
   emoji: string;
   distanceLabel: string;
+  /** Marker position on the meter, % from the cold end, worked out by the server with the zone. */
+  markerPercent?: number;
 }
 
 export interface AnswerFeedback {

@@ -7,7 +7,7 @@ import {
   ApiError,
 } from "@/lib/utils/api-auth";
 import { parseFindFields } from "../../find-fields";
-import { canSeeAnswerKeys, redactAnswerKeys } from "../../redact-finds";
+import { findsForViewer } from "../../redact-finds";
 import { assertCleanFindText, canAccessHunt, requeuedMessage, settleRequeue } from "@/lib/hunts/review";
 import { internalError } from "@/lib/utils/internal-error";
 import { assertStopSetEditable } from "../../delivery-guard";
@@ -43,10 +43,9 @@ export async function GET(
 
     if (error) throw internalError("/api/v1/hunts/[id]/finds", error);
 
-    const rows = finds || [];
-    return Response.json({
-      finds: canSeeAnswerKeys(user, hunt?.created_by ?? null) ? rows : redactAnswerKeys(rows),
-    });
+    // Only the hunt's editors get the stops' content. Players get ids and
+    // order; the play API releases each stop's details once it is started.
+    return Response.json({ finds: findsForViewer(finds || [], user, hunt?.created_by ?? null) });
   } catch (error) {
     return errorResponse(error);
   }
@@ -69,7 +68,7 @@ export async function POST(
     // Verify hunt ownership
     const { data: hunt } = await supabase
       .from("hunts")
-      .select("created_by, status, review_status, metadata")
+      .select("created_by, status, review_status, metadata, starts_at, ends_at")
       .eq("id", id)
       .is("deleted_at", null)
       .single();
@@ -79,7 +78,7 @@ export async function POST(
       throw new ApiError(403, "You can only add finds to your own hunts");
     }
     // A locked study hunt (or one with assigned orders) has frozen stops.
-    await assertStopSetEditable(supabase, { hunt: { id, status: hunt.status, metadata: hunt.metadata }, route: "/api/v1/hunts/[id]/finds" });
+    await assertStopSetEditable(supabase, { hunt: { id, status: hunt.status, metadata: hunt.metadata, starts_at: hunt.starts_at, ends_at: hunt.ends_at }, route: "/api/v1/hunts/[id]/finds" });
 
     // Next sort order goes after the current last stop. (Counting live stops
     // instead would collide with an existing sort_order after any delete.)

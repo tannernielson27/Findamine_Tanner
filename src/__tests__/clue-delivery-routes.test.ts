@@ -149,6 +149,8 @@ describe("play routes enforce the clue order", () => {
     const res = await clueHint(req("POST", "/clue-hint", { find_id: "f2", level: 1 }), playParams);
     expect(res.status).toBe(409);
     expect((await res.json()).error).toMatch(/isn't open yet/);
+    // The current stop gives hints once it has been started (issue #16).
+    await prime("f0");
     const current = await clueHint(req("POST", "/clue-hint", { find_id: "f0", level: 1 }), playParams);
     expect(current.status).toBe(200);
   });
@@ -166,7 +168,12 @@ describe("start route records clue delivery on the session", () => {
     expect(body.clue_order_index).toBe(expected);
     expect(body.clue_order).toEqual(orders[expected]);
     expect(JSON.stringify(body)).not.toContain("clue_orders");
-    expect(db.table("play_sessions")[0].metadata).toEqual({ clue_delivery: "assigned_order", clue_order_index: expected });
+    // The hunt's difficulty is recorded beside it (issue #15); unset means easy.
+    expect(db.table("play_sessions")[0].metadata).toEqual({
+      clue_delivery: "assigned_order",
+      clue_order_index: expected,
+      navigation_help: "easy",
+    });
   });
 
   it("player never receives clue_orders from /play/start, even with stray ones in metadata", async () => {
@@ -183,7 +190,7 @@ describe("start route records clue delivery on the session", () => {
     const body = await (await startHunt(req("POST", "/start", {}), playParams)).json();
     expect(body.clue_order_index).toBeNull();
     expect(body.clue_order).toBeNull();
-    expect(db.table("play_sessions")[0].metadata).toEqual({ clue_delivery: "random_order" });
+    expect(db.table("play_sessions")[0].metadata).toEqual({ clue_delivery: "random_order", navigation_help: "easy" });
   });
 });
 

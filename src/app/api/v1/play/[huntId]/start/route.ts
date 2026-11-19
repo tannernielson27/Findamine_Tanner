@@ -16,6 +16,15 @@ import {
   type ClueDelivery,
 } from "@/lib/play/clue-delivery";
 import { fullDeliveryMetadata } from "@/lib/hunts/clue-orders-store";
+import { readNavigationHelp, sessionNavigationHelpMetadata, type NavigationHelp } from "@/lib/play/navigation-help";
+import {
+  HUNT_ENDED_MESSAGE,
+  formatInZone,
+  huntPhase,
+  readHuntWindow,
+  readScheduleTimeZone,
+  type HuntWindowSource,
+} from "@/lib/hunts/schedule";
 
 const PLAYABLE_STATUSES = ["published", "enrollment_open", "in_progress"];
 const ROUTE = "/api/v1/play/[huntId]/start";
@@ -44,7 +53,7 @@ export async function POST(
     // Check hunt exists and is playable
     const { data: hunt } = await supabase
       .from("hunts")
-      .select("id, status, identity_mode, created_by, play_mode, review_status, metadata")
+      .select("id, status, identity_mode, created_by, play_mode, review_status, metadata, starts_at, ends_at")
       .eq("id", huntId)
       .maybeSingle();
 
@@ -92,6 +101,17 @@ export async function POST(
         ...playerDelivery(delivery, existing.metadata),
       });
     }
+
+    // Scheduled hunts (issue #14): one window for everyone. A player can join
+    // at any point while it is open, not before and not after. Someone who
+    // already has a session (above) can always get back into it.
+    const window = readHuntWindow(hunt as HuntWindowSource);
+    const phase = huntPhase(window, Date.now());
+    if (window && phase === "upcoming") {
+      const zone = readScheduleTimeZone(hunt.metadata as Record<string, unknown> | null);
+      throw new ApiError(409, `This hunt starts ${formatInZone(window.startsAtMs, zone)}. Come back then to play.`);
+    }
+    if (phase === "ended") throw new ApiError(409, HUNT_ENDED_MESSAGE);
 
     const body = await request.json().catch(() => ({}));
 
@@ -166,8 +186,12 @@ export async function POST(
         user_id: user.id,
         team_id: teamId,
         codename,
-        // Recorded for researchers: the mode and, for assigned orders, the group.
-        metadata: sessionDeliveryMetadata(delivery.mode, delivery.orderIndex),
+        // Recorded for researchers: the mode and, for assigned orders, the
+        // group; and the hunt's difficulty (navigation help level).
+        metadata: {
+          ...sessionDeliveryMetadata(delivery.mode, delivery.orderIndex),
+          ...sessionNavigationHelpMetadata(delivery.navigationHelp),
+        },
       })
       .select()
       .single();
@@ -217,6 +241,8 @@ interface Delivery {
   orders: string[][];
   orderIndex: number | null;
   assignment: { userId: string; huntId: string; orderCount: number };
+  /** How much navigation help the hunt gives (lib/play/navigation-help). */
+  navigationHelp: NavigationHelp;
 }
 
 /** The hunt's clue delivery mode and this player's assigned order group. */
@@ -225,12 +251,13 @@ function deliveryFor(huntMetadata: Record<string, unknown> | null, huntId: strin
   const orders = readClueOrders(huntMetadata);
   const assignment = { userId, huntId, orderCount: orders.length };
   const orderIndex = mode === "assigned_order" && orders.length > 0 ? orderIndexFor(null, assignment) : null;
-  return { mode, orders, orderIndex, assignment };
+  return { mode, orders, orderIndex, assignment, navigationHelp: readNavigationHelp(huntMetadata) };
 }
 
 /**
  * What the player is told: the mode and, for assigned orders, their own group
- * and its order. The hunt's other orders never leave the server.
+ * and its order (the hunt's other orders never leave the server), and the
+ * hunt's difficulty.
  */
 function playerDelivery(delivery: Delivery, sessionMetadata: Record<string, unknown> | null) {
   const orderIndex = delivery.orderIndex === null ? null : orderIndexFor(sessionMetadata, delivery.assignment);
@@ -238,5 +265,6 @@ function playerDelivery(delivery: Delivery, sessionMetadata: Record<string, unkn
     clue_delivery: delivery.mode,
     clue_order_index: orderIndex,
     clue_order: orderIndex === null ? null : delivery.orders[orderIndex] ?? null,
+    navigation_help: delivery.navigationHelp,
   };
 }

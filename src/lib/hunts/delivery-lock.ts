@@ -141,13 +141,24 @@ export function checkDeliveryEdit(input: {
   return { ok: true };
 }
 
-/** May a stop be added to, removed from or moved within this hunt? */
-export function checkStopSetChange(input: { locked: boolean; metadata: Meta }): Check {
-  if (!stopsFrozen(input)) return { ok: true };
-  return {
-    ok: false,
-    error: readStudyHunt(input.metadata) ? STUDY_STOPS_LOCKED_MESSAGE : ASSIGNED_STOPS_LOCKED_MESSAGE,
-  };
+export const SCHEDULED_STOPS_LOCKED_MESSAGE =
+  "This hunt runs on a schedule and has been published or played, so its stops can't be added, removed or reordered. Clone the hunt to change its stops.";
+
+/**
+ * May a stop be added to, removed from or moved within this hunt? A locked
+ * scheduled hunt (issue #14) freezes its stops too: a stop added after the
+ * schedule is locked would have no release time and open at once, and
+ * removing one and adding it back would do the same to an unreleased stop.
+ */
+export function checkStopSetChange(input: { locked: boolean; metadata: Meta; scheduled?: boolean }): Check {
+  if (stopsFrozen(input)) {
+    return {
+      ok: false,
+      error: readStudyHunt(input.metadata) ? STUDY_STOPS_LOCKED_MESSAGE : ASSIGNED_STOPS_LOCKED_MESSAGE,
+    };
+  }
+  if (input.locked && input.scheduled) return { ok: false, error: SCHEDULED_STOPS_LOCKED_MESSAGE };
+  return { ok: true };
 }
 
 /**
