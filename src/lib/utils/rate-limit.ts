@@ -304,6 +304,19 @@ export const playLimiter = createRateLimiter({
   prefix: "play",
 });
 
+/**
+ * "I'm here" taps and photo check-ins. Each one is answered yes or no for a
+ * position the device reports, so an unlimited caller could sweep an area for
+ * a stop without going there. A player on foot taps a handful of times per
+ * stop; the window allows a burst and bounds a sweep to about three a minute.
+ * Automatic GPS pings are not counted here.
+ */
+export const checkInLimiter = createRateLimiter({
+  max: 30,
+  windowMs: 10 * 60 * 1000, // 30 check-ins per 10 minutes per user
+  prefix: "play-check-in",
+});
+
 export const uploadLimiter = createRateLimiter({
   max: 10,
   windowMs: 60 * 1000, // 10 uploads per minute per user

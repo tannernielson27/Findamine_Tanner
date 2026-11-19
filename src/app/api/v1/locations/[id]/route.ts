@@ -41,6 +41,10 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    // Builders only: a stop's place reaches a player through the play API,
+    // once they have started that stop (issue #16).
+    const user = await getAuthUser(request);
+    requireRole(user, "teacher", "hunt_creator", "admin", "researcher");
     const supabase = await createSupabaseServiceClient();
 
     const { data, error } = await supabase

@@ -12,6 +12,8 @@ import { TechniqueReview } from "@/components/play/technique-review";
 import { ReportProblem } from "@/components/play/report-problem";
 import { cn } from "@/lib/utils/cn";
 import type { AnswerFeedback } from "@/lib/play/play-types";
+import { isV2Breakdown, signedPoints, v2BreakdownRows } from "@/lib/play/score-breakdown";
+import { STOP_MAX_SCORE } from "@/lib/hunts/scoring-version";
 
 /** Faint topo rings behind the celebration (decorative). */
 const TOPO_RINGS =
@@ -30,6 +32,8 @@ interface StopResultsProps {
   hideScores: boolean;
   feedback: AnswerFeedback | null;
   breakdown: Record<string, number> | null;
+  /** Scoring version 2: how long the stop took, "I'm ready" to the answer. */
+  solveMs?: number | null;
   alreadyCompleted: boolean;
   error: string | null;
   /** The privacy notice toast is up: keep the actions clear of it. */
@@ -45,7 +49,34 @@ interface StopResultsProps {
   onError: (message: string) => void;
 }
 
-function Breakdown({ breakdown }: { breakdown: Record<string, number> }) {
+/** Scoring version 2: one line per part of the score, time included. */
+function BreakdownV2({ breakdown, solveMs }: { breakdown: Record<string, number>; solveMs: number | null }) {
+  return (
+    <div className="mt-3 border-t border-white/15 pt-3">
+      <p className="text-sm font-bold text-[#D6EFE0]">How this stop scored</p>
+      <dl className="mt-1.5 flex flex-col gap-1">
+        {v2BreakdownRows(breakdown, solveMs).map((row) => (
+          <div key={row.label} className="flex items-baseline justify-between gap-3">
+            <dt className="text-base text-white">
+              {row.label}
+              {row.detail && <span className="block text-sm tabular-nums text-[#D6EFE0]">{row.detail}</span>}
+            </dt>
+            <dd className="m-0 font-[family-name:var(--font-display)] text-lg font-bold tabular-nums">
+              {signedPoints(row.points)}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-2 text-sm text-[#D6EFE0]">
+        Each stop is worth up to {STOP_MAX_SCORE[2].toLocaleString("en-US")} points. The faster you solve it after
+        tapping &ldquo;I&rsquo;m ready&rdquo;, the more speed points you keep.
+      </p>
+    </div>
+  );
+}
+
+function Breakdown({ breakdown, solveMs }: { breakdown: Record<string, number>; solveMs: number | null }) {
+  if (isV2Breakdown(breakdown)) return <BreakdownV2 breakdown={breakdown} solveMs={solveMs} />;
   const items = [
     { label: "Accuracy", value: breakdown.correctness },
     { label: "Mastery", value: breakdown.masteryBonus },
@@ -79,6 +110,8 @@ export function StopResults(props: StopResultsProps) {
   // Once the notice has shown on this screen, keep its space reserved so the
   // buttons don't jump under the player's thumb when it auto-dismisses.
   const [reserveForNotice, setReserveForNotice] = useState(props.noticeVisible);
+  // A hunt that hides scores (and timers) shows no points and no solve time.
+  const shownBreakdown = hideScores ? null : breakdown;
   if (props.noticeVisible && !reserveForNotice) setReserveForNotice(true);
 
   return (
@@ -114,7 +147,7 @@ export function StopResults(props: StopResultsProps) {
         <p className="mt-3 text-lg text-[#D6EFE0]">You already completed this stop.</p>
       )}
 
-      {(feedback || breakdown) && (
+      {(feedback || shownBreakdown) && (
         <div className="mt-6 w-full rounded-[20px] bg-white/10 px-[18px] py-4">
           {feedback && (
             <>
@@ -123,7 +156,7 @@ export function StopResults(props: StopResultsProps) {
               {feedback.next_steps && <p className="mt-2 text-base italic">{feedback.next_steps}</p>}
             </>
           )}
-          {breakdown && <Breakdown breakdown={breakdown} />}
+          {shownBreakdown && <Breakdown breakdown={shownBreakdown} solveMs={props.solveMs ?? null} />}
         </div>
       )}
 

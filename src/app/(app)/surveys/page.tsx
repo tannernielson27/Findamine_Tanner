@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ClipboardList, ChevronRight, CheckCircle2, AlertCircle } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 
 interface Delivery {
   id: string;
@@ -40,7 +41,10 @@ export default function SurveysPage() {
 
   if (deliveries === null && loadFailed) {
     return (
-      <main className="mx-auto max-w-2xl px-4 py-10 text-center">
+      <main className="mx-auto max-w-2xl px-4 py-6 text-center">
+        <div className="mb-4 text-left">
+          <BackButton fallbackHref="/dashboard" />
+        </div>
         <AlertCircle aria-hidden="true" className="w-10 h-10 text-gray-300 mx-auto mb-3" />
         <p role="alert" className="text-gray-700">We couldn&apos;t load your surveys.</p>
         <button
@@ -67,6 +71,8 @@ export default function SurveysPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
+      {/* No tab bar on the survey pages (shellChromeFor), so they carry their own way out. */}
+      <BackButton fallbackHref="/dashboard" className="mb-4" />
       <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold text-gray-900 flex items-center gap-2 mb-1">
         <ClipboardList aria-hidden="true" className="w-6 h-6 text-brand" />
         Surveys

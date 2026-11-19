@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { BookOpen, ArrowLeft } from "lucide-react";
+import { BookOpen } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import WithdrawControl from "@/components/study/withdraw-control";
 import { createSupabaseServerClient, createSupabaseServiceClient } from "@/lib/supabase/server";
 import {
@@ -56,13 +56,7 @@ export default async function DebriefPage() {
   if (participation === "none" && !isStaff) {
     return (
       <main className="mx-auto max-w-2xl px-4 py-6">
-        <Link
-          href="/settings"
-          className="inline-flex min-h-11 items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 mb-4"
-        >
-          <ArrowLeft aria-hidden="true" className="w-4 h-4" />
-          Settings
-        </Link>
+        <BackButton fallbackHref="/settings" className="mb-4" />
 
         <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold text-gray-900 flex items-center gap-2 mb-4">
           <BookOpen aria-hidden="true" className="w-6 h-6 shrink-0 text-brand" />
@@ -89,13 +83,7 @@ export default async function DebriefPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
-      <Link
-        href="/settings"
-        className="inline-flex min-h-11 items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 mb-4"
-      >
-        <ArrowLeft aria-hidden="true" className="w-4 h-4" />
-        Settings
-      </Link>
+      <BackButton fallbackHref="/settings" className="mb-4" />
 
       <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold text-gray-900 flex items-center gap-2 mb-4">
         <BookOpen aria-hidden="true" className="w-6 h-6 shrink-0 text-brand" />

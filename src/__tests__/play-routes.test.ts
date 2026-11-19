@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   user: null as null | { id: string; role: string },
   updateStreak: vi.fn(),
   evaluateBadges: vi.fn(),
+  notifyLeaderboardChanged: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/server", async () => {
@@ -21,6 +22,7 @@ vi.mock("@/lib/utils/api-auth", async (importOriginal) => ({
 }));
 vi.mock("@/lib/utils/rate-limit", () => ({
   playLimiter: { check: async () => {} },
+  checkInLimiter: { check: async () => {} },
 }));
 vi.mock("@/lib/utils/bot-guard", () => ({ botGuard: async () => null }));
 vi.mock("@/lib/utils/logger", () => ({
@@ -31,6 +33,9 @@ vi.mock("@/lib/services/privacy-notice", () => ({ recordPrivacyNotice: async () 
 vi.mock("@/lib/services/gamification", () => ({
   updateStreak: h.updateStreak,
   evaluateBadges: h.evaluateBadges,
+}));
+vi.mock("@/lib/social/leaderboard-broadcast", () => ({
+  notifyLeaderboardChanged: h.notifyLeaderboardChanged,
 }));
 
 import { POST as arrive } from "@/app/api/v1/play/[huntId]/arrive/route";
@@ -104,81 +109,93 @@ const arrived = (extra: Row = {}): Row => ({
   ...extra,
 });
 
+/** A fix `meters` due north of the stop. */
+const north = (meters: number) => ({ latitude: 40.25 + meters / 111_194.93, longitude: -111.65 });
+/**
+ * The player has tapped "I'm ready" on the stop (issue #16): arriving, checking
+ * in and clue hints are refused until then. Covered in play-stop-start.test.ts.
+ */
+const started = (): Row => arrived({ arrived_at: null, started_at: "2026-01-01T00:00:00.000Z" });
+const seedStarted: typeof seed = (overrides = {}, opts = {}) => seed({ find_completions: [started()], ...overrides }, opts);
+/** Completion rows that carry an arrival. */
+const arrivals = (db: SupabaseDouble): Row[] => db.where("find_completions", (r) => !!r.arrived_at);
+
 beforeEach(() => {
   h.user = { id: "u1", role: "adult" };
   h.updateStreak.mockReset().mockResolvedValue({ current: 1, longest: 1, justBroke: false, badgesEarned: [] });
   h.evaluateBadges.mockReset().mockResolvedValue([]);
+  h.notifyLeaderboardChanged.mockReset().mockResolvedValue(undefined);
 });
 
 describe("POST /play/[huntId]/arrive", () => {
   it("does not record an arrival for a far-away GPS fix", async () => {
-    const db = seed();
+    const db = seedStarted();
     const res = await arrive(post("/arrive", { find_id: FIND, ...FAR }), playParams);
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(body.arrived).toBe(false);
     expect(body.hot_cold).not.toBeNull();
-    expect(db.table("find_completions")).toHaveLength(0);
+    expect(arrivals(db)).toHaveLength(0);
   });
 
   it("does not record an arrival when no position is sent and it is not a manual skip", async () => {
-    const db = seed();
+    const db = seedStarted();
     const body = await (await arrive(post("/arrive", { find_id: FIND }), playParams)).json();
     expect(body.arrived).toBe(false);
-    expect(db.table("find_completions")).toHaveLength(0);
+    expect(arrivals(db)).toHaveLength(0);
   });
 
   it("'I'm here' without a position records nothing and offers a photo check-in", async () => {
-    const db = seed();
+    const db = seedStarted();
     const res = await arrive(post("/arrive", { find_id: FIND, manual: true }), playParams);
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(body).toMatchObject({ arrived: false, reason: "no_gps", photo_allowed: true });
-    expect(db.table("find_completions")).toHaveLength(0);
+    expect(arrivals(db)).toHaveLength(0);
   });
 
   it("'I'm here' from far away is refused with the distance and no photo route", async () => {
-    const db = seed();
+    const db = seedStarted();
     const body = await (await arrive(post("/arrive", { find_id: FIND, manual: true, ...FAR }), playParams)).json();
     expect(body).toMatchObject({ arrived: false, reason: "too_far", photo_allowed: false });
     expect(body.distance as number).toBeGreaterThan(1000);
-    expect(db.table("find_completions")).toHaveLength(0);
+    expect(arrivals(db)).toHaveLength(0);
   });
 
   it("'I'm here' inside the radius records a verified tap arrival", async () => {
-    const db = seed();
+    const db = seedStarted();
     const res = await arrive(post("/arrive", { find_id: FIND, manual: true, ...AT_STOP, accuracy: 8 }), playParams);
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     const meta = db.table("find_completions")[0].metadata as Row;
     expect(meta).toMatchObject({ arrival_method: "gps_tap", arrival_manual: false, arrival_accuracy: 8 });
   });
 
   it("allows for reported GPS error just outside the radius", async () => {
-    const db = seed();
+    const db = seedStarted();
     const body = await (await arrive(post("/arrive", { find_id: FIND, ...JUST_OUTSIDE, accuracy: 15 }), playParams)).json();
     expect(body.arrived).toBe(true);
     expect(db.table("find_completions")).toHaveLength(1);
   });
 
   it("does not stretch the radius by more than the allowance cap", async () => {
-    const db = seed();
+    const db = seedStarted();
     const body = await (await arrive(post("/arrive", { find_id: FIND, ...JUST_OUTSIDE, accuracy: 5 }), playParams)).json();
     expect(body).toMatchObject({ arrived: false, reason: "too_far" });
-    expect(db.table("find_completions")).toHaveLength(0);
+    expect(arrivals(db)).toHaveLength(0);
   });
 
   it("won't confirm an arrival from a vague fix, even at the stop", async () => {
-    const db = seed();
+    const db = seedStarted();
     const tap = await (await arrive(post("/arrive", { find_id: FIND, manual: true, ...AT_STOP, accuracy: 120 }), playParams)).json();
     expect(tap).toMatchObject({ arrived: false, reason: "weak_gps", photo_allowed: true });
     const ping = await (await arrive(post("/arrive", { find_id: FIND, ...AT_STOP, accuracy: 120 }), playParams)).json();
     expect(ping).toMatchObject({ arrived: false, reason: "weak_gps", photo_allowed: false });
-    expect(db.table("find_completions")).toHaveLength(0);
+    expect(arrivals(db)).toHaveLength(0);
   });
 
   it("never stores a child's coordinates", async () => {
     h.user = { id: "u1", role: "child" };
-    const db = seed();
+    const db = seedStarted();
     await arrive(post("/arrive", { find_id: FIND, ...AT_STOP }), playParams);
     const meta = db.table("find_completions")[0].metadata as Row;
     expect(meta.arrival_lat).toBeNull();
@@ -187,14 +204,14 @@ describe("POST /play/[huntId]/arrive", () => {
   });
 
   it("records a GPS arrival inside the radius as verified", async () => {
-    const db = seed();
+    const db = seedStarted();
     const res = await arrive(post("/arrive", { find_id: FIND, ...AT_STOP }), playParams);
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     expect((db.table("find_completions")[0].metadata as Row).arrival_manual).toBe(false);
   });
 
   it("is idempotent: a second in-radius fix reuses the row", async () => {
-    const db = seed();
+    const db = seedStarted();
     await arrive(post("/arrive", { find_id: FIND, ...AT_STOP }), playParams);
     const body = await (await arrive(post("/arrive", { find_id: FIND, ...AT_STOP }), playParams)).json();
     expect(body.already_arrived).toBe(true);
@@ -202,7 +219,7 @@ describe("POST /play/[huntId]/arrive", () => {
   });
 
   it("stamps an existing primer row and keeps its metadata", async () => {
-    const db = seed({
+    const db = seedStarted({
       find_completions: [arrived({ arrived_at: null, metadata: { prime_viewed_at: "2026-01-01T00:00:00.000Z" } })],
     });
     const body = await (await arrive(post("/arrive", { find_id: FIND, ...AT_STOP }), playParams)).json();
@@ -213,14 +230,14 @@ describe("POST /play/[huntId]/arrive", () => {
   });
 
   it("tolerates duplicate completion rows", async () => {
-    seed({ find_completions: [arrived(), arrived({ id: "comp-2", created_at: "2026-01-01T00:00:01.000Z" })] });
+    seedStarted({ find_completions: [arrived(), arrived({ id: "comp-2", created_at: "2026-01-01T00:00:01.000Z" })] });
     const res = await arrive(post("/arrive", { find_id: FIND, ...AT_STOP }), playParams);
     expect(res.status).toBe(200);
     expect((await res.json()).arrived).toBe(true);
   });
 
   it("omits hot/cold and the exact distance when the stop has hot/cold disabled", async () => {
-    seed({ finds: [{ id: FIND, hunt_id: HUNT, task_id: "task-1", location_id: "loc-1", hot_cold_enabled: false }] });
+    seedStarted({ finds: [{ id: FIND, hunt_id: HUNT, task_id: "task-1", location_id: "loc-1", hot_cold_enabled: false }] });
     const body = await (await arrive(post("/arrive", { find_id: FIND, ...FAR }), playParams)).json();
     expect(body.hot_cold).toBeNull();
     expect(body.hot_cold_enabled).toBe(false);
@@ -229,12 +246,105 @@ describe("POST /play/[huntId]/arrive", () => {
 
   it("never relabels an arrival that another request stamped first", async () => {
     // A primer row that is already stamped by the time the update runs.
-    const db = seed({ find_completions: [arrived({ arrived_at: null, metadata: { prime_viewed_at: "x" } })] });
+    const db = seedStarted({ find_completions: [arrived({ arrived_at: null, metadata: { prime_viewed_at: "x" } })] });
     await arrive(post("/arrive", { find_id: FIND, ...AT_STOP }), playParams);
     const first = { ...(db.table("find_completions")[0].metadata as Row) };
     const body = await (await arrivePhoto(photoForm({ find_id: FIND }), playParams)).json();
     expect(body.already_arrived).toBe(true);
     expect(db.table("find_completions")[0].metadata).toEqual(first);
+  });
+});
+
+describe("POST /play/[huntId]/arrive hot/cold scale", () => {
+  const ping = async (body: Row) => (await arrive(post("/arrive", { find_id: FIND, ...body }), playParams)).json();
+
+  it("starts the meter at the first reading and stores nothing about it", async () => {
+    const db = seedStarted();
+    const body = await ping(FAR);
+    expect(body.hot_cold).toMatchObject({ zone: "icy", markerPercent: 10, distanceLabel: "1.1km" });
+    // The client keeps the start of the leg; the privacy policy says only arrivals are stored.
+    expect(arrivals(db)).toHaveLength(0);
+    expect(db.log.every((entry) => entry.op === "select")).toBe(true);
+  });
+
+  it("scales later readings against the leg start the client echoes back", async () => {
+    const db = seedStarted();
+    const first = await ping(FAR);
+    const legStart = Math.round(first.distance);
+    expect(legStart).toBe(1112);
+    const markers: number[] = [];
+    for (const meters of [800, 400, 200, 100, 60]) {
+      markers.push((await ping({ ...north(meters), leg_start: legStart })).hot_cold.markerPercent);
+    }
+    for (let i = 1; i < markers.length; i++) expect(markers[i]).toBeGreaterThan(markers[i - 1]);
+    expect(markers[0]).toBeGreaterThan(10);
+    expect(markers[markers.length - 1]).toBeGreaterThan(70);
+    expect(arrivals(db)).toHaveLength(0);
+  });
+
+  it("reads the same spot differently on a short leg and a long one", async () => {
+    seedStarted();
+    const onShortLeg = await ping({ ...north(150), leg_start: 300 });
+    const onLongLeg = await ping({ ...north(150), leg_start: 3000 });
+    expect(onShortLeg.hot_cold.markerPercent).toBeLessThan(onLongLeg.hot_cold.markerPercent);
+    // 1.5 km into a 3 km leg, not a new leg starting at 1.5 km (which would read 10).
+    const midway = await ping({ ...north(1500), leg_start: 3000 });
+    expect(midway.hot_cold.zone).toBe("cold");
+  });
+
+  it("ignores a leg start that isn't a usable number", async () => {
+    seedStarted();
+    const plain = (await ping(north(400))).hot_cold;
+    for (const leg_start of ["3000", null, 0, -50, "abc"]) {
+      expect((await ping({ ...north(400), leg_start })).hot_cold).toEqual(plain);
+    }
+  });
+
+  it("can't be talked into burning by a made-up leg start", async () => {
+    seedStarted();
+    for (const leg_start of [1, 51, 1e12]) {
+      // 61 m from a 50 m radius: close, but not there.
+      const body = await ping({ ...JUST_OUTSIDE, accuracy: 5, leg_start });
+      expect(body.arrived).toBe(false);
+      expect(body.hot_cold.zone).not.toBe("burning");
+      expect(body.hot_cold.markerPercent).toBeLessThan(80);
+    }
+  });
+
+  it("says burning only inside the stop's radius, and always when the arrival is confirmed", async () => {
+    seedStarted();
+    expect((await ping({ ...JUST_OUTSIDE, accuracy: 5 })).hot_cold.zone).toBe("hot");
+    // The same fix with ±15 m GPS error passes the arrival check.
+    const confirmed = await ping({ ...JUST_OUTSIDE, accuracy: 15 });
+    expect(confirmed.arrived).toBe(true);
+    expect(confirmed.hot_cold).toMatchObject({ zone: "burning", markerPercent: 90 });
+  });
+
+  it("says burning at the stop even when the fix is too vague to confirm the arrival", async () => {
+    seedStarted();
+    const body = await ping({ ...AT_STOP, accuracy: 120 });
+    expect(body).toMatchObject({ arrived: false, reason: "weak_gps" });
+    expect(body.hot_cold.zone).toBe("burning");
+  });
+
+  it("holds the zone the client last showed while readings wobble on a boundary", async () => {
+    // With a 1112 m start and a 50 m radius, cold turns to warm at about 294 m.
+    seedStarted();
+    const at = (meters: number, last_zone?: string) => ping({ ...north(meters), leg_start: 1112, last_zone });
+    expect((await at(290)).hot_cold.zone).toBe("warm");
+    const held = await at(290, "cold");
+    expect(held.hot_cold.zone).toBe("cold");
+    expect(held.hot_cold.markerPercent).toBeLessThan(40);
+    // A real move still gets through, and junk in last_zone is ignored.
+    expect((await at(240, "cold")).hot_cold.zone).toBe("warm");
+    expect((await at(290, "tepid")).hot_cold.zone).toBe("warm");
+  });
+
+  it("sends no reading for a stop with hot/cold turned off, whatever the client sends", async () => {
+    seedStarted({ finds: [{ id: FIND, hunt_id: HUNT, task_id: "task-1", location_id: "loc-1", hot_cold_enabled: false }] });
+    const body = await ping({ ...FAR, leg_start: 2000, last_zone: "cold" });
+    expect(body.hot_cold).toBeNull();
+    expect(body.distance).toBeNull();
   });
 });
 
@@ -247,9 +357,9 @@ function photoForm(fields: Record<string, string>, withFile = true): NextRequest
 
 describe("POST /play/[huntId]/arrive-photo", () => {
   it("records an unverified arrival flagged for review, with the photo linked", async () => {
-    const db = seed({ find_photos: [] });
+    const db = seedStarted({ find_photos: [] });
     const res = await arrivePhoto(photoForm({ find_id: FIND }), playParams);
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ arrived: true, verified: false });
     const [row] = db.table("find_completions");
     expect(row.arrived_at).toBeTruthy();
@@ -261,40 +371,40 @@ describe("POST /play/[huntId]/arrive-photo", () => {
   });
 
   it("won't let a photo overrule a usable GPS fix that is clearly too far", async () => {
-    const db = seed({ find_photos: [] });
+    const db = seedStarted({ find_photos: [] });
     const res = await arrivePhoto(photoForm({ find_id: FIND, latitude: "40.26", longitude: "-111.65", accuracy: "10" }), playParams);
     expect(res.status).toBe(400);
-    expect(db.table("find_completions")).toHaveLength(0);
+    expect(arrivals(db)).toHaveLength(0);
     expect(db.uploads).toHaveLength(0);
   });
 
   it("accepts a vague fix, keeping its distance for the reviewer", async () => {
-    const db = seed({ find_photos: [] });
+    const db = seedStarted({ find_photos: [] });
     const res = await arrivePhoto(photoForm({ find_id: FIND, latitude: "40.26", longitude: "-111.65", accuracy: "300" }), playParams);
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     expect((db.table("find_completions")[0].metadata as Row).arrival_distance as number).toBeGreaterThan(1000);
   });
 
   it("refuses a file that isn't an image, before recording anything", async () => {
-    const db = seed({ find_photos: [] });
+    const db = seedStarted({ find_photos: [] });
     const form = new FormData();
     form.append("find_id", FIND);
     form.append("file", new File(["hello"], "notes.txt", { type: "text/plain" }));
     const res = await arrivePhoto(new NextRequest("http://localhost:3000/x", { method: "POST", body: form }), playParams);
     expect(res.status).toBe(400);
-    expect(db.table("find_completions")).toHaveLength(0);
+    expect(arrivals(db)).toHaveLength(0);
   });
 
   it("requires a photo from an adult", async () => {
-    const db = seed({ find_photos: [] });
+    const db = seedStarted({ find_photos: [] });
     const res = await arrivePhoto(photoForm({ find_id: FIND }, false), playParams);
     expect(res.status).toBe(400);
-    expect(db.table("find_completions")).toHaveLength(0);
+    expect(arrivals(db)).toHaveLength(0);
   });
 
   it("keeps a child's photo and location on the device", async () => {
     h.user = { id: "u1", role: "child" };
-    const db = seed({ find_photos: [] });
+    const db = seedStarted({ find_photos: [] });
     const res = await arrivePhoto(photoForm({ find_id: FIND, ...{ latitude: "40.25", longitude: "-111.65" } }), playParams);
     expect((await res.json()).local_only).toBe(true);
     expect(db.uploads).toHaveLength(0);
@@ -304,7 +414,7 @@ describe("POST /play/[huntId]/arrive-photo", () => {
   });
 
   it("leaves an existing arrival alone", async () => {
-    const db = seed({ find_photos: [], find_completions: [arrived()] });
+    const db = seedStarted({ find_photos: [], find_completions: [arrived()] });
     const body = await (await arrivePhoto(photoForm({ find_id: FIND }), playParams)).json();
     expect(body.already_arrived).toBe(true);
     expect(db.table("find_photos")).toHaveLength(0);
@@ -426,8 +536,8 @@ describe("POST /play/[huntId]/answer", () => {
 describe("POST /play/[huntId]/clue-hint", () => {
   const withHints = { finds: [{ id: FIND, hunt_id: HUNT, task_id: "task-1", location_id: "loc-1", clue_hints: ["Look up", "Near the fountain"] }] };
 
-  it("creates the completion row so the penalty reaches scoring", async () => {
-    const db = seed(withHints);
+  it("records the hint on the stop's completion row so the penalty reaches scoring", async () => {
+    const db = seedStarted(withHints);
     const body = await (await clueHint(post("/clue-hint", { find_id: FIND, level: 1 }), playParams)).json();
     expect(body.hint).toBe("Look up");
     expect(body.total_hints).toBe(2);
@@ -435,7 +545,7 @@ describe("POST /play/[huntId]/clue-hint", () => {
   });
 
   it("raises the count on an existing row and never lowers it", async () => {
-    const db = seed({ ...withHints, find_completions: [arrived({ clue_hints_used: 1 })] });
+    const db = seedStarted({ ...withHints, find_completions: [arrived({ clue_hints_used: 1 })] });
     await clueHint(post("/clue-hint", { find_id: FIND, level: 2 }), playParams);
     expect(db.table("find_completions")[0].clue_hints_used).toBe(2);
     await clueHint(post("/clue-hint", { find_id: FIND, level: 1 }), playParams);
@@ -443,7 +553,7 @@ describe("POST /play/[huntId]/clue-hint", () => {
   });
 
   it("returns 404 when the stop has no clue hints", async () => {
-    seed();
+    seedStarted();
     const res = await clueHint(post("/clue-hint", { find_id: FIND, level: 1 }), playParams);
     expect(res.status).toBe(404);
   });
@@ -482,6 +592,52 @@ describe("POST /play/[huntId]/complete", () => {
     const res = await complete(post("/complete"), playParams);
     expect(res.status).toBe(200);
     expect(db.table("play_sessions")[0].status).toBe("completed");
+  });
+});
+
+describe("live leaderboard pings", () => {
+  it("pings the hunt's leaderboard when a session completes", async () => {
+    seed();
+    await complete(post("/complete"), playParams);
+    expect(h.notifyLeaderboardChanged).toHaveBeenCalledTimes(1);
+    expect(h.notifyLeaderboardChanged).toHaveBeenCalledWith(HUNT);
+  });
+
+  it("pings before the badge work, so the board is not held up by it", async () => {
+    const order: string[] = [];
+    h.notifyLeaderboardChanged.mockImplementation(async () => {
+      order.push("ping");
+    });
+    h.evaluateBadges.mockImplementation(async () => {
+      order.push("badges");
+      return [];
+    });
+    seed();
+    await complete(post("/complete"), playParams);
+    expect(order).toEqual(["ping", "badges"]);
+  });
+
+  it("does not ping again for a repeat complete call: nothing changed", async () => {
+    seed();
+    await complete(post("/complete"), playParams);
+    h.notifyLeaderboardChanged.mockClear();
+    await complete(post("/complete"), playParams);
+    expect(h.notifyLeaderboardChanged).not.toHaveBeenCalled();
+  });
+
+  it("does not ping when there was no session to complete", async () => {
+    seed({ play_sessions: [] });
+    await complete(post("/complete"), playParams);
+    expect(h.notifyLeaderboardChanged).not.toHaveBeenCalled();
+  });
+
+  it("does not ping for a scored answer or a new session: boards list finished hunts only", async () => {
+    seed({ find_completions: [arrived()] });
+    await answer(post("/answer", { find_id: FIND, answer: "A red door" }), playParams);
+    seed({ play_sessions: [] });
+    const res = await startHunt(post("/start"), playParams);
+    expect(res.status).toBe(201);
+    expect(h.notifyLeaderboardChanged).not.toHaveBeenCalled();
   });
 });
 

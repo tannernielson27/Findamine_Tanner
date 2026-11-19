@@ -22,10 +22,25 @@ function contrast(a: string, b: string): number {
 }
 
 describe("heatDisplay", () => {
-  it("maps the five zones to the five scale steps with the marker centred on each", () => {
+  it("maps the five zones to the five scale steps, centring the marker when the server sent no position", () => {
     const zones = ["icy", "cold", "warm", "hot", "burning"];
     expect(zones.map((z) => heatDisplay(z)?.level)).toEqual([1, 2, 3, 4, 5]);
     expect(zones.map((z) => heatDisplay(z)?.markerPercent)).toEqual([10, 30, 50, 70, 90]);
+    expect(heatDisplay("warm", Number.NaN)?.markerPercent).toBe(50);
+  });
+
+  it("puts the marker at the server's continuous position", () => {
+    expect(heatDisplay("icy", 10)?.markerPercent).toBe(10);
+    expect(heatDisplay("cold", 37.4)?.markerPercent).toBe(37.4);
+    expect(heatDisplay("hot", 79.9)?.markerPercent).toBe(79.9);
+    expect(heatDisplay("icy", 0)?.markerPercent).toBe(0);
+  });
+
+  it("never lets the marker leave the step its label names", () => {
+    expect(heatDisplay("cold", 55)?.markerPercent).toBe(40);
+    expect(heatDisplay("warm", 12)?.markerPercent).toBe(40);
+    expect(heatDisplay("burning", 140)?.markerPercent).toBe(100);
+    expect(heatDisplay("icy", -3)?.markerPercent).toBe(0);
   });
 
   it("uses plain, distance-only words (no claim about the direction of travel)", () => {

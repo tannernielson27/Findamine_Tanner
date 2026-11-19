@@ -17,6 +17,7 @@ import {
 import { internalError } from "@/lib/utils/internal-error";
 import { assertStopSetEditable } from "../../../delivery-guard";
 import { freezesStops } from "@/lib/hunts/delivery-lock";
+import { isScheduledHunt } from "@/lib/hunts/schedule";
 
 const ROUTE = "/api/v1/hunts/[id]/finds/[findId]";
 
@@ -35,7 +36,7 @@ export async function PUT(
     // Verify hunt ownership
     const { data: hunt } = await supabase
       .from("hunts")
-      .select("created_by, status, review_status, metadata")
+      .select("created_by, status, review_status, metadata, starts_at, ends_at")
       .eq("id", id)
       .is("deleted_at", null)
       .single();
@@ -53,7 +54,7 @@ export async function PUT(
 
     // Moving a stop is a stop-set change: frozen on a locked study hunt (or
     // one with assigned orders). Re-saving a stop at its current position is fine.
-    if (updates.sort_order !== undefined && freezesStops(hunt.metadata as Record<string, unknown> | null)) {
+    if (updates.sort_order !== undefined && (freezesStops(hunt.metadata as Record<string, unknown> | null) || isScheduledHunt(hunt))) {
       const { data: current } = await supabase
         .from("finds")
         .select("sort_order")
@@ -62,7 +63,7 @@ export async function PUT(
         .is("deleted_at", null)
         .maybeSingle();
       if (current && current.sort_order !== updates.sort_order) {
-        await assertStopSetEditable(supabase, { hunt: { id, status: hunt.status, metadata: hunt.metadata }, route: ROUTE });
+        await assertStopSetEditable(supabase, { hunt: { id, status: hunt.status, metadata: hunt.metadata, starts_at: hunt.starts_at, ends_at: hunt.ends_at }, route: ROUTE });
       }
     }
 
@@ -117,7 +118,7 @@ export async function DELETE(
     // Verify hunt ownership
     const { data: hunt } = await supabase
       .from("hunts")
-      .select("created_by, status, review_status, metadata")
+      .select("created_by, status, review_status, metadata, starts_at, ends_at")
       .eq("id", id)
       .is("deleted_at", null)
       .single();
@@ -127,7 +128,7 @@ export async function DELETE(
       throw new ApiError(403, "You can only delete finds in your own hunts");
     }
     // A locked study hunt (or one with assigned orders) has frozen stops.
-    await assertStopSetEditable(supabase, { hunt: { id, status: hunt.status, metadata: hunt.metadata }, route: ROUTE });
+    await assertStopSetEditable(supabase, { hunt: { id, status: hunt.status, metadata: hunt.metadata, starts_at: hunt.starts_at, ends_at: hunt.ends_at }, route: ROUTE });
 
     const { data: removed, error } = await supabase
       .from("finds")

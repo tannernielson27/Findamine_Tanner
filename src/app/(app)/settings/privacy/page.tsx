@@ -17,6 +17,7 @@ import {
 import { computePrivacyIndex } from "@/lib/utils/privacy-index";
 import SchemePreview, { type SchemePreviewSubmission } from "@/components/privacy/scheme-preview";
 import SchemeSwitch from "@/components/privacy/scheme-switch";
+import { BackButton } from "@/components/ui/back-button";
 import { schemeSelectionState, type Scheme, type SchemeSelectionState } from "@/lib/utils/scheme-selection";
 import {
   fetchSurveyGate, fetchNormLine, fetchOverridePeople, postSchemeChoice,
@@ -599,6 +600,10 @@ export default function PrivacySettingsPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-4">
+      {/* Navigation only, the same in every study arm: no wording or control
+          below it changes. Leaving with unsaved edits is still logged as an
+          abandon by the unmount handler above. */}
+      <BackButton fallbackHref="/settings" className="mb-3" />
       <h1 className="text-base font-bold text-gray-900 mb-1">Privacy Settings</h1>
       <p className="text-xs text-gray-500 mb-4">
         Choose who can see different parts of your profile. You can change these anytime.

@@ -99,18 +99,19 @@ const MIN_START_RADIUS_M = 40;
 const CENTER_RADIUS_M = 150;
 
 /**
- * Where the hunt starts: the first stop's arrival area (the play screen shows
- * the same circle as soon as a hunt starts), else the hunt centre. Never any
+ * The area shown on the hunt page. For the hunt's owner and reviewers
+ * (`firstStop`), the first stop's arrival area. For players it is only ever
+ * the hunt centre: a stop's location is released when the player starts that
+ * stop in play, never before (issue #16), and that includes stop 1. Never any
  * later stop.
  */
 export function startArea(
   finds: DetailFind[],
   centerLat: number | null,
   centerLng: number | null,
-  opts: { shuffled?: boolean } = {}
+  opts: { firstStop?: boolean } = {}
 ): { lat: number; lng: number; radius: number } | null {
-  // A shuffled hunt starts at a different stop for each player: show the area.
-  const first = opts.shuffled ? null : finds[0]?.locations;
+  const first = opts.firstStop ? finds[0]?.locations : null;
   if (first?.latitude && first?.longitude) {
     return {
       lat: first.latitude,

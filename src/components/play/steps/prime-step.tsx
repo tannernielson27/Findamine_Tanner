@@ -14,13 +14,19 @@ const HEADING = "m-0 font-[family-name:var(--font-display)] text-[26px] font-sem
 interface PrimeStepProps {
   stopNumber: number;
   primer: NonNullable<Find["primers"]>;
+  /** Starts the stop on the server; the clue and the map come back with the reply. */
   onReady: () => void;
+  /** The start request is out: one tap is enough. */
+  busy?: boolean;
   /** Error banner for this stop, shown inside the sheet, next to the step it is about. */
   errorSlot?: ReactNode;
 }
 
-/** "Before you start" primer, in a sheet over the map. */
-export function PrimeStep({ stopNumber, primer, onReady, errorSlot }: PrimeStepProps) {
+/**
+ * "Before you start" primer, in a sheet over the (still empty) map. Nothing
+ * about where the stop is has been sent yet: "I'm ready" starts the stop.
+ */
+export function PrimeStep({ stopNumber, primer, onReady, busy = false, errorSlot }: PrimeStepProps) {
   return (
     <PlaySheet label={`Stop ${stopNumber}: before you start`} topDvh={20}>
       {errorSlot}
@@ -30,8 +36,39 @@ export function PrimeStep({ stopNumber, primer, onReady, errorSlot }: PrimeStepP
         <PrimerContent content={primer.content} />
       </div>
       <div className="min-h-2 flex-1" />
-      <Button size="xl" block onClick={onReady}>
-        I&apos;m ready
+      <Button size="xl" block onClick={onReady} disabled={busy}>
+        {busy ? "Starting…" : "I'm ready"}
+      </Button>
+    </PlaySheet>
+  );
+}
+
+interface ReadyGateProps {
+  stopNumber: number;
+  /** False while the stop is still being fetched (the clue order has only just reached it). */
+  open: boolean;
+  onReady: () => void;
+  busy?: boolean;
+  errorSlot?: ReactNode;
+}
+
+/**
+ * The start of a stop that has no primer: the stop number and "I'm ready",
+ * nothing else. Every stop begins with an explicit tap, so its details are
+ * never on screen (or on the device) before the player asks for them.
+ */
+export function ReadyGate({ stopNumber, open, onReady, busy = false, errorSlot }: ReadyGateProps) {
+  return (
+    <PlaySheet label={`Stop ${stopNumber}: ready to start`} topDvh={58}>
+      {errorSlot}
+      <span className={LABEL}>Stop {stopNumber}</span>
+      <h2 className={HEADING}>{open ? `Ready for stop ${stopNumber}?` : "Getting this stop ready…"}</h2>
+      <p className="text-lg">
+        {open ? "Tap I'm ready to see your clue." : "This only takes a moment. If it doesn't load, try again."}
+      </p>
+      <div className="min-h-2 flex-1" />
+      <Button size="xl" block onClick={onReady} disabled={busy}>
+        {busy ? (open ? "Starting…" : "Loading…") : open ? "I'm ready" : "Try again"}
       </Button>
     </PlaySheet>
   );

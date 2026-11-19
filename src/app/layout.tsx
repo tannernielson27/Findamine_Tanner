@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { NativeBootstrap } from "@/components/native/native-bootstrap";
+import { InAppHistoryTracker } from "@/components/layout/in-app-history-tracker";
 
 export const metadata: Metadata = {
   // Sections set a short title (metadata-only layout.tsx files); the template
@@ -41,6 +42,8 @@ export default function RootLayout({
     <html lang="en">
       <body className="antialiased" style={{ fontFamily: "'Inter', system-ui, sans-serif", fontSize: "16px" }}>
         <NativeBootstrap />
+        {/* Lets the Back control tell an in-app page from the start of a visit. */}
+        <InAppHistoryTracker />
         {children}
       </body>
     </html>

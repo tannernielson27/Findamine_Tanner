@@ -17,8 +17,11 @@ const LOCATION_TEXT_FIELDS = ["name", "description", "address", "safety_notes"];
 
 export async function GET(request: NextRequest) {
   try {
+    // The location library is a hunt builder's tool. It lists places by area,
+    // which would show a player where a hunt's stops are before they start
+    // them (issue #16), so it is for the roles that can create locations.
     const user = await getAuthUser(request);
-    if (!user) throw new ApiError(401, "Not authenticated");
+    requireRole(user, "teacher", "hunt_creator", "admin", "researcher");
 
     const { searchParams } = new URL(request.url);
     const lat = searchParams.get("lat");

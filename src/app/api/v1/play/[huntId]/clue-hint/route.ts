@@ -2,9 +2,10 @@ import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { playLimiter } from "@/lib/utils/rate-limit";
-import { getCompletion, insertCompletion } from "../../_lib/completions";
 import { internalError } from "@/lib/utils/internal-error";
 import { assertStopOpen } from "../../_lib/stop-access";
+import { assertStopStarted } from "../../_lib/stop-start";
+import { HINT_COSTS, readScoringVersion } from "@/lib/hunts/scoring-version";
 
 export async function POST(
   request: NextRequest,
@@ -37,14 +38,14 @@ export async function POST(
 
     // Clue delivery: only the player's current stop (any stop in all-at-once mode).
     await assertStopOpen(supabase, { huntId, userId: user.id, session, findId: find_id, route: "/api/v1/play/[huntId]/clue-hint" });
+    // A hint is about where the stop is: none before the stop is started.
+    const completion = await assertStopStarted(supabase, session.id, find_id);
 
-    // Get the find's clue hints
-    const { data: find } = await supabase
-      .from("finds")
-      .select("clue_hints")
-      .eq("id", find_id)
-      .eq("hunt_id", huntId)
-      .single();
+    // Get the find's clue hints, and the hunt's scoring version for the cost shown.
+    const [{ data: find }, { data: hunt }] = await Promise.all([
+      supabase.from("finds").select("clue_hints").eq("id", find_id).eq("hunt_id", huntId).single(),
+      supabase.from("hunts").select("metadata").eq("id", huntId).maybeSingle(),
+    ]);
 
     if (!find) throw new ApiError(404, "Find not found");
 
@@ -56,29 +57,22 @@ export async function POST(
     const hintIndex = Math.min(hintLevel - 1, hints.length - 1);
     const hint = hints[hintIndex];
 
-    // Update clue_hints_used on the completion record
-    // The clue step comes before arrival, so there is often no row yet: create
-    // one, otherwise the hint penalty would never reach scoring.
-    {
-      const usedLevel = hintIndex + 1;
-      const completion = await getCompletion(supabase, session.id, find_id);
-
-      if (!completion) {
-        await insertCompletion(supabase, session.id, find_id, { clue_hints_used: usedLevel });
-      } else if ((completion.clue_hints_used || 0) < usedLevel) {
-        const { error: updateError } = await supabase
-          .from("find_completions")
-          .update({ clue_hints_used: usedLevel })
-          .eq("id", completion.id);
-        if (updateError) throw internalError("/api/v1/play/[huntId]/clue-hint", updateError);
-      }
+    // Raise clue_hints_used on the completion record (the row exists from the
+    // stop's start), so the hint penalty reaches scoring. Never lowered.
+    const usedLevel = hintIndex + 1;
+    if ((completion.clue_hints_used || 0) < usedLevel) {
+      const { error: updateError } = await supabase
+        .from("find_completions")
+        .update({ clue_hints_used: usedLevel })
+        .eq("id", completion.id);
+      if (updateError) throw internalError("/api/v1/play/[huntId]/clue-hint", updateError);
     }
 
     return Response.json({
       hint,
       level: hintIndex + 1,
       total_hints: hints.length,
-      penalty_per_hint: 2,
+      penalty_per_hint: HINT_COSTS[readScoringVersion(hunt?.metadata as Record<string, unknown> | null)].clue,
     });
   } catch (error) {
     return errorResponse(error);

@@ -46,6 +46,8 @@ const render = (el: ReturnType<typeof createElement>) =>
 const find = (id: string, clue: string): Find => ({
   id,
   sort_order: 0,
+  started_at: "2026-11-18T10:05:00.000Z",
+  open: true,
   clue_text: clue,
   hot_cold_enabled: true,
   scaffolding_level: null,
@@ -67,6 +69,19 @@ describe("ClueBoard", () => {
     expect(html).toContain("2 open · 1 of 3 found");
     expect(html).toContain("Keep working on this");
     expect(html).toContain('aria-label="Back to the active clue"');
+  });
+
+  it("lists a stop that isn't started by number only: its clue is not on the device yet", () => {
+    const unstarted: Find = { ...find("b", ""), started_at: null, clue_text: null };
+    const html = render(
+      createElement(ClueBoard, { finds: [finds[0], unstarted, finds[2]], completedFinds: new Set<string>(), activeId: "a", onPick: noop, onClose: noop })
+    );
+    expect(html).toContain("Under the old oak");
+    expect(html).toContain("Stop 2");
+    expect(html).toContain("Not started yet. Its clue appears when you tap I'm ready.");
+    expect(html).toContain("Open stop 2");
+    expect(html).not.toContain("Where the water sings");
+    expect(html).not.toContain("No written clue");
   });
 
   it("has no close button when there is no open clue to go back to", () => {

@@ -6,6 +6,7 @@
 
 import { CHECKIN_TARGET_PATH, PRIVACY_CHECKIN_TYPE } from "@/lib/services/privacy-checkin";
 import { REENGAGEMENT_TYPE, reengagementHref } from "@/lib/services/reengagement";
+import { HUNT_ENDING_TYPE, HUNT_RELEASE_TYPE, huntNoticeHref } from "@/lib/services/hunt-schedule-notices";
 
 /** `notifications.type` written by the survey reminder cron (survey-delivery.ts). */
 export const SURVEY_REMINDER_TYPE = "survey_reminder";
@@ -29,6 +30,10 @@ export function notificationHref(n: LinkableNotification): string | null {
       return CHECKIN_TARGET_PATH;
     case REENGAGEMENT_TYPE:
       return reengagementHref(n.entity_type ?? null, n.entity_id ?? null);
+    // Scheduled hunts: a release or "ends soon" opens that hunt's play screen.
+    case HUNT_RELEASE_TYPE:
+    case HUNT_ENDING_TYPE:
+      return huntNoticeHref(n.entity_type ?? null, n.entity_id ?? null);
     default:
       return null;
   }

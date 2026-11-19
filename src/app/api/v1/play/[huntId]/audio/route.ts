@@ -4,6 +4,7 @@ import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { playLimiter, uploadLimiter } from "@/lib/utils/rate-limit";
 import { logger } from "@/lib/utils/logger";
 import { getCompletion } from "../../_lib/completions";
+import { assertStopOpen } from "../../_lib/stop-access";
 import { writeAudit } from "@/app/api/v1/admin/_lib/audit";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -197,6 +198,9 @@ async function openAudioChallenge(supabase: Db, huntId: string, userId: string, 
   if (!find || find.hunt_id !== huntId || task?.challenge_type !== "audio_response") {
     throw new ApiError(400, "This stop does not take a spoken answer");
   }
+
+  // The player's own stop, released and inside the hunt's window (scheduled hunts).
+  await assertStopOpen(supabase, { huntId, userId, session, findId, route: "/api/v1/play/[huntId]/audio" });
 
   const completion = await getCompletion(supabase, session.id, findId);
   if (!completion?.arrived_at) throw new ApiError(400, "Must arrive at location first");

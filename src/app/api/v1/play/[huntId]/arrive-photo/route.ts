@@ -1,14 +1,15 @@
 import { NextRequest, after } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
+import { checkInLimiter } from "@/lib/utils/rate-limit";
 import { haversineDistance } from "@/lib/services/hot-cold";
 import { coordinatesForStorage, parseCoordinate } from "@/lib/utils/location-storage";
 import { checkArrival, MAX_USABLE_ACCURACY_M } from "@/lib/play/arrival-check";
 import { landmarkCheckApplies, runLandmarkCheck } from "@/lib/services/landmark-check";
-import { getCompletion } from "../../_lib/completions";
 import { recordArrival } from "../../_lib/arrival";
 import { insertFindPhotoRow, photoFromForm, uploadFindPhoto } from "../../_lib/photos";
 import { assertStopOpen } from "../../_lib/stop-access";
+import { assertStopStarted } from "../../_lib/stop-start";
 
 const ROUTE = "/api/v1/play/[huntId]/arrive-photo";
 
@@ -35,6 +36,8 @@ export async function POST(
     const { huntId } = await params;
     const user = await getAuthUser(request);
     if (!user) throw new ApiError(401, "Not authenticated");
+    // Shares the "I'm here" limit: a photo check-in is not location-checked.
+    await checkInLimiter.check(request, user.id);
     const isChild = user.role === "child";
 
     const formData = await request.formData();
@@ -56,6 +59,8 @@ export async function POST(
     if (!session) throw new ApiError(404, "No active play session");
     // Clue delivery: only the player's current stop (any stop in all-at-once mode).
     await assertStopOpen(supabase, { huntId, userId: user.id, session, findId, route: ROUTE });
+    // A check-in only counts for a stop the player has started.
+    const existing = await assertStopStarted(supabase, session.id, findId);
 
     const { data: find } = await supabase
       .from("finds")
@@ -66,8 +71,7 @@ export async function POST(
     if (!find) throw new ApiError(404, "Find not found");
     const loc = find.locations as unknown as StopLocation | null;
 
-    const existing = await getCompletion(supabase, session.id, findId);
-    if (existing?.arrived_at) {
+    if (existing.arrived_at) {
       return Response.json({ arrived: true, already_arrived: true, completion_id: existing.id });
     }
 

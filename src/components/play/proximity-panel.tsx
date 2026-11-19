@@ -42,11 +42,12 @@ function DirectionBadge({ bearing, color, tint }: { bearing: number | null; colo
 
 /**
  * The navigate HUD card: distance in big numerals, a plain heat label, the
- * direction arrow, and the 5-step meter. Screen readers get a throttled
- * polite announcement when the heat level changes, not every GPS tick.
+ * direction arrow, and the meter, whose marker slides with the distance.
+ * Screen readers get a throttled polite announcement when the heat level
+ * changes, not every GPS tick.
  */
 export function ProximityPanel({ hotCold, gpsStatus, userPos, target }: ProximityPanelProps) {
-  const heat = heatDisplay(hotCold?.zone);
+  const heat = heatDisplay(hotCold?.zone, hotCold?.markerPercent);
   const bearing = userPos && target ? bearingDegrees(userPos, target) : null;
   const distance = hotCold ? splitDistanceLabel(hotCold.distanceLabel) : null;
   const direction = bearing != null ? `, to the ${compassWord(bearing)}` : "";

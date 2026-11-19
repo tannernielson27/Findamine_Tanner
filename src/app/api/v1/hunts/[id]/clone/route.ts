@@ -12,6 +12,10 @@ import { CLUE_ORDERS_KEY, readClueOrders, withoutClueOrders } from "@/lib/play/c
 import { remapClueOrders, withStudyFlagFor } from "@/lib/hunts/delivery-lock";
 import { fullDeliveryMetadata, saveClueOrders } from "@/lib/hunts/clue-orders-store";
 import { isReviewer } from "@/lib/hunts/review";
+import { withNewHuntScoring } from "@/lib/hunts/scoring-version";
+import { huntPhase, readHuntWindow, type HuntWindowSource } from "@/lib/hunts/schedule";
+
+const STILL_RUNNING_MESSAGE = "This hunt is running on a schedule. It can be copied once it has ended.";
 
 type Row = Record<string, unknown>;
 
@@ -30,6 +34,10 @@ const HUNT_REVIEW = [
 // (migration 079); the copy starts with generated art instead of pointing at
 // a file the source's owner can delete.
 const HUNT_MEDIA = ["cover_image_url"];
+// A schedule is a set of dates for one run of one hunt (issue #14): a copy
+// starts as a play-anytime hunt, and its owner schedules it afresh.
+const HUNT_SCHEDULE = ["starts_at", "ends_at"];
+const FIND_SCHEDULE = ["release_at"];
 
 function omit(row: Row, keys: string[]): Row {
   const copy: Row = { ...row };
@@ -65,8 +73,17 @@ export async function POST(
     // catalogue, is not visible to them, so it is not clonable.
     if (!(await canAccessHunt(supabase, source, user))) throw new ApiError(404, "Hunt not found");
 
+    // A copy hands its owner every stop. While a scheduled hunt is running
+    // (or yet to start) some of its stops are not released, so until it has
+    // ended only its owner and reviewers may copy it (issue #14).
+    const runsSource = source.created_by === user.id || isReviewer(user.role);
+    const sourceWindow = readHuntWindow(source as HuntWindowSource);
+    if (!runsSource && sourceWindow && huntPhase(sourceWindow, Date.now()) !== "ended") {
+      throw new ApiError(409, STILL_RUNNING_MESSAGE);
+    }
+
     const { finds, ...sourceHunt } = source as Row & { finds: Row[] | null };
-    const huntData = omit(sourceHunt, [...SERVER_MANAGED, ...HUNT_GENERATED, ...HUNT_REVIEW, ...HUNT_MEDIA]);
+    const huntData = omit(sourceHunt, [...SERVER_MANAGED, ...HUNT_GENERATED, ...HUNT_REVIEW, ...HUNT_MEDIA, ...HUNT_SCHEDULE]);
     // Assigned clue orders live in their own table and are only for the
     // source's owner and reviewers: anyone else's copy starts without them.
     const canSeeOrders = source.created_by === user.id || isReviewer(user.role);
@@ -74,9 +91,15 @@ export async function POST(
       ? readClueOrders(await fullDeliveryMetadata(supabase, source as Row & { id: string }, "/api/v1/hunts/[id]/clone"))
       : [];
     // A copy is a study hunt only when an admin or researcher makes it.
-    huntData.metadata = withStudyFlagFor(
-      user.role,
-      withoutClueOrders((huntData.metadata as Record<string, unknown> | null) ?? null)
+    // A copy is a new hunt with no play sessions. It keeps a scoring version
+    // the source names; a source from before versions (version 1 by default)
+    // gives a copy on version 2, like any hunt created now. The owner can
+    // change it on the hunt page until the copy is first played.
+    huntData.metadata = withNewHuntScoring(
+      withStudyFlagFor(
+        user.role,
+        withoutClueOrders((huntData.metadata as Record<string, unknown> | null) ?? null)
+      )
     );
 
     const { data: newHunt, error: huntError } = await supabase
@@ -155,7 +178,7 @@ export async function POST(
           tasks: Row | null;
           primers: Row | null;
         };
-        const findData = omit(rest, [...SERVER_MANAGED, "hunt_id"]);
+        const findData = omit(rest, [...SERVER_MANAGED, ...FIND_SCHEDULE, "hunt_id"]);
 
         let locationId = (findData.location_id as string | null) ?? null;
         let taskId = (findData.task_id as string | null) ?? null;
