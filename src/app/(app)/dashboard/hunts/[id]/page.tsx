@@ -14,6 +14,8 @@ import { ClueDeliverySettings } from "@/components/hunts/clue-delivery-settings"
 import { StudyHuntSetting } from "@/components/hunts/study-hunt-setting";
 import { STUDY_HUNT_KEY } from "@/lib/hunts/delivery-lock";
 import { readClueDelivery, readClueOrders } from "@/lib/play/clue-delivery";
+import { NAVIGATION_HELP_LABELS, readNavigationHelp } from "@/lib/play/navigation-help";
+import { DifficultySettings } from "@/components/hunts/difficulty-settings";
 
 interface HuntDetail {
   id: string;
@@ -282,6 +284,8 @@ export default function HuntDetailPage() {
   const delivery = readClueDelivery(hunt.metadata);
   const deliveryStops = finds.map((f, i) => ({ id: f.id, label: `${i + 1}. ${f.locations?.name || `Stop ${i + 1}`}` }));
   const deliveryKey = JSON.stringify([delivery, readClueOrders(hunt.metadata), deliveryStops, !!hunt.delivery_locked]);
+  const difficulty = readNavigationHelp(hunt.metadata);
+  const difficultyLocked = !isDraft || !!hunt.delivery_locked;
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-4">
@@ -515,6 +519,26 @@ export default function HuntDetailPage() {
             metadata={hunt.metadata}
             stops={deliveryStops}
             locked={!isDraft || !!hunt.delivery_locked}
+            busy={actionLoading}
+            onSave={(metadata, successText) => saveHunt({ metadata }, successText)}
+          />
+        </div>
+      </details>
+
+      {/* Difficulty (navigation help): read-only once the hunt is published or played */}
+      <details className="mb-4">
+        <summary className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer hover:text-gray-900">
+          Difficulty
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-normal text-gray-600">
+            {NAVIGATION_HELP_LABELS[difficulty]}
+          </span>
+        </summary>
+        <div className="mt-2 rounded-lg border border-gray-200 p-3">
+          <DifficultySettings
+            key={`${difficulty}:${difficultyLocked}`}
+            metadata={hunt.metadata}
+            locked={difficultyLocked}
+            played={!!hunt.has_play_sessions}
             busy={actionLoading}
             onSave={(metadata, successText) => saveHunt({ metadata }, successText)}
           />

@@ -16,6 +16,8 @@ import { ShareButton } from "@/components/explore/share-button";
 import { StatRow } from "@/components/explore/stat-row";
 import { ClueDeliveryBadge } from "@/components/hunts/shuffle-badge";
 import { readClueDelivery } from "@/lib/play/clue-delivery";
+import { readNavigationHelp } from "@/lib/play/navigation-help";
+import { DifficultySummary } from "@/components/hunts/difficulty-badge";
 import { StartMapPreview } from "@/components/explore/start-map-preview";
 import { ChallengeChips, DetailSection, subjectLabel } from "@/components/explore/hunt-detail-parts";
 import { isPubliclyAvailable, isReviewer } from "@/lib/hunts/review";
@@ -80,6 +82,8 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
 
   const finds = liveFinds(hunt.finds as DetailFind[] | null);
   const delivery = readClueDelivery(hunt.metadata as Record<string, unknown> | null);
+  // How much help players get finding each stop: shown before they start.
+  const difficulty = readNavigationHelp(hunt.metadata as Record<string, unknown> | null);
   // Only the creator's fixed order has one starting stop for everyone.
   const shuffled = delivery !== "fixed_order";
   // A stop's location is released in play, when the player starts that stop,
@@ -181,6 +185,10 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
             {isTeamHunt && <p className="text-[15px] text-themed-muted">Play mode: {formatPlayMode(hunt.play_mode)}</p>}
           </DetailSection>
         )}
+
+        <DetailSection id="difficulty-heading" title="Difficulty">
+          <DifficultySummary level={difficulty} />
+        </DetailSection>
 
         {start && (
           <DetailSection
