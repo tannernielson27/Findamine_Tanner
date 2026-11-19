@@ -21,6 +21,7 @@ import { ChallengeChips, DetailSection, subjectLabel } from "@/components/explor
 import { isPubliclyAvailable, isReviewer } from "@/lib/hunts/review";
 import { audienceLabel, shortPlayMode } from "@/lib/hunts/card-data";
 import { isCampusHunt } from "@/lib/hunts/explore-filters";
+import { canViewRealNames } from "@/lib/social/real-names";
 import { formatPlayMode } from "../hunt-meta";
 import { getBrowseViewer } from "../viewer";
 import { DetailCtaBar } from "./detail-cta-bar";
@@ -234,7 +235,8 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
         )}
 
         <div className="[&>div]:rounded-[18px] [&>div]:shadow-none">
-          <Leaderboard huntId={hunt.id} />
+          {/* Admins and researchers are offered real names; the hunt's creator is not. */}
+          <Leaderboard huntId={hunt.id} canShowRealNames={canViewRealNames(viewer)} />
         </div>
 
         <HuntRating huntId={hunt.id} />

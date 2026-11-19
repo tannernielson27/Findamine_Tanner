@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useRef, useState } from "react";
 import Link from "next/link";
-import { Medal, Star, Trophy } from "lucide-react";
+import { Eye, Medal, Star, Trophy } from "lucide-react";
 import { LazyMotion, m } from "framer-motion";
 import { SPRING_SNAPPY } from "@/lib/motion";
 import {
@@ -13,6 +13,12 @@ import {
 } from "@/lib/social/standing";
 import { leaderboardTopic } from "@/lib/social/leaderboard-channel";
 import { useLiveBoard } from "@/lib/social/use-live-board";
+import {
+  boardRequestPath,
+  otherPlayersNote,
+  realNameLabel,
+  type RealNameStatus,
+} from "@/lib/social/real-names";
 
 interface LeaderboardEntry {
   user_id: string;
@@ -23,16 +29,30 @@ interface LeaderboardEntry {
   hunts_completed?: number;
   /** Set by the API only when the row already shows the player's own name. */
   profile_linkable?: boolean;
+  /** Real-name fields: sent only to an allowed viewer who switched real names on. */
+  real_name?: string | null;
+  real_name_status?: RealNameStatus;
+  shown_as?: string | null;
 }
 
 interface LeaderboardProps {
   huntId?: string;
+  /**
+   * Offer the "Show real names" switch. For admins and researchers only
+   * (canViewRealNames). It only decides whether the switch is drawn: the API
+   * checks again and sends real names to nobody else.
+   */
+  canShowRealNames?: boolean;
 }
 
 interface Board {
   entries: LeaderboardEntry[];
   viewerId: string | null;
   me: ServerMe | null;
+  /** This fetch asked for real names. */
+  askedRealNames: boolean;
+  /** The API sent them (it does so only for an allowed viewer). */
+  realNames: boolean;
 }
 
 /**
@@ -43,18 +63,23 @@ interface Board {
 const BOARD_FETCH_TIMEOUT_MS = 10_000;
 
 /** One fetch of the board; null when the request fails (keep what's on screen). */
-async function loadBoard(huntId: string | undefined): Promise<Board | null> {
+async function loadBoard(huntId: string | undefined, realNames: boolean): Promise<Board | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), BOARD_FETCH_TIMEOUT_MS);
   try {
-    const params = huntId ? `?hunt_id=${encodeURIComponent(huntId)}` : "";
-    const res = await fetch(`/api/v1/leaderboard${params}`, {
+    const res = await fetch(boardRequestPath(huntId, realNames), {
       cache: "no-store",
       signal: controller.signal,
     });
     if (!res.ok) return null;
     const data = await res.json();
-    return { entries: data.entries || [], viewerId: data.viewer_id ?? null, me: data.me ?? null };
+    return {
+      entries: data.entries || [],
+      viewerId: data.viewer_id ?? null,
+      me: data.me ?? null,
+      askedRealNames: realNames,
+      realNames: data.real_names === true,
+    };
   } catch {
     return null;
   } finally {
@@ -64,12 +89,28 @@ async function loadBoard(huntId: string | undefined): Promise<Board | null> {
 
 const loadLayoutFeatures = () => import("@/lib/themes/motion-features-max").then((mod) => mod.default);
 
-export default function Leaderboard({ huntId }: LeaderboardProps) {
+export default function Leaderboard({ huntId, canShowRealNames = false }: LeaderboardProps) {
+  const topic = leaderboardTopic(huntId);
+  // Real names (issue #13) are off every time a board is opened and are never
+  // remembered: the switch is held for the board it was turned on for, so a
+  // different board, a reload or coming back to the page starts with them off.
+  const [realNamesFor, setRealNamesFor] = useState<string | null>(null);
+  // Showing a different board: forget the switch, so coming back to the first
+  // board later does not bring real names back without a click.
+  if (realNamesFor !== null && realNamesFor !== topic) setRealNamesFor(null);
+  const realNamesOn = canShowRealNames && realNamesFor === topic;
+  const realNamesSwitch = useRef<HTMLButtonElement>(null);
+
   // Live updates: the server pings this board's own channel when standings
   // change and the board refetches from the API; a poll covers missed pings.
   // No player data travels over the channel (see lib/social/leaderboard-channel).
-  const load = useCallback(() => loadBoard(huntId), [huntId]);
-  const { data: board, loading } = useLiveBoard(leaderboardTopic(huntId), load);
+  const load = useCallback(() => loadBoard(huntId, realNamesOn), [huntId, realNamesOn]);
+  const { data: board, loading } = useLiveBoard(topic, load);
+
+  // Drawn only while the switch is on AND the board on screen came with real
+  // names, so switching off hides them at once, before the refetch lands.
+  const showingRealNames = realNamesOn && board?.realNames === true;
+  const realNamesRefused = realNamesOn && board?.askedRealNames === true && !board.realNames;
 
   const medalTints = ["text-amber-500", "text-slate-400", "text-orange-700"];
   const podiumColors = [
@@ -106,7 +147,77 @@ export default function Leaderboard({ huntId }: LeaderboardProps) {
             in progress count toward the total points on your profile, not here.
           </p>
         )}
+        {canShowRealNames && (
+          <button
+            ref={realNamesSwitch}
+            type="button"
+            role="switch"
+            aria-checked={realNamesOn}
+            onClick={() => setRealNamesFor(realNamesOn ? null : topic)}
+            className="mt-2 -ml-1 inline-flex min-h-11 items-center gap-2.5 rounded-lg px-1 text-sm font-semibold text-themed-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          >
+            <span
+              aria-hidden="true"
+              className={`flex h-6 w-10 shrink-0 items-center rounded-full p-0.5 transition-colors ${
+                realNamesOn ? "bg-warning" : "bg-themed-border"
+              }`}
+            >
+              <span
+                className={`h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                  realNamesOn ? "translate-x-4" : ""
+                }`}
+              />
+            </span>
+            Show real names
+            <span className="font-normal text-themed-muted">Only on your screen</span>
+          </button>
+        )}
       </div>
+
+      {/* Stays on screen for as long as real names are switched on. The status
+          region itself is always there (empty while off) so that screen
+          readers announce it when the notice appears. */}
+      {canShowRealNames && (
+        <div
+          role="status"
+          className={
+            realNamesOn
+              ? "flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b-2 border-warning bg-warning/15 px-4 py-2.5"
+              : undefined
+          }
+        >
+          {realNamesOn && (
+            <>
+              <p className="flex min-w-0 flex-1 basis-56 items-start gap-2 text-sm text-themed-text">
+                <Eye className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                {showingRealNames ? (
+                  <span>
+                    <strong>Real names are showing.</strong> Only you see them; other players&apos;
+                    boards have not changed. Turn this off before you share or project your screen.
+                  </span>
+                ) : realNamesRefused ? (
+                  <span>
+                    <strong>Real names are not available</strong> to you on this board.
+                  </span>
+                ) : (
+                  <span>Loading real names&hellip;</span>
+                )}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setRealNamesFor(null);
+                  // This button is about to go: hand focus back to the switch.
+                  realNamesSwitch.current?.focus();
+                }}
+                className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-2 text-sm font-semibold text-themed-text underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+              >
+                Hide real names
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div className="p-4 space-y-3">
@@ -130,6 +241,7 @@ export default function Leaderboard({ huntId }: LeaderboardProps) {
             const isViewer = viewerId != null && entry.user_id === viewerId;
             const rank = ranks[i];
             const name = entry.display_name || "Anonymous";
+            const playersSee = showingRealNames ? otherPlayersNote(name, entry.shown_as) : null;
             return (
               // layout="position": when a live update reorders the board, rows
               // slide to their new rank instead of jumping.
@@ -183,6 +295,19 @@ export default function Leaderboard({ huntId }: LeaderboardProps) {
                       <span className="shrink-0 rounded-full bg-brand-dark px-2 py-0.5 text-xs font-bold text-white">You</span>
                     )}
                   </p>
+                  {/* Real name next to the name the board shows, so an admin
+                      can tell who is who. */}
+                  {showingRealNames && (
+                    <p className="text-sm text-themed-text [overflow-wrap:anywhere]">
+                      <span className="font-semibold">Real name:</span>{" "}
+                      <span className={entry.real_name ? undefined : "italic text-themed-muted"}>
+                        {realNameLabel(entry)}
+                      </span>
+                    </p>
+                  )}
+                  {playersSee && (
+                    <p className="text-sm text-themed-muted [overflow-wrap:anywhere]">{playersSee}</p>
+                  )}
                   {isViewer && caption ? (
                     <p className="text-sm font-medium text-brand-dark">{caption}</p>
                   ) : entry.hunts_completed != null ? (
