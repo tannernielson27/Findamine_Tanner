@@ -5,6 +5,23 @@ import { trackEvent } from "@/lib/utils/track-event";
 import { evaluateBadges, updateStreak } from "@/lib/services/gamification";
 import { runAfter } from "@/lib/utils/run-after";
 import { logger } from "@/lib/utils/logger";
+import { internalError } from "@/lib/utils/internal-error";
+import { readNavigationHelp, withoutArrivalDistance, type NavigationHelp } from "@/lib/play/navigation-help";
+
+const ROUTE = "/api/v1/play/[huntId]/complete";
+
+interface SessionWithCompletions {
+  find_completions?: { metadata?: Record<string, unknown> | null }[] | null;
+}
+
+/**
+ * The session as it goes back to the player. On a Hard hunt their completion
+ * rows come without how far off each check-in was, as in /progress: no play
+ * response carries a distance to a stop (issue #15).
+ */
+function sessionForPlayer<T extends SessionWithCompletions>(session: T, level: NavigationHelp): T {
+  return { ...session, find_completions: withoutArrivalDistance(session.find_completions ?? [], level) };
+}
 
 export async function POST(
   request: NextRequest,
@@ -16,6 +33,12 @@ export async function POST(
     if (!user) throw new ApiError(401, "Not authenticated");
 
     const supabase = await createSupabaseServiceClient();
+
+    // Read first: without the hunt's difficulty the reply can't be built safely.
+    const { data: hunt, error: huntError } = await supabase.from("hunts").select("metadata").eq("id", huntId).maybeSingle();
+    if (huntError) throw internalError(ROUTE, huntError);
+    if (!hunt) throw new ApiError(404, "No active play session");
+    const level = readNavigationHelp(hunt.metadata as Record<string, unknown> | null);
 
     const { data: updated, error } = await supabase
       .from("play_sessions")
@@ -45,7 +68,7 @@ export async function POST(
         .limit(1);
 
       if (!finished?.[0]) throw new ApiError(404, "No active play session");
-      return Response.json({ session: finished[0], already_completed: true, badges_earned: [] });
+      return Response.json({ session: sessionForPlayer(finished[0], level), already_completed: true, badges_earned: [] });
     }
 
     runAfter("track_play_complete", () =>
@@ -68,7 +91,7 @@ export async function POST(
       });
     }
 
-    return Response.json({ session, badges_earned: badgesEarned });
+    return Response.json({ session: sessionForPlayer(session, level), badges_earned: badgesEarned });
   } catch (error) {
     return errorResponse(error);
   }

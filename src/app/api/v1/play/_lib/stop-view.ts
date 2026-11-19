@@ -20,8 +20,10 @@ import { navigationAids, type NavigationHelp } from "@/lib/play/navigation-help"
  * decides how much of the place a started stop carries. Easy: all of it.
  * Medium and Hard: the place's name and coordinates stay on the server until
  * the player has completed the stop, so there is nothing on the device to
- * draw a map, a pin or a direction from. In Hard the stop also says its
- * hot/cold meter is off. The creator's safety note is sent at every level.
+ * draw a map, a pin or a direction from, and the challenge stays on the
+ * server until they have arrived. In Hard the stop also says its hot/cold
+ * meter is off. The creator's safety note is sent at every level: it is for
+ * the way there.
  */
 
 type One<T> = T | T[] | null | undefined;
@@ -93,6 +95,8 @@ export function lockedStopView(source: StopSource, open: boolean): Find {
 
 export interface StartedStopOptions {
   navigationHelp: NavigationHelp;
+  /** The player's arrival at this stop is recorded. */
+  arrived: boolean;
   /** The player has finished this stop: nothing about it is left to find. */
   completed: boolean;
 }
@@ -100,12 +104,19 @@ export interface StartedStopOptions {
 /**
  * A stop the player has started: what the play screen may show for it at the
  * hunt's navigation help level.
+ *
+ * Medium and Hard also hold the challenge back until the player has arrived.
+ * A challenge is written to be answered at the place ("What year is on the
+ * plaque by the fountain?"), so its title and question often say where that
+ * is. `challenge_pending` tells the screen there is one to fetch on arrival
+ * (start-stop returns the stop again, with it).
  */
 export function startedStopView(source: StopSource, startedAt: string, options: StartedStopOptions): Find {
   const place = one(source.locations);
   const task = one(source.tasks);
   const aids = navigationAids(options.navigationHelp);
   const showPlace = aids.map || options.completed;
+  const showChallenge = aids.map || options.arrived || options.completed;
   return {
     id: source.id,
     sort_order: source.sort_order ?? 0,
@@ -124,9 +135,11 @@ export function startedStopView(source: StopSource, startedAt: string, options: 
           safety_notes: place.safety_notes ?? null,
         }
       : null,
-    tasks: task
-      ? { title: task.title, challenge_type: task.challenge_type, content: redactContent(task.content ?? {}) }
-      : null,
+    tasks:
+      task && showChallenge
+        ? { title: task.title, challenge_type: task.challenge_type, content: redactContent(task.content ?? {}) }
+        : null,
+    ...(task && !showChallenge ? { challenge_pending: true } : {}),
     primers: primerOf(source),
   };
 }

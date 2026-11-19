@@ -56,13 +56,26 @@ export function withNavigationHelp(metadata: Meta, level: NavigationHelp): Recor
 }
 
 /**
+ * Does the level keep where the stop is off the device? True for Medium and
+ * Hard. On those levels anything that can name the place (the challenge and
+ * its hints) waits until the player has arrived.
+ */
+export function hidesPlace(level: NavigationHelp): boolean {
+  return !navigationAids(level).map;
+}
+
+/**
  * An update that leaves the level out (a client that doesn't manage it) keeps
- * the stored one. Returns `after` unchanged otherwise; never mutates.
+ * the stored one. Only a known level is carried over: a stored value that is
+ * not a level reads as easy already, and copying it into the update would get
+ * every later save rejected as an unknown difficulty. Returns `after`
+ * unchanged otherwise; never mutates.
  */
 export function inheritNavigationHelp<T extends Meta>(before: Meta, after: T): T | Record<string, unknown> {
-  if (!before || !(NAVIGATION_HELP_KEY in before)) return after;
+  const stored = before?.[NAVIGATION_HELP_KEY];
+  if (!isNavigationHelp(stored)) return after;
   if (after && NAVIGATION_HELP_KEY in after) return after;
-  return { ...(after ?? {}), [NAVIGATION_HELP_KEY]: before[NAVIGATION_HELP_KEY] };
+  return { ...(after ?? {}), [NAVIGATION_HELP_KEY]: stored };
 }
 
 /** Did the effective level change? */
@@ -112,7 +125,8 @@ interface WithMetadata {
  * Hard: the player's own completion rows without how far from the stop they
  * were at check-in, so no play response carries a distance. The value stays in
  * the database for researchers. Other levels get the rows back as they are.
- * Never mutates.
+ * Use it on every play response that returns completion rows (progress,
+ * complete). Never mutates.
  */
 export function withoutArrivalDistance<T extends WithMetadata>(rows: T[], level: NavigationHelp): T[] {
   if (navigationAids(level).meter) return rows;
@@ -135,6 +149,13 @@ export const NAVIGATION_HELP_DESCRIPTIONS: Record<NavigationHelp, string> = {
   medium: "Players get the clue and the hot/cold meter. No map.",
   hard: "Players get the clue only. No map and no hot/cold meter: they tap \"I'm here\" when they think they've arrived.",
 };
+
+/**
+ * For the creator, under the picker on Medium and Hard: the setting takes the
+ * map away, but it cannot stop their own words from naming the place.
+ */
+export const NAVIGATION_HELP_CREATOR_NOTE =
+  "Check your own wording: a clue, clue hint, primer or safety note that names the place gives it away at any difficulty. The challenge and its hints are held back until the player arrives.";
 
 /** One line for the player, on the hunt page before they start. */
 export const NAVIGATION_HELP_PLAYER_DESCRIPTIONS: Record<NavigationHelp, string> = {

@@ -47,6 +47,20 @@ export function ChallengeSheet({ huntId, stopNumber, find, flow, errorSlot }: Ch
   const heading = question || title || "Challenge";
   const showTitleLine = !!question && !!title && title !== question;
 
+  // Medium and Hard hunts: the challenge arrives only once the player has. An
+  // empty answer box here would let them answer a question they can't see.
+  if (find?.challenge_pending) {
+    return (
+      <PlaySheet label={`Stop ${stopNumber} challenge`} topDvh={24}>
+        {errorSlot}
+        <p role="status" className="text-base">Loading your challenge...</p>
+        <Button variant="secondary" size="lg" block onClick={() => void flow.loadChallenge()}>
+          Try again
+        </Button>
+      </PlaySheet>
+    );
+  }
+
   return (
     <PlaySheet label={`Stop ${stopNumber} challenge`} topDvh={24}>
       {errorSlot}

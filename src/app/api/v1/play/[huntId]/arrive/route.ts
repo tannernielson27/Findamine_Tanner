@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
+import { checkInLimiter } from "@/lib/utils/rate-limit";
 import { getHotColdZone, haversineDistance } from "@/lib/services/hot-cold";
 import { coordinatesForStorage } from "@/lib/utils/location-storage";
 import { checkArrival, stopRadius, type ArrivalVerdict } from "@/lib/play/arrival-check";
@@ -43,6 +44,8 @@ export async function POST(
     const accuracy = finiteNumber(body.accuracy);
 
     if (!find_id) throw new ApiError(400, "find_id is required");
+    // A tap is answered yes or no for whatever position is sent: limit them.
+    if (manual) await checkInLimiter.check(request, user.id);
 
     const supabase = await createSupabaseServiceClient();
 
@@ -90,9 +93,11 @@ export async function POST(
     const hotColdEnabled = aids.meter && find.hot_cold_enabled !== false;
     const radius = stopRadius(loc.radius_meters);
 
-    // Hard: only "I'm here" is checked. A GPS ping gets the same reply
-    // wherever the player is, so it can't be used as a "you're there" signal.
-    if (!aids.meter && !manual) {
+    // No meter and no map (Hard, or a Medium stop with hot/cold off): only
+    // "I'm here" is checked, and taps are rate limited. A GPS ping gets the
+    // same reply wherever the player is, so it can't be used as an unlimited
+    // "you're there" signal. On Easy the pin is on the map anyway.
+    if (!hotColdEnabled && !aids.map && !manual) {
       return Response.json({
         arrived: false,
         reason: "tap_required",

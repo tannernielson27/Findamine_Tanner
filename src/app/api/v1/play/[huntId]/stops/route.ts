@@ -18,7 +18,8 @@ const NO_STORE = { "Cache-Control": "private, no-store" };
  *
  * `navigation_help` is the hunt's level (issue #15). On Medium and Hard hunts
  * a started stop comes without its place name and coordinates until the
- * player has completed it (see _lib/stop-view.ts).
+ * player has completed it, and without its challenge until they have arrived
+ * (see _lib/stop-view.ts).
  */
 export async function GET(
   request: NextRequest,
@@ -51,7 +52,7 @@ export async function GET(
       const row = progress.get(find.id);
       const startedAt = stopStartedAt(row);
       return startedAt
-        ? startedStopView(find, startedAt, { navigationHelp, completed: !!row?.completed_at })
+        ? startedStopView(find, startedAt, { navigationHelp, arrived: !!row?.arrived_at, completed: !!row?.completed_at })
         : lockedStopView(find, isOpen(find.id));
     });
 

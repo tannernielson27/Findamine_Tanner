@@ -72,9 +72,12 @@ export async function POST(
         completion_id: started.completion.id,
         started_at: started.startedAt,
         already_started: started.alreadyStarted,
-        // Medium and Hard hunts: no place name or coordinates before the stop is completed.
+        // Medium and Hard hunts: no place name or coordinates before the stop
+        // is completed, and no challenge before the player has arrived. The
+        // screen calls this again on arrival to collect the challenge.
         stop: startedStopView(source, started.startedAt, {
           navigationHelp,
+          arrived: !!started.completion.arrived_at,
           completed: !!started.completion.completed_at,
         }),
       },

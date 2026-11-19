@@ -21,6 +21,7 @@ vi.mock("@/lib/utils/api-auth", async (importOriginal) => ({
 }));
 vi.mock("@/lib/utils/rate-limit", () => ({
   playLimiter: { check: async () => {} },
+  checkInLimiter: { check: async () => {} },
 }));
 vi.mock("@/lib/utils/bot-guard", () => ({ botGuard: async () => null }));
 vi.mock("@/lib/utils/logger", () => ({

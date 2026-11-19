@@ -11,7 +11,11 @@ import { haversineDistance } from "@/lib/services/hot-cold";
  * exactly as before.
  */
 
-const h = vi.hoisted(() => ({ user: null as null | { id: string; role: string } }));
+const h = vi.hoisted(() => ({
+  user: null as null | { id: string; role: string },
+  /** Stands in for the "I'm here" limiter: counts calls, and can be made to refuse. */
+  checkIn: vi.fn<(request: unknown, userId?: string | null) => Promise<void>>(async () => {}),
+}));
 
 vi.mock("@/lib/supabase/server", async () => {
   const m = await import("@/__tests__/support/supabase-double");
@@ -26,6 +30,7 @@ vi.mock("@/lib/utils/api-auth", async (importOriginal) => ({
 }));
 vi.mock("@/lib/utils/rate-limit", () => ({
   playLimiter: { check: async () => {} },
+  checkInLimiter: { check: h.checkIn },
   aiLimiter: { check: async () => {} },
   generalLimiter: { check: async () => {} },
 }));
@@ -41,6 +46,10 @@ import { POST as startHunt } from "@/app/api/v1/play/[huntId]/start/route";
 import { POST as arrive } from "@/app/api/v1/play/[huntId]/arrive/route";
 import { POST as arrivePhoto } from "@/app/api/v1/play/[huntId]/arrive-photo/route";
 import { POST as clueHint } from "@/app/api/v1/play/[huntId]/clue-hint/route";
+import { POST as challengeHint } from "@/app/api/v1/play/[huntId]/hint/route";
+import { POST as completeHunt } from "@/app/api/v1/play/[huntId]/complete/route";
+import { GET as getProgress } from "@/app/api/v1/play/[huntId]/progress/route";
+import { ApiError } from "@/lib/utils/api-auth";
 import { POST as aiHint } from "@/app/api/v1/ai/hints/route";
 import { PUT as updateHunt } from "@/app/api/v1/hunts/[id]/route";
 import { POST as createHunt } from "@/app/api/v1/hunts/route";
@@ -160,7 +169,18 @@ function expectNoDistanceOrZone(body: Row): void {
 
 beforeEach(() => {
   h.user = { id: "u1", role: "adult" };
+  h.checkIn.mockReset();
+  h.checkIn.mockImplementation(async () => {});
 });
+
+const ARRIVED = "2026-11-18T10:09:00.000Z";
+const photoForm = (position: Row = {}) => {
+  const form = new FormData();
+  form.append("find_id", "f0");
+  form.append("file", new File([new Uint8Array([1, 2, 3])], "photo.jpg", { type: "image/jpeg" }));
+  for (const [key, value] of Object.entries(position)) form.append(key, String(value));
+  return arrivePhoto(new NextRequest("http://localhost:3000/x", { method: "POST", body: form }), playParams);
+};
 
 describe("Easy, and hunts with no setting, are unchanged", () => {
   it.each([{}, { navigation_help: "easy" }, { navigation_help: "nonsense" }])(
@@ -170,6 +190,9 @@ describe("Easy, and hunts with no setting, are unchanged", () => {
       const started = await (await start("f0")).json();
       const place = { name: PLACE, ...STOP, radius_meters: 50, safety_notes: SAFETY };
       expect(started.stop).toMatchObject({ clue_text: CLUE, hot_cold_enabled: true, locations: place });
+      // The challenge comes with the start, as it always has.
+      expect(started.stop.tasks).toMatchObject({ title: "Count the bells" });
+      expect(started.stop.challenge_pending).toBeUndefined();
       const body = await stops();
       expect(body.stops[0]).toMatchObject({ clue_text: CLUE, hot_cold_enabled: true, locations: place });
       expect(body.navigation_help).toBe("easy");
@@ -205,7 +228,7 @@ describe("Easy, and hunts with no setting, are unchanged", () => {
 describe.each(["medium", "hard"])("%s: the stop's coordinates never reach the browser before it is completed", (level) => {
   const metadata = { clue_delivery: "fixed_order", navigation_help: level };
 
-  it("start-stop releases the clue and the challenge, not the place", async () => {
+  it("start-stop releases the clue, not the place and not yet the challenge", async () => {
     seed(metadata);
     const res = await start("f0");
     const body = await res.json();
@@ -214,10 +237,53 @@ describe.each(["medium", "hard"])("%s: the stop's coordinates never reach the br
     expect(body.stop).toMatchObject({
       id: "f0",
       clue_text: CLUE,
-      tasks: { title: "Count the bells" },
+      // A challenge is written for the place and can say where it is.
+      tasks: null,
+      challenge_pending: true,
       // The creator's safety note still reaches the player.
       locations: { name: null, latitude: null, longitude: null, safety_notes: SAFETY },
     });
+    expect(JSON.stringify(body)).not.toContain("How many bells?");
+  });
+
+  it("the challenge is held until the player has arrived, then start-stop and stops both carry it", async () => {
+    seed(metadata, { completions: [completion("f0")] });
+    const before = await stops();
+    expect(before.stops[0]).toMatchObject({ tasks: null, challenge_pending: true });
+    expect(JSON.stringify(before)).not.toContain("Count the bells");
+
+    seed(metadata, { completions: [completion("f0", { arrived_at: ARRIVED })] });
+    const again = await start("f0");
+    const stop = (await again.json()).stop;
+    // Asking again restarts nothing: same start, now with the challenge.
+    expect(again.status).toBe(200);
+    expect(stop.started_at).toBe("2026-11-18T10:05:00.000Z");
+    expect(stop.tasks).toMatchObject({ title: "Count the bells", content: { question: "How many bells?" } });
+    expect(stop.challenge_pending).toBeUndefined();
+    // Never the answer key, and still not the place.
+    expect(JSON.stringify(stop)).not.toContain("52");
+    expectNoCoordinates(stop);
+    const reloaded = (await stops()).stops[0];
+    expect(reloaded.tasks).toMatchObject({ title: "Count the bells" });
+    expect(reloaded.challenge_pending).toBeUndefined();
+  });
+
+  it("a stop with no challenge is not marked as waiting for one", async () => {
+    const db = seed(metadata, { completions: [completion("f0")] });
+    db.table("finds")[0].task_id = null;
+    const stop = (await stops()).stops[0];
+    expect(stop.tasks).toBeNull();
+    expect(stop.challenge_pending).toBeUndefined();
+  });
+
+  it("the challenge's own hints wait for the arrival too", async () => {
+    const ask = () => challengeHint(req("POST", "/hint", { find_id: "f0", level: 1 }), playParams);
+    seed(metadata, { completions: [completion("f0")] });
+    const early = await ask();
+    expect(early.status).toBe(409);
+    expect((await early.json()).error).toMatch(/once you've arrived/);
+    seed(metadata, { completions: [completion("f0", { arrived_at: ARRIVED })] });
+    expect((await ask()).status).toBe(200);
   });
 
   it("stops: nothing about where a started stop is, on first load or on a reload", async () => {
@@ -279,8 +345,20 @@ describe.each(["medium", "hard"])("%s: the stop's coordinates never reach the br
     expect(early.status).toBe(409);
     expectNoCoordinates(await early.json());
 
-    seed(metadata, { completions: [completion("f0", { arrived_at: "2026-11-18T10:09:00.000Z" })] });
+    seed(metadata, { completions: [completion("f0", { arrived_at: ARRIVED })] });
     expect((await ask()).status).toBe(200);
+
+    // A photo check-in is not location-checked. Until someone confirms it, it
+    // does not get the place named.
+    const photo = { arrival_method: "photo", arrival_review: "pending" };
+    seed(metadata, { completions: [completion("f0", { arrived_at: ARRIVED, metadata: photo })] });
+    const afterPhoto = await ask();
+    expect(afterPhoto.status).toBe(409);
+    expectNoCoordinates(await afterPhoto.json());
+    // Confirmed by a reviewer (the flag is cleared): allowed.
+    seed(metadata, { completions: [completion("f0", { arrived_at: ARRIVED, metadata: { arrival_method: "photo" } })] });
+    expect((await ask()).status).toBe(200);
+
     // The people who can edit the hunt are not playing it.
     seed(metadata, { completions: [] });
     h.user = { id: "creator", role: "teacher" };
@@ -330,6 +408,19 @@ describe("medium: the hot/cold reading comes from the server, without coordinate
     const body = await (await ping(FAR)).json();
     expect(body.distance).toBeNull();
     expect(body.hot_cold).toBeNull();
+  });
+
+  it("a stop with hot/cold switched off is checked by tapping only, like a Hard stop", async () => {
+    const db = seed(metadata, { completions: [completion("f0")] });
+    db.table("finds")[0].hot_cold_enabled = false;
+    // With no meter and no map, a ping that answered "you're there" would be
+    // an unlimited way to search for the stop.
+    const far = await (await ping(FAR)).json();
+    const near = await (await ping(STOP)).json();
+    expect(near).toEqual(far);
+    expect(near).toMatchObject({ arrived: false, reason: "tap_required" });
+    expect(db.table("find_completions")[0].arrived_at).toBeNull();
+    expect((await (await tap(STOP)).json()).arrived).toBe(true);
   });
 });
 
@@ -390,17 +481,108 @@ describe("hard: no distance, zone or direction, and arrival only by tapping I'm 
 
   it("a photo check-in from clearly elsewhere is refused without a distance", async () => {
     seed(metadata, { completions: [completion("f0")] });
-    const form = new FormData();
-    form.append("find_id", "f0");
-    form.append("file", new File([new Uint8Array([1, 2, 3])], "photo.jpg", { type: "image/jpeg" }));
-    form.append("latitude", String(FAR.latitude));
-    form.append("longitude", String(FAR.longitude));
-    form.append("accuracy", "5");
-    const res = await arrivePhoto(new NextRequest("http://localhost:3000/x", { method: "POST", body: form }), playParams);
+    const res = await photoForm({ ...FAR, accuracy: 5 });
     const body = await res.json();
     expect(res.status).toBe(400);
     expect(JSON.stringify(body)).not.toMatch(/\d/);
     expectNoCoordinates(body);
+  });
+});
+
+describe("I'm here is rate limited; automatic GPS pings are not", () => {
+  const hard = { clue_delivery: "fixed_order", navigation_help: "hard" };
+
+  it("counts each tap and each photo check-in against the player", async () => {
+    seed(hard, { completions: [completion("f0")] });
+    await tap(FAR);
+    await tap({});
+    await photoForm();
+    expect(h.checkIn).toHaveBeenCalledTimes(3);
+    for (const call of h.checkIn.mock.calls) expect(call[1]).toBe("u1");
+  });
+
+  it("does not count pings, on any level", async () => {
+    for (const metadata of [{}, { navigation_help: "medium" }, hard]) {
+      seed({ clue_delivery: "fixed_order", ...metadata }, { completions: [completion("f0")] });
+      await ping(FAR);
+      await ping(STOP);
+    }
+    expect(h.checkIn).not.toHaveBeenCalled();
+  });
+
+  it("a player over the limit is told to wait, and nothing is checked or recorded", async () => {
+    const db = seed(hard, { completions: [completion("f0")] });
+    h.checkIn.mockImplementation(async () => {
+      throw new ApiError(429, "Too many attempts. Please try again in 4 minutes.");
+    });
+    // Standing on the stop makes no difference: the answer is not given.
+    for (const res of [await tap(STOP), await tap(FAR), await photoForm()]) {
+      expect(res.status).toBe(429);
+      const body = await res.json();
+      expect(body.error).toMatch(/Too many attempts/);
+      expect(body.arrived).toBeUndefined();
+    }
+    expect(db.table("find_completions")[0].arrived_at).toBeNull();
+    expect(db.table("find_photos")).toHaveLength(0);
+  });
+});
+
+describe("hard: no response after the hunt says how far off a check-in was", () => {
+  const hard = { clue_delivery: "fixed_order", navigation_help: "hard" };
+  const arrived = (findId: string) =>
+    completion(findId, {
+      arrived_at: ARRIVED,
+      completed_at: "2026-11-18T10:12:00.000Z",
+      metadata: { arrival_distance: 37.4, arrival_method: "gps_tap", arrival_accuracy: 5 },
+    });
+  const complete = () => completeHunt(req("POST", "/complete", {}), playParams);
+  const withEmbed = (db: SupabaseDouble) => {
+    db.embeds.play_sessions = {
+      ...(db.embeds.play_sessions || {}),
+      find_completions: { table: "find_completions", localKey: "id", foreignKey: "play_session_id", many: true },
+    };
+    return db;
+  };
+
+  it("finishing the hunt returns the player's rows without arrival_distance", async () => {
+    withEmbed(seed(hard, { completions: [arrived("f0")] }));
+    const res = await complete();
+    expect(res.status).toBe(200);
+    const text = JSON.stringify(await res.json());
+    expect(text).not.toContain("arrival_distance");
+    expect(text).not.toContain("37.4");
+    // The rest of the row is still there.
+    expect(text).toContain("gps_tap");
+  });
+
+  it("a repeat call after finishing is stripped the same way", async () => {
+    withEmbed(seed(hard, { completions: [arrived("f0")] }));
+    await complete();
+    const again = await complete();
+    const body = await again.json();
+    expect(body.already_completed).toBe(true);
+    expect(JSON.stringify(body)).not.toContain("arrival_distance");
+  });
+
+  it("the distance stays in the database for researchers", async () => {
+    const db = withEmbed(seed(hard, { completions: [arrived("f0")] }));
+    await complete();
+    expect((db.table("find_completions")[0].metadata as Row).arrival_distance).toBe(37.4);
+  });
+
+  it("Easy and Medium hunts still get it back", async () => {
+    for (const metadata of [{}, { navigation_help: "medium" }]) {
+      withEmbed(seed({ clue_delivery: "fixed_order", ...metadata }, { completions: [arrived("f0")] }));
+      expect(JSON.stringify(await (await complete()).json())).toContain("37.4");
+    }
+  });
+
+  it("progress refuses rather than guess the level when the hunt can't be read", async () => {
+    const db = withEmbed(seed(hard, { completions: [arrived("f0")] }));
+    db.replace("hunts", []);
+    const res = await getProgress(req("GET", "/progress"), playParams);
+    expect(res.status).toBe(500);
+    expect(JSON.stringify(await res.json())).not.toContain("37.4");
   });
 });
 
@@ -476,6 +658,16 @@ describe("setting the level", () => {
     const res = await put({ clue_delivery: "fixed_order", hide_scores: true });
     expect(res.status).toBe(200);
     expect(stored(db)).toMatchObject({ navigation_help: "hard", hide_scores: true });
+  });
+
+  it("a stored value that is not a level doesn't block later saves", async () => {
+    // It reads as Easy. Carrying it into the update would get every save
+    // rejected as an unknown difficulty.
+    const db = seed({ navigation_help: "legacy-value" }, { status: "draft", sessions: [] });
+    const res = await put({ hide_scores: true });
+    expect(res.status).toBe(200);
+    expect(stored(db)).toMatchObject({ hide_scores: true });
+    expect(stored(db).navigation_help).toBeUndefined();
   });
 
   it("a locked hunt can be saved with its level unchanged", async () => {

@@ -45,6 +45,11 @@ export interface Find {
     safety_notes?: string | null;
   } | null;
   tasks: { title: string; challenge_type: string; content: Record<string, unknown> } | null;
+  /**
+   * Medium and Hard hunts: the stop has a challenge, and the server is holding
+   * it until the player has arrived. Ask start-stop for the stop again then.
+   */
+  challenge_pending?: boolean;
   primers: { title: string; content: Record<string, unknown> } | null;
 }
 

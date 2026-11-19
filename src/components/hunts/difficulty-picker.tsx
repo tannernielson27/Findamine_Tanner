@@ -1,9 +1,11 @@
 "use client";
 
 import {
+  NAVIGATION_HELP_CREATOR_NOTE,
   NAVIGATION_HELP_DESCRIPTIONS,
   NAVIGATION_HELP_LABELS,
   NAVIGATION_HELP_LEVELS,
+  hidesPlace,
   type NavigationHelp,
 } from "@/lib/play/navigation-help";
 import { cn } from "@/lib/utils/cn";
@@ -54,6 +56,7 @@ export function DifficultyPicker({ name, value, onChange, disabled = false }: Di
           </label>
         );
       })}
+      {hidesPlace(value) && <p className="pt-1 text-xs text-gray-600">{NAVIGATION_HELP_CREATOR_NOTE}</p>}
     </fieldset>
   );
 }
