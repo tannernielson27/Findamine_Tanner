@@ -33,7 +33,17 @@ export interface Find {
   hot_cold_enabled: boolean | null;
   scaffolding_level: string | null;
   reading_check: { enabled: boolean; questions: ReadingCheckQuestion[] } | null;
-  locations: { name: string; latitude: number; longitude: number; radius_meters: number; safety_notes?: string | null } | null;
+  /**
+   * The stop's place. On Medium and Hard hunts (lib/play/navigation-help) the
+   * name and coordinates are null until the player has completed the stop.
+   */
+  locations: {
+    name: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    radius_meters: number;
+    safety_notes?: string | null;
+  } | null;
   tasks: { title: string; challenge_type: string; content: Record<string, unknown> } | null;
   primers: { title: string; content: Record<string, unknown> } | null;
 }
@@ -50,6 +60,8 @@ export interface HuntMetadata {
   shuffle_stops?: boolean;
   /** How clues are handed out (lib/play/clue-delivery). */
   clue_delivery?: string;
+  /** How much navigation help players get: "Difficulty" (lib/play/navigation-help). */
+  navigation_help?: string;
 }
 
 export interface HotCold {

@@ -6,6 +6,7 @@ import type { CelebrationControls } from "@/lib/play/use-celebration-state";
 import type { Find, HuntMetadata, HuntSummaryData, StartOptions } from "@/lib/play/play-types";
 import { readClueDelivery, type ClueDelivery } from "@/lib/play/clue-delivery";
 import { mergeStops, withStartedStop } from "@/lib/play/stop-state";
+import { isNavigationHelp, readNavigationHelp, type NavigationHelp } from "@/lib/play/navigation-help";
 
 export interface FinishOptions {
   findsCompleted: number;
@@ -25,6 +26,12 @@ export interface PlaySession {
   huntMeta: HuntMetadata;
   /** How this hunt hands out clues. */
   delivery: ClueDelivery;
+  /**
+   * The hunt's difficulty: which navigation aids the play screen shows. The
+   * server enforces it (a Medium or Hard stop arrives without coordinates);
+   * this only decides what to draw.
+   */
+  navigationHelp: NavigationHelp;
   /** all_at_once: the list of open clues, where the player picks one. */
   clueBoardOpen: boolean;
   setClueBoardOpen: Dispatch<SetStateAction<boolean>>;
@@ -53,11 +60,20 @@ function markFirstHuntStarted(): void {
   }).catch(() => {});
 }
 
+interface StopsReply {
+  stops: Find[];
+  /** The hunt's navigation help level, or null from a server that doesn't send it. */
+  navigationHelp: NavigationHelp | null;
+}
+
 /** The session's stops in play order (GET /api/v1/play/[huntId]/stops). */
-async function fetchStops(huntId: string | string[] | undefined): Promise<Find[]> {
+async function fetchStops(huntId: string | string[] | undefined): Promise<StopsReply> {
   const res = await safeFetch(`/api/v1/play/${huntId}/stops`);
-  const body = (await res.json()) as { stops?: Find[] };
-  return body.stops ?? [];
+  const body = (await res.json()) as { stops?: Find[]; navigation_help?: unknown };
+  return {
+    stops: body.stops ?? [],
+    navigationHelp: isNavigationHelp(body.navigation_help) ? body.navigation_help : null,
+  };
 }
 
 /**
@@ -67,6 +83,7 @@ async function fetchStops(huntId: string | string[] | undefined): Promise<Find[]
 export function usePlaySession(huntId: string | string[] | undefined, celebration: CelebrationControls): PlaySession {
   const [finds, setFinds] = useState<Find[]>([]);
   const [huntMeta, setHuntMeta] = useState<HuntMetadata>({});
+  const [navigationHelp, setNavigationHelp] = useState<NavigationHelp | null>(null);
   const [clueBoardOpen, setClueBoardOpen] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [completedFinds, setCompletedFinds] = useState<Set<string>>(new Set());
@@ -139,7 +156,7 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
         // Drives the next-steps funnel surfaced after onboarding.
         markFirstHuntStarted();
 
-        const [allFinds, progressRes, meta] = await Promise.all([
+        const [stopsReply, progressRes, meta] = await Promise.all([
           // This session's stops, already in its own order (random and assigned
           // orders differ per player; stable across reloads). A stop the
           // player hasn't started comes without its clue, place or challenge.
@@ -152,6 +169,7 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
             .catch(() => ({}) as HuntMetadata),
         ]);
 
+        const allFinds = stopsReply.stops;
         const progressData = await progressRes.json();
 
         const doneCompletions = (progressData.completions || []).filter(
@@ -169,6 +187,7 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
           );
 
         setHuntMeta(meta);
+        setNavigationHelp(stopsReply.navigationHelp);
         setFinds(allFinds);
         setCompletedFinds(completed);
         setSessionScore(priorScore);
@@ -214,7 +233,7 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
 
   const refreshStops = useCallback(async () => {
     const fresh = await fetchStops(huntId);
-    setFinds((current) => mergeStops(current, fresh));
+    setFinds((current) => mergeStops(current, fresh.stops));
   }, [huntId]);
 
   const applyStartedStop = useCallback((stop: Find) => {
@@ -227,6 +246,8 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
     applyStartedStop,
     huntMeta,
     delivery: readClueDelivery(huntMeta as Record<string, unknown>),
+    // The play API's answer first; the hunt's settings if it didn't say.
+    navigationHelp: navigationHelp ?? readNavigationHelp(huntMeta as Record<string, unknown>),
     clueBoardOpen,
     setClueBoardOpen,
     currentIndex,

@@ -12,6 +12,7 @@ import type { CelebrationControls } from "@/lib/play/use-celebration-state";
 import type { PlaySession } from "@/lib/play/use-play-session";
 import type { PrivacyNotice } from "@/lib/services/privacy-notice";
 import { initialStep, stepAfterStart } from "@/lib/play/stop-state";
+import { navigationAids } from "@/lib/play/navigation-help";
 import type { AnswerFeedback, Find, HotCold, LocationConsent, StopStep } from "@/lib/play/play-types";
 
 export interface StopFlow extends GeoTracking, CheckIn {
@@ -105,7 +106,9 @@ export function useStopFlow(
     setStep("challenge");
   }, [arrivedCelebrated, celebrate]);
 
-  const geo = useGeoTracking({ huntId, step, currentFind, locationConsent, onHotCold: setHotCold, onArrived });
+  // Hard hunts have no meter and no automatic arrival: no fixes go to the server.
+  const sendFixes = navigationAids(session.navigationHelp).meter;
+  const geo = useGeoTracking({ huntId, step, currentFind, locationConsent, sendFixes, onHotCold: setHotCold, onArrived });
   const { setGpsStatus, userPos } = geo;
 
   // ── Reset step state when changing finds ────────────

@@ -8,6 +8,9 @@ import type { AgeBand } from "@/lib/themes/tokens";
 import { bandForUser } from "@/lib/utils/age-band";
 import { canSeeAnswerKeys } from "../../hunts/redact-finds";
 import { assertStopStarted } from "../../play/_lib/stop-start";
+import { navigationAids, readNavigationHelp } from "@/lib/play/navigation-help";
+
+const NOT_ARRIVED_MESSAGE = "This hint is available once you've arrived at the stop.";
 
 export const POST = withLogging("POST /api/v1/ai/hints", async (request: NextRequest) => {
   const user = await getAuthUser(request);
@@ -86,14 +89,19 @@ export const POST = withLogging("POST /api/v1/ai/hints", async (request: NextReq
   return Response.json({ hint, level: hintLevel, source: "ai" });
 });
 
-/** 404 unless the caller edits the hunt or is playing it; 409 until they have started the stop. */
+/**
+ * 404 unless the caller edits the hunt or is playing it; 409 until they have
+ * started the stop. On a hunt whose difficulty hides the place (Medium, Hard:
+ * lib/play/navigation-help) the hint, which may name the place, also waits
+ * until the player has arrived.
+ */
 async function assertMayReadStop(
   supabase: Awaited<ReturnType<typeof createSupabaseServiceClient>>,
   user: { id: string; role: string },
   huntId: string,
   findId: string
 ): Promise<void> {
-  const { data: hunt } = await supabase.from("hunts").select("created_by").eq("id", huntId).maybeSingle();
+  const { data: hunt } = await supabase.from("hunts").select("created_by, metadata").eq("id", huntId).maybeSingle();
   if (hunt && canSeeAnswerKeys(user, hunt.created_by as string | null)) return;
 
   const { data: session } = await supabase
@@ -104,7 +112,9 @@ async function assertMayReadStop(
     .eq("status", "active")
     .maybeSingle();
   if (!session) throw new ApiError(404, "Find not found");
-  await assertStopStarted(supabase, session.id as string, findId);
+  const completion = await assertStopStarted(supabase, session.id as string, findId);
+  const placeShown = navigationAids(readNavigationHelp(hunt?.metadata as Record<string, unknown> | null)).map;
+  if (!placeShown && !completion.arrived_at) throw new ApiError(409, NOT_ARRIVED_MESSAGE);
 }
 
 export const maxDuration = 30;

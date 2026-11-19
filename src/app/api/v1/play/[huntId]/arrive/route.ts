@@ -7,6 +7,7 @@ import { checkArrival, stopRadius, type ArrivalVerdict } from "@/lib/play/arriva
 import { recordArrival } from "../../_lib/arrival";
 import { assertStopOpen } from "../../_lib/stop-access";
 import { assertStopStarted } from "../../_lib/stop-start";
+import { navigationAids } from "@/lib/play/navigation-help";
 
 const ROUTE = "/api/v1/play/[huntId]/arrive";
 
@@ -56,7 +57,7 @@ export async function POST(
     if (!session) throw new ApiError(404, "No active play session");
 
     // Clue delivery: only the player's current stop (any stop in all-at-once mode).
-    await assertStopOpen(supabase, { huntId, userId: user.id, session, findId: find_id, route: ROUTE });
+    const { navigationHelp } = await assertStopOpen(supabase, { huntId, userId: user.id, session, findId: find_id, route: ROUTE });
     // No distance or hot/cold reading for a stop whose clock isn't running.
     await assertStopStarted(supabase, session.id, find_id);
 
@@ -81,8 +82,26 @@ export async function POST(
       }), null, null);
     }
 
-    const hotColdEnabled = find.hot_cold_enabled !== false;
+    // Navigation help (issue #15). The distance and zone below are worked out
+    // here from the stop's coordinates, which is why a Medium hunt can have a
+    // meter without the coordinates ever leaving the server. A Hard hunt has
+    // no meter, whatever the stop's own setting says.
+    const aids = navigationAids(navigationHelp);
+    const hotColdEnabled = aids.meter && find.hot_cold_enabled !== false;
     const radius = stopRadius(loc.radius_meters);
+
+    // Hard: only "I'm here" is checked. A GPS ping gets the same reply
+    // wherever the player is, so it can't be used as a "you're there" signal.
+    if (!aids.meter && !manual) {
+      return Response.json({
+        arrived: false,
+        reason: "tap_required",
+        photo_allowed: false,
+        distance: null,
+        hot_cold: null,
+        hot_cold_enabled: false,
+      });
+    }
 
     if (!hasCoords) {
       return Response.json({

@@ -1,5 +1,6 @@
 import { redactContent } from "../../hunts/redact-finds";
 import type { Find } from "@/lib/play/play-types";
+import { navigationAids, type NavigationHelp } from "@/lib/play/navigation-help";
 
 /**
  * What the play API tells a player about a stop (issue #16).
@@ -14,6 +15,13 @@ import type { Find } from "@/lib/play/play-types";
  * a new column on finds/locations is never sent by accident. Never sent at
  * all: answer keys (graded server-side), the clue hint list (handed out one at
  * a time by /clue-hint, at a cost) and the place's address or description.
+ *
+ * The hunt's navigation help level (issue #15, lib/play/navigation-help.ts)
+ * decides how much of the place a started stop carries. Easy: all of it.
+ * Medium and Hard: the place's name and coordinates stay on the server until
+ * the player has completed the stop, so there is nothing on the device to
+ * draw a map, a pin or a direction from. In Hard the stop also says its
+ * hot/cold meter is off. The creator's safety note is sent at every level.
  */
 
 type One<T> = T | T[] | null | undefined;
@@ -83,24 +91,35 @@ export function lockedStopView(source: StopSource, open: boolean): Find {
   };
 }
 
-/** A stop the player has started: everything the play screen shows for it. */
-export function startedStopView(source: StopSource, startedAt: string): Find {
+export interface StartedStopOptions {
+  navigationHelp: NavigationHelp;
+  /** The player has finished this stop: nothing about it is left to find. */
+  completed: boolean;
+}
+
+/**
+ * A stop the player has started: what the play screen may show for it at the
+ * hunt's navigation help level.
+ */
+export function startedStopView(source: StopSource, startedAt: string, options: StartedStopOptions): Find {
   const place = one(source.locations);
   const task = one(source.tasks);
+  const aids = navigationAids(options.navigationHelp);
+  const showPlace = aids.map || options.completed;
   return {
     id: source.id,
     sort_order: source.sort_order ?? 0,
     started_at: startedAt,
     open: true,
     clue_text: source.clue_text ?? null,
-    hot_cold_enabled: source.hot_cold_enabled !== false,
+    hot_cold_enabled: aids.meter && source.hot_cold_enabled !== false,
     scaffolding_level: source.scaffolding_level ?? null,
     reading_check: source.reading_check ?? null,
     locations: place
       ? {
-          name: place.name,
-          latitude: place.latitude,
-          longitude: place.longitude,
+          name: showPlace ? place.name : null,
+          latitude: showPlace ? place.latitude : null,
+          longitude: showPlace ? place.longitude : null,
           radius_meters: place.radius_meters ?? 50,
           safety_notes: place.safety_notes ?? null,
         }

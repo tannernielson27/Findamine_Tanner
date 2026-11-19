@@ -14,6 +14,7 @@ import { withoutInternalReviewFields } from "@/lib/hunts/review";
 import { logger } from "@/lib/utils/logger";
 import { withoutClueOrders } from "@/lib/play/clue-delivery";
 import { withStudyFlagFor } from "@/lib/hunts/delivery-lock";
+import { assertKnownNavigationHelp } from "./navigation-help-guard";
 
 /** Catalogue rows without review bookkeeping (who reviewed/affirmed, notes) or assigned clue orders. */
 function publicRows(rows: unknown): unknown {
@@ -143,6 +144,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const title = typeof body.title === "string" ? body.title.trim() : "";
     if (!title) throw new ApiError(400, "Hunt title is required");
+    // Difficulty (metadata.navigation_help) must be a known level when given.
+    assertKnownNavigationHelp(body.metadata);
 
     const supabase = await createSupabaseServiceClient();
 

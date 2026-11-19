@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
+import { readNavigationHelp, withoutArrivalDistance } from "@/lib/play/navigation-help";
 
 export async function GET(
   request: NextRequest,
@@ -13,8 +14,8 @@ export async function GET(
 
     const supabase = await createSupabaseServiceClient();
 
-    // The session and the hunt's find count are independent reads.
-    const [{ data: session }, { count }] = await Promise.all([
+    // The session, the hunt's find count and its settings are independent reads.
+    const [{ data: session }, { count }, { data: hunt }] = await Promise.all([
       supabase
         .from("play_sessions")
         .select("*, find_completions(*)")
@@ -28,17 +29,25 @@ export async function GET(
         .select("id", { count: "exact", head: true })
         .eq("hunt_id", huntId)
         .is("deleted_at", null),
+      supabase.from("hunts").select("metadata").eq("id", huntId).maybeSingle(),
     ]);
 
     if (!session) {
       return Response.json({ session: null, completions: [], total_finds: 0 });
     }
 
+    // Hard hunts give no distance to a stop, so the player's own rows come
+    // back without how far off their check-in was (issue #15).
+    const completions = withoutArrivalDistance(
+      (session.find_completions || []) as { completed_at: string | null; metadata?: Record<string, unknown> | null }[],
+      readNavigationHelp(hunt?.metadata as Record<string, unknown> | null)
+    );
+
     return Response.json({
-      session,
-      completions: session.find_completions || [],
+      session: { ...session, find_completions: completions },
+      completions,
       total_finds: count || 0,
-      completed_finds: (session.find_completions || []).filter(
+      completed_finds: completions.filter(
         (c: { completed_at: string | null }) => c.completed_at
       ).length,
     });

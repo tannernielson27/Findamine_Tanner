@@ -16,6 +16,7 @@ import {
   type ClueDelivery,
 } from "@/lib/play/clue-delivery";
 import { fullDeliveryMetadata } from "@/lib/hunts/clue-orders-store";
+import { readNavigationHelp, sessionNavigationHelpMetadata, type NavigationHelp } from "@/lib/play/navigation-help";
 
 const PLAYABLE_STATUSES = ["published", "enrollment_open", "in_progress"];
 const ROUTE = "/api/v1/play/[huntId]/start";
@@ -166,8 +167,12 @@ export async function POST(
         user_id: user.id,
         team_id: teamId,
         codename,
-        // Recorded for researchers: the mode and, for assigned orders, the group.
-        metadata: sessionDeliveryMetadata(delivery.mode, delivery.orderIndex),
+        // Recorded for researchers: the mode and, for assigned orders, the
+        // group; and the hunt's difficulty (navigation help level).
+        metadata: {
+          ...sessionDeliveryMetadata(delivery.mode, delivery.orderIndex),
+          ...sessionNavigationHelpMetadata(delivery.navigationHelp),
+        },
       })
       .select()
       .single();
@@ -217,6 +222,8 @@ interface Delivery {
   orders: string[][];
   orderIndex: number | null;
   assignment: { userId: string; huntId: string; orderCount: number };
+  /** How much navigation help the hunt gives (lib/play/navigation-help). */
+  navigationHelp: NavigationHelp;
 }
 
 /** The hunt's clue delivery mode and this player's assigned order group. */
@@ -225,12 +232,13 @@ function deliveryFor(huntMetadata: Record<string, unknown> | null, huntId: strin
   const orders = readClueOrders(huntMetadata);
   const assignment = { userId, huntId, orderCount: orders.length };
   const orderIndex = mode === "assigned_order" && orders.length > 0 ? orderIndexFor(null, assignment) : null;
-  return { mode, orders, orderIndex, assignment };
+  return { mode, orders, orderIndex, assignment, navigationHelp: readNavigationHelp(huntMetadata) };
 }
 
 /**
  * What the player is told: the mode and, for assigned orders, their own group
- * and its order. The hunt's other orders never leave the server.
+ * and its order (the hunt's other orders never leave the server), and the
+ * hunt's difficulty.
  */
 function playerDelivery(delivery: Delivery, sessionMetadata: Record<string, unknown> | null) {
   const orderIndex = delivery.orderIndex === null ? null : orderIndexFor(sessionMetadata, delivery.assignment);
@@ -238,5 +246,6 @@ function playerDelivery(delivery: Delivery, sessionMetadata: Record<string, unkn
     clue_delivery: delivery.mode,
     clue_order_index: orderIndex,
     clue_order: orderIndex === null ? null : delivery.orders[orderIndex] ?? null,
+    navigation_help: delivery.navigationHelp,
   };
 }
