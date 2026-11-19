@@ -67,7 +67,13 @@ const idParams = (id: string) => ({ params: Promise.resolve({ id }) });
 /** A hunt stop the play page can report (the route resolves it to snapshot the clue). */
 const installWithFind = () =>
   install(
-    { hunts: [{ id: "hunt-1", created_by: "res1" }], finds: [{ id: UUID, hunt_id: "hunt-1", clue_text: "By the fountain" }] },
+    {
+      hunts: [{ id: "hunt-1", created_by: "res1" }],
+      finds: [{ id: UUID, hunt_id: "hunt-1", clue_text: "By the fountain" }],
+      // The player has started the stop they are reporting.
+      play_sessions: [{ id: "sess-1", user_id: "player1", hunt_id: "hunt-1" }],
+      find_completions: [{ id: "comp-1", find_id: UUID, play_session_id: "sess-1" }],
+    },
     { embeds: { finds: { hunts: { table: "hunts", localKey: "hunt_id" } } } }
   );
 

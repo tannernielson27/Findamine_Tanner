@@ -11,6 +11,7 @@ import { findsForViewer } from "../../redact-finds";
 import { assertCleanFindText, canAccessHunt, requeuedMessage, settleRequeue } from "@/lib/hunts/review";
 import { internalError } from "@/lib/utils/internal-error";
 import { assertStopSetEditable } from "../../delivery-guard";
+import { assertFindContentAllowed } from "../../find-content-guard";
 
 export async function GET(
   request: NextRequest,
@@ -79,6 +80,9 @@ export async function POST(
     }
     // A locked study hunt (or one with assigned orders) has frozen stops.
     await assertStopSetEditable(supabase, { hunt: { id, status: hunt.status, metadata: hunt.metadata, starts_at: hunt.starts_at, ends_at: hunt.ends_at }, route: "/api/v1/hunts/[id]/finds" });
+
+    // A stop may only point at a place, challenge and primer its builder may read.
+    await assertFindContentAllowed(supabase, { user, huntId: id, fields, route: "/api/v1/hunts/[id]/finds" });
 
     // Next sort order goes after the current last stop. (Counting live stops
     // instead would collide with an existing sort_order after any delete.)

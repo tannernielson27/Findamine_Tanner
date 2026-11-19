@@ -192,6 +192,9 @@ describe("POST /reports", () => {
     const db = seed({
       hunts: [{ id: HUNT, created_by: ADA }],
       finds: [{ id: FIND, hunt_id: HUNT, clue_text: "Under the bridge" }],
+      // The reporter is playing the hunt and has started this stop.
+      play_sessions: [{ id: "sess-me", user_id: ME, hunt_id: HUNT }],
+      find_completions: [{ id: "comp-me", find_id: FIND, play_session_id: "sess-me" }],
     });
     const res = await report(req("POST", "/api/v1/reports", { category: "off_topic", target_type: "find", target_id: FIND }));
     expect(res.status).toBe(200);
@@ -201,6 +204,34 @@ describe("POST /reports", () => {
       reported_user_id: ADA,
       content_snapshot: "Under the bridge",
     });
+  });
+
+  it("a stop the reporter has not started reads as not found, and its clue is not stored for them", async () => {
+    // A reporter can read their own reports back, clue snapshot included.
+    const stops = { hunts: [{ id: HUNT, created_by: ADA }], finds: [{ id: FIND, hunt_id: HUNT, clue_text: "Under the bridge" }] };
+    const send = () => report(req("POST", "/api/v1/reports", { category: "off_topic", target_type: "find", target_id: FIND }));
+
+    // Never played the hunt.
+    let db = seed({ ...stops, play_sessions: [], find_completions: [] });
+    expect((await send()).status).toBe(404);
+    expect(db.table("moderation_reports")).toHaveLength(0);
+
+    // Playing it, but this stop is not started; someone else has started it.
+    db = seed({
+      ...stops,
+      play_sessions: [{ id: "sess-me", user_id: ME, hunt_id: HUNT }, { id: "sess-bo", user_id: BO, hunt_id: HUNT }],
+      find_completions: [{ id: "comp-bo", find_id: FIND, play_session_id: "sess-bo" }],
+    });
+    expect((await send()).status).toBe(404);
+    expect(db.table("moderation_reports")).toHaveLength(0);
+  });
+
+  it("a reviewer can report a stop without playing it", async () => {
+    const db = seed({ hunts: [{ id: HUNT, created_by: ADA }], finds: [{ id: FIND, hunt_id: HUNT, clue_text: "Under the bridge" }], play_sessions: [], find_completions: [] });
+    h.user = { id: BO, role: "admin" };
+    const res = await report(req("POST", "/api/v1/reports", { category: "off_topic", target_type: "find", target_id: FIND }));
+    expect(res.status).toBe(200);
+    expect(db.table("moderation_reports")[0]).toMatchObject({ content_snapshot: "Under the bridge" });
   });
 
   it("answers 404 for a stop that doesn't exist", async () => {

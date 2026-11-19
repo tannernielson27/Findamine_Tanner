@@ -16,6 +16,7 @@ import {
 } from "@/lib/hunts/review";
 import { internalError } from "@/lib/utils/internal-error";
 import { assertStopSetEditable } from "../../../delivery-guard";
+import { assertFindContentAllowed } from "../../../find-content-guard";
 import { freezesStops } from "@/lib/hunts/delivery-lock";
 import { isScheduledHunt } from "@/lib/hunts/schedule";
 
@@ -51,6 +52,8 @@ export async function PUT(
       throw new ApiError(400, "No editable fields provided");
     }
     assertCleanFindText(updates);
+    // A stop may only point at a place, challenge and primer its builder may read.
+    await assertFindContentAllowed(supabase, { user, huntId: id, fields: updates, route: ROUTE });
 
     // Moving a stop is a stop-set change: frozen on a locked study hunt (or
     // one with assigned orders). Re-saving a stop at its current position is fine.

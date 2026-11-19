@@ -48,7 +48,19 @@ export function mayReadContentRow(
 }
 
 /**
- * The PostgREST \`or\` filter for "in the library, or mine". The user id goes
+ * The library flag from a request body: undefined when it was not sent.
+ * Strictly a boolean (the database would read "true" or 1 as true), and only
+ * admins and researchers may put a row in the library every builder reads.
+ */
+export function parseLibraryFlag(value: unknown, role: string | null | undefined): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "boolean") throw new ApiError(400, `${LIBRARY_COLUMN} must be true or false`);
+  if (value && !readsAllContent(role)) throw new ApiError(403, "Only an admin can add items to the shared library");
+  return value;
+}
+
+/**
+ * The PostgREST "or" filter for "in the library, or mine". The user id goes
  * into a filter string, so anything that is not a plain id is refused rather
  * than escaped.
  */

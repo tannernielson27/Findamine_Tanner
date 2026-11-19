@@ -56,7 +56,7 @@ export async function POST(
     requireRole(user, "teacher", "hunt_creator", "admin", "researcher");
 
     const { searchParams } = new URL(request.url);
-    const deep = searchParams.get("deep") === "true";
+    const deepRequested = searchParams.get("deep") === "true";
 
     const supabase = await createSupabaseServiceClient();
 
@@ -82,6 +82,9 @@ export async function POST(
     if (!runsSource && source.is_template !== true) {
       throw new ApiError(403, NOT_A_TEMPLATE_MESSAGE);
     }
+    // Someone else's copy of a template gets its own places, challenges and
+    // primers, not pointers to the owner's rows.
+    const deep = deepRequested || !runsSource;
     // While a scheduled hunt is running (or yet to start) some of its stops
     // are not released, so until it has ended only its owner and reviewers
     // may copy it (issue #14).
@@ -117,6 +120,8 @@ export async function POST(
         title: `${huntData.title} (Copy)`,
         status: "draft",
         is_public: false,
+        // Sharing a hunt as a template is its own owner's choice, each time.
+        is_template: false,
         source_template_id: id,
         created_by: user.id,
       })

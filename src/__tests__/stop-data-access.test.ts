@@ -25,9 +25,12 @@ import { GET as listTasks } from "@/app/api/v1/tasks/route";
 import { GET as getTask } from "@/app/api/v1/tasks/[id]/route";
 import { GET as listPrimers } from "@/app/api/v1/primers/route";
 import { GET as getPrimer } from "@/app/api/v1/primers/[id]/route";
-import { GET as listLocations } from "@/app/api/v1/locations/route";
-import { GET as getLocation } from "@/app/api/v1/locations/[id]/route";
+import { GET as listLocations, POST as createLocation } from "@/app/api/v1/locations/route";
+import { GET as getLocation, PUT as updateLocation } from "@/app/api/v1/locations/[id]/route";
+import { POST as addStop } from "@/app/api/v1/hunts/[id]/finds/route";
+import { PUT as updateStop } from "@/app/api/v1/hunts/[id]/finds/[findId]/route";
 import { GET as search } from "@/app/api/v1/search/route";
+import { GET as curriculum } from "@/app/api/v1/curriculum/route";
 import {
   isContentBuilder,
   mayReadContentRow,
@@ -205,6 +208,36 @@ describe("GET /locations", () => {
   });
 });
 
+describe("GET /curriculum?standard=", () => {
+  const byStandard = async () => (await curriculum(req("/curriculum?standard=RL.5.1"))).json();
+
+  beforeEach(() => {
+    const db = seed();
+    db.table("education_standards").push({ id: "std-1", code: "RL.5.1" });
+    db.table("task_standard_alignments").push(
+      { standard_id: "std-1", task_id: "t-ada", alignment_strength: "strong" },
+      { standard_id: "std-1", task_id: "t-lib", alignment_strength: "strong" }
+    );
+    db.embeds.task_standard_alignments = { tasks: { table: "tasks", localKey: "task_id" } };
+  });
+
+  it("returns library challenges only, even when a hunt's own challenge is aligned to the standard", async () => {
+    for (const user of [null, player, bo, admin]) {
+      h.user = user;
+      const body = await byStandard();
+      expect(ids(body.tasks)).toEqual(["t-lib"]);
+      expect(JSON.stringify(body)).not.toContain(ANSWER);
+    }
+  });
+
+  it("keeps the library answer key for builders and strips it for everyone else", async () => {
+    h.user = bo;
+    expect((await byStandard()).tasks[0].content.correct_answer).toBe("lib-key");
+    h.user = player;
+    expect(JSON.stringify(await byStandard())).not.toContain("lib-key");
+  });
+});
+
 describe("GET /search", () => {
   const find = async (q: string) => (await search(req(`/search?q=${q}`))).json();
 
@@ -252,5 +285,190 @@ describe("GET /search", () => {
     h.user = admin;
     const { results } = await find("fountain");
     expect(ids(results.locations)).toEqual(["l-ada", "l-bo", "l-lib"]);
+  });
+});
+
+describe("what a stop may point at", () => {
+  const HUNT_ADA = "11111111-1111-4111-8111-111111111111";
+  const T_ADA = "aaaaaaaa-0000-4000-8000-000000000001";
+  const T_BO = "bbbbbbbb-0000-4000-8000-000000000001";
+  const T_LIB = "cccccccc-0000-4000-8000-000000000001";
+  const L_BO = "bbbbbbbb-0000-4000-8000-000000000002";
+  const P_BO = "bbbbbbbb-0000-4000-8000-000000000003";
+  const MISSING = "dddddddd-0000-4000-8000-000000000009";
+  const huntParams = { params: Promise.resolve({ id: HUNT_ADA }) };
+  const stopParams = (findId: string) => ({ params: Promise.resolve({ id: HUNT_ADA, findId }) });
+  const json = (method: string, path: string, body: Row) =>
+    new NextRequest(`http://localhost:3000/api/v1${path}`, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const post = (body: Row) => addStop(json("POST", `/hunts/${HUNT_ADA}/finds`, body), huntParams);
+  const put = (findId: string, body: Row) => updateStop(json("PUT", `/hunts/${HUNT_ADA}/finds/${findId}`, body), stopParams(findId));
+
+  function seedBuilder(finds: Row[] = []) {
+    return installDouble(
+      {
+        hunts: [{ id: HUNT_ADA, created_by: "ada", status: "draft", review_status: "not_submitted", metadata: {}, deleted_at: null, starts_at: null, ends_at: null }],
+        finds,
+        tasks: [
+          { id: T_ADA, title: "Ada's", content: { correct_answer: "ada-key" }, is_library: false, created_by: "ada", deleted_at: null },
+          { id: T_BO, title: "Bo's", content: { correct_answer: ANSWER }, is_library: false, created_by: "bo", deleted_at: null },
+          { id: T_LIB, title: "Library", content: { correct_answer: "lib-key" }, is_library: true, created_by: null, deleted_at: null },
+        ],
+        locations: [{ id: L_BO, name: PLACE, latitude: 40.25, longitude: -111.65, is_library: false, created_by: "bo", deleted_at: null }],
+        primers: [{ id: P_BO, title: "Bo's primer", content: { body: "By the fountain" }, is_library: false, created_by: "bo", deleted_at: null }],
+        play_sessions: [],
+        hunt_clue_orders: [],
+      },
+      {
+        embeds: {
+          finds: {
+            locations: { table: "locations", localKey: "location_id" },
+            tasks: { table: "tasks", localKey: "task_id" },
+            primers: { table: "primers", localKey: "primer_id" },
+          },
+        },
+      }
+    );
+  }
+
+  beforeEach(() => {
+    h.user = ada;
+  });
+
+  it("their own challenge or a library one: saved", async () => {
+    for (const task_id of [T_ADA, T_LIB]) {
+      const db = seedBuilder();
+      const res = await post({ task_id, clue_text: "Go" });
+      expect(res.status).toBe(201);
+      expect(db.table("finds")[0].task_id).toBe(task_id);
+    }
+  });
+
+  it("another builder's challenge, place or primer: refused, and nothing about it comes back", async () => {
+    for (const body of [{ task_id: T_BO }, { location_id: L_BO }, { primer_id: P_BO }] as Row[]) {
+      const db = seedBuilder();
+      const res = await post({ ...body, clue_text: "Go" });
+      expect(res.status).toBe(403);
+      const text = JSON.stringify(await res.json());
+      expect(text).toMatch(/isn't one of yours or in the shared library/);
+      expect(text).not.toContain(ANSWER);
+      expect(text).not.toContain(PLACE);
+      expect(db.table("finds")).toHaveLength(0);
+    }
+  });
+
+  it("an id that does not exist is refused the same way", async () => {
+    seedBuilder();
+    const res = await post({ task_id: MISSING, clue_text: "Go" });
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toMatch(/isn't one of yours or in the shared library/);
+    expect((await post({ task_id: "not-an-id", clue_text: "Go" })).status).toBe(400);
+  });
+
+  it("changing an existing stop follows the same rule", async () => {
+    const db = seedBuilder([{ id: "f1", hunt_id: HUNT_ADA, sort_order: 0, task_id: T_ADA, location_id: null, primer_id: null, deleted_at: null }]);
+    const refused = await put("f1", { task_id: T_BO });
+    expect(refused.status).toBe(403);
+    expect(JSON.stringify(await refused.json())).not.toContain(ANSWER);
+    expect(db.table("finds")[0].task_id).toBe(T_ADA);
+    expect((await put("f1", { task_id: T_LIB })).status).toBe(200);
+    expect(db.table("finds")[0].task_id).toBe(T_LIB);
+  });
+
+  it("a row the hunt already uses can stay on its stops: a copied hunt remains editable", async () => {
+    // The hunt's first stop points at Bo's challenge (it was copied from Bo's template).
+    const db = seedBuilder([
+      { id: "f1", hunt_id: HUNT_ADA, sort_order: 0, task_id: T_BO, location_id: null, primer_id: null, deleted_at: null },
+      { id: "f2", hunt_id: HUNT_ADA, sort_order: 1, task_id: null, location_id: null, primer_id: null, deleted_at: null },
+    ]);
+    expect((await put("f1", { task_id: T_BO, clue_text: "Reworded" })).status).toBe(200);
+    expect((await put("f2", { task_id: T_BO })).status).toBe(200);
+    expect(db.table("finds")[1].task_id).toBe(T_BO);
+  });
+
+  it("admins and researchers may use any row", async () => {
+    for (const user of [admin, researcher]) {
+      h.user = user;
+      seedBuilder();
+      expect((await post({ task_id: T_BO, location_id: L_BO, clue_text: "Go" })).status).toBe(201);
+    }
+  });
+
+  it("wording and settings edits are not affected", async () => {
+    seedBuilder([{ id: "f1", hunt_id: HUNT_ADA, sort_order: 0, task_id: T_ADA, location_id: null, primer_id: null, deleted_at: null }]);
+    expect((await put("f1", { clue_text: "A clearer clue", hot_cold_enabled: false })).status).toBe(200);
+  });
+});
+
+describe("the shared library of places", () => {
+  const json = (method: string, path: string, body: Row) =>
+    new NextRequest(`http://localhost:3000/api/v1${path}`, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const create = (body: Row) => createLocation(json("POST", "/locations", body));
+  const update = (id: string, body: Row) => updateLocation(json("PUT", `/locations/${id}`, body), item(id));
+  const place = { name: "A bench", latitude: 40.3, longitude: -111.7 };
+  // The double has no insert_location function, so the route takes its plain insert path.
+  const seedPlaces = () => {
+    const db = seed();
+    db.rpcHandlers.insert_location = () => {
+      throw new Error("function insert_location does not exist");
+    };
+    return db;
+  };
+
+  it("a builder cannot add a place to it, when creating or by editing their own", async () => {
+    h.user = bo;
+    const db = seedPlaces();
+    const before = db.table("locations").length;
+    const created = await create({ ...place, is_library: true });
+    expect(created.status).toBe(403);
+    expect(db.table("locations")).toHaveLength(before);
+    expect((await update("l-bo", { is_library: true })).status).toBe(403);
+    expect(db.table("locations").find((l) => l.id === "l-bo")?.is_library).toBe(false);
+  });
+
+  it("only a real true or false is accepted", async () => {
+    h.user = admin;
+    seedPlaces();
+    for (const value of ["true", 1, "yes"]) {
+      expect((await create({ ...place, is_library: value })).status).toBe(400);
+    }
+  });
+
+  it("an admin can, and a builder's ordinary place is not in the library", async () => {
+    h.user = admin;
+    let db = seedPlaces();
+    expect((await create({ ...place, is_library: true })).status).toBe(201);
+    expect(db.table("locations").at(-1)?.is_library).toBe(true);
+    h.user = bo;
+    db = seedPlaces();
+    expect((await create(place)).status).toBe(201);
+    expect(db.table("locations").at(-1)).toMatchObject({ is_library: false, created_by: "bo" });
+  });
+});
+
+describe("the area search", () => {
+  it("looks past other people's places nearby to find the builder's own", async () => {
+    // 60 places by someone else are closer than Bo's one place.
+    const others = Array.from({ length: 60 }, (_, i) => ({ id: `x-${i}`, name: `Other ${i}`, is_library: false, created_by: "ada", deleted_at: null }));
+    const asked: Row[] = [];
+    installDouble(
+      { locations: [...others, { id: "l-bo", name: "Bo's bench", is_library: false, created_by: "bo", deleted_at: null }] },
+      {
+        rpc: {
+          nearby_locations: (args) => {
+            asked.push(args);
+            return [...others, { id: "l-bo" }].slice(0, Number(args.max_results)).map((l) => ({ id: l.id }));
+          },
+        },
+      }
+    );
+    h.user = bo;
+    const body = await (await listLocations(req("/locations?lat=40.25&lng=-111.65"))).json();
+    expect(body.locations.map((l: Row) => l.id)).toEqual(["l-bo"]);
+    expect(Number(asked[0].max_results)).toBeGreaterThan(60);
+
+    // An admin sees every place, capped at the usual page.
+    h.user = admin;
+    const all = await (await listLocations(req("/locations?lat=40.25&lng=-111.65"))).json();
+    expect(all.locations).toHaveLength(50);
   });
 });

@@ -11,7 +11,7 @@ import { normalizeSafetyNotes } from "@/lib/play/safety";
 import { assertCleanFields } from "@/lib/utils/crud-helpers";
 import { internalError } from "@/lib/utils/internal-error";
 import { DEFAULT_STOP_RADIUS_M } from "@/lib/play/arrival-check";
-import { ownOrLibraryFilter, readsAllContent } from "@/lib/hunts/content-access";
+import { ownOrLibraryFilter, parseLibraryFlag, readsAllContent } from "@/lib/hunts/content-access";
 
 /** Location text players see at a stop; screened like other hunt content. */
 const LOCATION_TEXT_FIELDS = ["name", "description", "address", "safety_notes"];
@@ -40,7 +40,10 @@ export async function GET(request: NextRequest) {
         lat: parseFloat(lat),
         lng: parseFloat(lng),
         radius_m: parseFloat(radius),
-        max_results: 50,
+        // The search covers every place; a builder keeps only theirs and the
+        // library's. Ask for more than is returned, so other people's places
+        // nearby don't crowd theirs out.
+        max_results: readsAllContent(user.role) ? NEARBY_RESULTS : NEARBY_SCAN,
       });
 
       if (error) throw internalError("/api/v1/locations", error);
@@ -70,6 +73,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/** Places the area search returns, and how many it looks through to find a builder's own. */
+const NEARBY_RESULTS = 50;
+const NEARBY_SCAN = 500;
+
 interface NearbyLocation {
   id: string;
 }
@@ -83,7 +90,7 @@ async function readableNearby(
   user: { id: string; role: string },
   nearby: NearbyLocation[]
 ): Promise<NearbyLocation[]> {
-  if (readsAllContent(user.role) || nearby.length === 0) return nearby;
+  if (readsAllContent(user.role) || nearby.length === 0) return nearby.slice(0, NEARBY_RESULTS);
   const { data, error } = await supabase
     .from("locations")
     .select("id")
@@ -91,7 +98,7 @@ async function readableNearby(
     .or(ownOrLibraryFilter(user.id));
   if (error) throw internalError("/api/v1/locations", error);
   const readable = new Set((data ?? []).map((row) => row.id as string));
-  return nearby.filter((l) => readable.has(l.id));
+  return nearby.filter((l) => readable.has(l.id)).slice(0, NEARBY_RESULTS);
 }
 
 export async function POST(request: NextRequest) {
@@ -110,6 +117,7 @@ export async function POST(request: NextRequest) {
       LOCATION_TEXT_FIELDS
     );
 
+    const isLibrary = parseLibraryFlag(body.is_library, user.role) ?? false;
     const supabase = await createSupabaseServiceClient();
 
     // Insert with raw SQL for PostGIS geography column
@@ -123,7 +131,7 @@ export async function POST(request: NextRequest) {
       p_place_id: body.place_id || null,
       p_location_type: body.location_type || null,
       p_safety_notes: normalizeSafetyNotes(body.safety_notes),
-      p_is_library: body.is_library || false,
+      p_is_library: isLibrary,
       p_created_by: user.id,
     });
 
@@ -142,7 +150,7 @@ export async function POST(request: NextRequest) {
           place_id: body.place_id || null,
           location_type: body.location_type || null,
           safety_notes: normalizeSafetyNotes(body.safety_notes),
-          is_library: body.is_library || false,
+          is_library: isLibrary,
           created_by: user.id,
         })
         .select()
