@@ -235,7 +235,8 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
         )}
 
         <div className="[&>div]:rounded-[18px] [&>div]:shadow-none">
-          <Leaderboard huntId={hunt.id} canShowRealNames={canViewRealNames(viewer, hunt.created_by)} />
+          {/* Admins and researchers are offered real names; the hunt's creator is not. */}
+          <Leaderboard huntId={hunt.id} canShowRealNames={canViewRealNames(viewer)} />
         </div>
 
         <HuntRating huntId={hunt.id} />

@@ -1,10 +1,10 @@
 /**
- * Real names on the leaderboard (issue #13), for the people running an event.
+ * Real names on the leaderboard (issue #13): an admin toggle.
  *
- * Who may see them: platform admins and researchers on any board, and a hunt's
- * creator on that hunt's board. Nobody else, and nobody on the overall board
- * except admins and researchers. The API enforces this (GET /api/v1/leaderboard
- * adds real names only for an allowed caller who also sends real_names=1); the
+ * Who may see them: platform admins and researchers, on any board. Nobody
+ * else. Creating a hunt gives no access: hunt creator is an account type
+ * anyone can sign up for. The API enforces this (GET /api/v1/leaderboard adds
+ * real names only for an allowed caller who also sends real_names=1); the
  * board's toggle is a convenience, never the control.
  *
  * It only changes the asking viewer's own response. What other players see is
@@ -19,8 +19,8 @@ import { ageInYears } from "@/lib/utils/registration";
 export const REAL_NAMES_PARAM = "real_names";
 export const REAL_NAMES_ON = "1";
 
-/** Staff who may see real names on every board. */
-const REAL_NAME_STAFF_ROLES: readonly string[] = ["admin", "researcher"];
+/** The only roles that may see real names. */
+const REAL_NAME_ROLES: readonly string[] = ["admin", "researcher"];
 
 /**
  * Accounts whose real name is never returned: children and teens (the roles the
@@ -36,21 +36,14 @@ export interface RealNameViewer {
   role: string;
 }
 
-export function isRealNameStaff(role: string | null | undefined): boolean {
-  return typeof role === "string" && REAL_NAME_STAFF_ROLES.includes(role);
-}
-
 /**
- * May this viewer see real names on a board? Pass the hunt's creator for a
- * hunt board; leave it out for the overall board, where only staff qualify.
+ * May this viewer see real names on a leaderboard? Platform admins and
+ * researchers only, on hunt boards and the overall board alike. It takes the
+ * viewer and nothing else on purpose: no fact about a hunt, such as who
+ * created it, can widen access.
  */
-export function canViewRealNames(
-  viewer: RealNameViewer | null | undefined,
-  huntCreatedBy?: string | null
-): boolean {
-  if (!viewer) return false;
-  if (isRealNameStaff(viewer.role)) return true;
-  return Boolean(huntCreatedBy) && huntCreatedBy === viewer.id;
+export function canViewRealNames(viewer: RealNameViewer | null | undefined): boolean {
+  return !!viewer && typeof viewer.role === "string" && REAL_NAME_ROLES.includes(viewer.role);
 }
 
 /** Did the request explicitly ask for real names? Anything but real_names=1 is no. */
@@ -147,9 +140,9 @@ export function withRealNames<T extends { user_id: string }>(
 }
 
 /**
- * A line telling the person running the event what other players see for this
- * row, when it differs from the name the row already shows them. null when
- * there is nothing to add.
+ * A line telling the admin what other players see for this row, when it
+ * differs from the name the row already shows them. null when there is nothing
+ * to add.
  */
 export function otherPlayersNote(rowName: string, shownAs: string | null | undefined): string | null {
   if (!shownAs || shownAs === rowName) return null;

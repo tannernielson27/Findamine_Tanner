@@ -16,7 +16,7 @@ export default async function LeaderboardPage() {
           See where you stand — then go climb.
         </p>
       </header>
-      {/* Overall board: only admins and researchers are offered real names. */}
+      {/* Only admins and researchers are offered real names. */}
       <Leaderboard canShowRealNames={canViewRealNames(viewer)} />
     </main>
   );

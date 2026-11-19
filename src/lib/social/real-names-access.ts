@@ -10,7 +10,6 @@ import type { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { writeAudit } from "@/app/api/v1/admin/_lib/audit";
 import { logger } from "@/lib/utils/logger";
 import {
-  isRealNameStaff,
   resolveRealName,
   withRealNames,
   type RealNameFields,
@@ -140,8 +139,7 @@ export async function recordRealNamesViewed(
     }
     if (already && already.length > 0) return;
 
-    const basis = isRealNameStaff(viewer.role) ? "staff" : "hunt_creator";
-    logger.info("leaderboard.real_names.viewed", { viewerId: viewer.id, huntId, basis });
+    logger.info("leaderboard.real_names.viewed", { viewerId: viewer.id, viewerRole: viewer.role, huntId });
     await writeAudit(supabase, {
       user_id: viewer.id,
       // audit_log only accepts create | update | delete; the operation is in new_values.op.
@@ -151,7 +149,8 @@ export async function recordRealNamesViewed(
       new_values: {
         op: "real_names_viewed",
         board: huntId ? "hunt" : "overall",
-        basis,
+        // Access is by role alone (admin or researcher), so this is what the
+        // viewer was allowed as.
         viewer_role: viewer.role,
         rows: view.rows,
         names_returned: view.namesReturned,

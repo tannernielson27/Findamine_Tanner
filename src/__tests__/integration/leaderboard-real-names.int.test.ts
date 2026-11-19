@@ -3,10 +3,11 @@ import { NextRequest } from "next/server";
 import { installDouble, type Row, type SupabaseDouble } from "@/__tests__/support/supabase-double";
 
 /**
- * Issue #13: real names on the leaderboard, for the people running an event.
+ * Issue #13: an admin toggle for real names on the leaderboard.
  * The rule under test: GET /api/v1/leaderboard returns real names only when the
- * caller is a platform admin or researcher, or the creator of that hunt, AND
- * asks with real_names=1. Anything else gets exactly the response it gets today.
+ * caller is a platform admin or researcher AND asks with real_names=1. Anyone
+ * else, including the hunt's own creator, gets exactly the response they get
+ * today.
  */
 
 const h = vi.hoisted(() => ({
@@ -36,7 +37,7 @@ const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")
 // People who look at boards.
 const PLAYER = id(1);
 const TEACHER = id(2); // a teacher, but not the creator of HUNT
-const CREATOR = id(3);
+const CREATOR = id(3); // created HUNT and NAMED_HUNT; not an admin or researcher
 const ADMIN = id(4);
 const RESEARCHER = id(5);
 // People on the boards.
@@ -191,6 +192,7 @@ describe("GET /api/v1/leaderboard?real_names=1: who is refused", () => {
   it.each([
     ["a player", PLAYER],
     ["a teacher who did not create the hunt", TEACHER],
+    ["the hunt's creator", CREATOR],
     ["a signed-out caller", null],
   ])("%s gets today's response, with no real names, even when asking", async (_label, viewer) => {
     for (const board of BOARDS) {
@@ -212,17 +214,47 @@ describe("GET /api/v1/leaderboard?real_names=1: who is refused", () => {
     }
   });
 
-  it("the creator of one hunt is refused on someone else's hunt and on the overall board", async () => {
-    as(CREATOR);
-    for (const board of [`?hunt_id=${OTHER_HUNT}`, ""]) {
-      const asked = await fetchRaw(withParam(board));
-      expect(asked).toBe(await fetchRaw(board));
-      expectNoRealNames(asked);
+  it("creating the hunt earns no access, whatever the creator's account type", async () => {
+    // Hunt creator is a self-service account type, so it must not unlock names.
+    for (const role of ["teacher", "hunt_creator", "adult", "parent"]) {
+      for (const board of [`?hunt_id=${HUNT}`, `?hunt_id=${NAMED_HUNT}`, `?hunt_id=${OTHER_HUNT}`, ""]) {
+        h.user = { id: CREATOR, role };
+        const asked = await fetchRaw(withParam(board));
+        expect(asked).toBe(await fetchRaw(board));
+        expectNoRealNames(asked);
+      }
     }
-    // And the other way round: TEACHER created OTHER_HUNT, not HUNT.
+    // The same for the other creator, on the hunt they made.
     as(TEACHER);
-    expect((await fetchBoard(`?hunt_id=${OTHER_HUNT}&real_names=1`)).real_names).toBe(true);
-    expectNoRealNames(await fetchRaw(`?hunt_id=${HUNT}&real_names=1`));
+    const own = await fetchRaw(`?hunt_id=${OTHER_HUNT}&real_names=1`);
+    expect(own).toBe(await fetchRaw(`?hunt_id=${OTHER_HUNT}`));
+    expectNoRealNames(own);
+    expect(db.table("audit_log")).toHaveLength(0);
+  });
+
+  it("the hunt's creator still gets the board they get today, with or without asking", async () => {
+    as(CREATOR);
+    const expected = {
+      entries: SESSIONS.filter((s) => s.hunt_id === HUNT).map((s) => ({
+        user_id: s.user_id,
+        score: s.total_score,
+        display_name: USERS.find((u) => u.id === s.user_id)!.display_name,
+        avatar_url: null,
+        codename: s.codename,
+        profile_linkable: true,
+      })),
+      identity_mode: "codename_assigned",
+      viewer_id: CREATOR,
+      me: null,
+    };
+    for (const query of [`?hunt_id=${HUNT}`, `?hunt_id=${HUNT}&real_names=1`]) {
+      const res = await leaderboard(new NextRequest(`http://localhost:3000/api/v1/leaderboard${query}`));
+      // Not the real-names response: no private/no-store header either.
+      expect(res.headers.get("cache-control")).toBeNull();
+      const raw = await res.text();
+      expect(raw).toBe(JSON.stringify(expected));
+      expectNoRealNames(raw);
+    }
   });
 
   it("nobody gets real names for a hunt that does not exist", async () => {
@@ -293,7 +325,6 @@ describe("GET /api/v1/leaderboard?real_names=1: who is allowed", () => {
   it.each([
     ["an admin", ADMIN],
     ["a researcher", RESEARCHER],
-    ["the hunt's creator", CREATOR],
   ])("%s gets real names on the hunt board", async (_label, viewer) => {
     as(viewer);
     const body = await fetchBoard(`?hunt_id=${HUNT}&real_names=1`);
@@ -305,7 +336,7 @@ describe("GET /api/v1/leaderboard?real_names=1: who is allowed", () => {
   });
 
   it("adds to the board without changing who is on it or what each row already said", async () => {
-    as(CREATOR);
+    as(ADMIN);
     const plain = await fetchBoard(`?hunt_id=${HUNT}`);
     const named = await fetchBoard(`?hunt_id=${HUNT}&real_names=1`);
     const strip = ({ real_name, real_name_status, shown_as, ...rest }: Entry) => {
@@ -330,7 +361,7 @@ describe("GET /api/v1/leaderboard?real_names=1: who is allowed", () => {
   });
 
   it("withholds the real names of children, teens and anyone under 18", async () => {
-    for (const viewer of [ADMIN, RESEARCHER, CREATOR]) {
+    for (const viewer of [ADMIN, RESEARCHER]) {
       as(viewer);
       const raw = await fetchRaw(`?hunt_id=${HUNT}&real_names=1`);
       const rows = byId(JSON.parse(raw) as Body);
@@ -350,7 +381,7 @@ describe("GET /api/v1/leaderboard?real_names=1: who is allowed", () => {
   });
 
   it("says what other players see on a codename hunt: the codename", async () => {
-    as(CREATOR);
+    as(ADMIN);
     const rows = byId(await fetchBoard(`?hunt_id=${HUNT}&real_names=1`));
     expect(rows[ADA].shown_as).toBe("Swift Fox");
     expect(rows[BO].shown_as).toBe("Quiet Owl");
@@ -358,7 +389,7 @@ describe("GET /api/v1/leaderboard?real_names=1: who is allowed", () => {
   });
 
   it("says what other players see on a real-name hunt: the display name, or initials for a minor", async () => {
-    as(CREATOR);
+    as(RESEARCHER);
     const rows = byId(await fetchBoard(`?hunt_id=${NAMED_HUNT}&real_names=1`));
     expect(rows[ADA].shown_as).toBe("ada_l");
     expect(rows[KID].shown_as).toBe("K");
@@ -366,9 +397,9 @@ describe("GET /api/v1/leaderboard?real_names=1: who is allowed", () => {
 
   it("does not reveal which players restricted their name or score", async () => {
     // Bo hides his display name and Hank his score. Other players see Bo as
-    // "Anonymous" and don't see Hank at all, but the board has never told the
-    // person running the event who chose that, and real names must not either.
-    for (const viewer of [CREATOR, ADMIN, RESEARCHER]) {
+    // "Anonymous" and don't see Hank at all, but the hunt board has never said
+    // who chose that, and the real-names view must not start to.
+    for (const viewer of [ADMIN, RESEARCHER]) {
       as(viewer);
       const coded = byId(await fetchBoard(`?hunt_id=${HUNT}&real_names=1`));
       expect(coded[HANK].shown_as).toBe("Sly Lynx");
@@ -416,16 +447,20 @@ describe("GET /api/v1/leaderboard?real_names=1: audit trail", () => {
   const auditRows = () => db.table("audit_log");
 
   it("records who viewed real names on which board, without the names", async () => {
-    as(CREATOR);
+    as(RESEARCHER);
     await fetchRaw(`?hunt_id=${HUNT}&real_names=1`);
     expect(auditRows()).toHaveLength(1);
     expect(auditRows()[0]).toMatchObject({
-      user_id: CREATOR,
+      user_id: RESEARCHER,
       action: "update",
       entity_type: "leaderboard_real_names",
       entity_id: HUNT,
-      new_values: { op: "real_names_viewed", board: "hunt", basis: "hunt_creator", viewer_role: "teacher" },
+      new_values: { op: "real_names_viewed", board: "hunt", viewer_role: "researcher" },
     });
+    // Access is by role alone, so the role is the whole "access as" record.
+    expect(Object.keys(auditRows()[0].new_values as Row).sort()).toEqual(
+      ["board", "names_returned", "op", "rows", "viewer_role"]
+    );
     const stored = JSON.stringify(auditRows());
     for (const name of REAL_NAMES) expect(stored).not.toContain(name);
     for (const player of [ADA, BO, KID, HANK]) expect(stored).not.toContain(player);
@@ -439,7 +474,7 @@ describe("GET /api/v1/leaderboard?real_names=1: audit trail", () => {
       user_id: ADMIN,
       entity_type: "leaderboard_real_names",
       entity_id: null,
-      new_values: { op: "real_names_viewed", board: "overall", basis: "staff", viewer_role: "admin" },
+      new_values: { op: "real_names_viewed", board: "overall", viewer_role: "admin" },
     });
   });
 
@@ -473,6 +508,8 @@ describe("GET /api/v1/leaderboard?real_names=1: audit trail", () => {
     await fetchRaw(`?hunt_id=${HUNT}`);
     await fetchRaw("");
     as(PLAYER);
+    await fetchRaw(`?hunt_id=${HUNT}&real_names=1`);
+    as(CREATOR);
     await fetchRaw(`?hunt_id=${HUNT}&real_names=1`);
     as(null);
     await fetchRaw("?real_names=1");

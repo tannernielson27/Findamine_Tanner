@@ -16,32 +16,26 @@ const CREATOR = "00000000-0000-4000-8000-0000000000c1";
 const OTHER = "00000000-0000-4000-8000-0000000000c2";
 
 describe("canViewRealNames", () => {
-  it("lets platform admins and researchers see real names on any board", () => {
+  it("lets platform admins and researchers see real names", () => {
     for (const role of ["admin", "researcher"]) {
       expect(canViewRealNames({ id: OTHER, role })).toBe(true);
-      expect(canViewRealNames({ id: OTHER, role }, CREATOR)).toBe(true);
     }
   });
 
-  it("lets a hunt's creator see them on that hunt only", () => {
-    for (const role of ["teacher", "hunt_creator", "adult", "parent"]) {
-      expect(canViewRealNames({ id: CREATOR, role }, CREATOR)).toBe(true);
-      expect(canViewRealNames({ id: CREATOR, role }, OTHER)).toBe(false);
-    }
-  });
-
-  it("gives nobody else access, and no creator access on the overall board", () => {
-    for (const role of ["child", "teen", "adult", "parent", "teacher", "hunt_creator", "game_master", ""]) {
-      expect(canViewRealNames({ id: OTHER, role }, CREATOR)).toBe(false);
+  it("gives no other role access, whoever created the hunt", () => {
+    // Hunt creator is a self-service account type: creating a hunt earns nothing here.
+    for (const role of ["child", "teen", "adult", "parent", "teacher", "hunt_creator", "game_master", "", "Admin", "ADMIN"]) {
       expect(canViewRealNames({ id: CREATOR, role })).toBe(false);
-      expect(canViewRealNames({ id: CREATOR, role }, null)).toBe(false);
     }
+  });
+
+  it("takes the viewer only, so nothing about a hunt can widen access", () => {
+    expect(canViewRealNames.length).toBe(1);
   });
 
   it("refuses a signed-out caller", () => {
     expect(canViewRealNames(null)).toBe(false);
-    expect(canViewRealNames(null, CREATOR)).toBe(false);
-    expect(canViewRealNames(undefined, CREATOR)).toBe(false);
+    expect(canViewRealNames(undefined)).toBe(false);
   });
 });
 

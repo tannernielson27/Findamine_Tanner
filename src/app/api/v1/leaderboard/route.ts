@@ -73,8 +73,8 @@ function joinedUser(row: Record<string, unknown>): LeaderboardUser | null {
  *
  * Deliberately NOT adjusted for each player's own privacy settings. A player
  * who restricted their name or score is shown to some viewers as "Anonymous"
- * or left off their board; saying so here would tell the person running the
- * event who chose to restrict what, which the board has never revealed.
+ * or left off their board; saying so here would single out who chose to
+ * restrict what, which the hunt board has never shown.
  */
 function namesOtherPlayersSee(
   rows: Record<string, unknown>[],
@@ -245,8 +245,9 @@ export async function GET(request: NextRequest) {
         me,
       };
 
-      // Real names: this hunt's creator, or an admin or researcher, on request.
-      if (wantsRealNames && currentUser && hunt && canViewRealNames(currentUser, hunt.created_by)) {
+      // Real names: admins and researchers only, on request. Creating the hunt
+      // gives no access (isHuntOwner above is about the board, not names).
+      if (wantsRealNames && currentUser && hunt && canViewRealNames(currentUser)) {
         const named = await boardWithRealNames(supabase, board, {
           viewer: currentUser,
           huntId,

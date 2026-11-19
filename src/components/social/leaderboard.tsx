@@ -38,9 +38,9 @@ interface LeaderboardEntry {
 interface LeaderboardProps {
   huntId?: string;
   /**
-   * Offer the "Show real names" switch. For admins, researchers and this
-   * hunt's creator (canViewRealNames). It only decides whether the switch is
-   * drawn: the API checks again and sends real names to nobody else.
+   * Offer the "Show real names" switch. For admins and researchers only
+   * (canViewRealNames). It only decides whether the switch is drawn: the API
+   * checks again and sends real names to nobody else.
    */
   canShowRealNames?: boolean;
 }
@@ -295,8 +295,8 @@ export default function Leaderboard({ huntId, canShowRealNames = false }: Leader
                       <span className="shrink-0 rounded-full bg-brand-dark px-2 py-0.5 text-xs font-bold text-white">You</span>
                     )}
                   </p>
-                  {/* Real name next to the name the board shows, so the person
-                      running the event can tell who is who. */}
+                  {/* Real name next to the name the board shows, so an admin
+                      can tell who is who. */}
                   {showingRealNames && (
                     <p className="text-sm text-themed-text [overflow-wrap:anywhere]">
                       <span className="font-semibold">Real name:</span>{" "}
