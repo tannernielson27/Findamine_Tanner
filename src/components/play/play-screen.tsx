@@ -15,6 +15,7 @@ import { PrimeStep, ReadyGate, ReadingCheckStep } from "@/components/play/steps/
 import { ClueBoard } from "@/components/play/clue-board";
 import { useWakeLock } from "@/lib/play/use-wake-lock";
 import { useHeatHaptics, useOnlineStatus } from "@/lib/play/use-play-feedback";
+import { useTicker } from "@/lib/play/use-ticker";
 import { NAVIGATION_HELP_PLAY_NOTES, navigationAids } from "@/lib/play/navigation-help";
 import type { PlaySession } from "@/lib/play/use-play-session";
 import type { StopFlow } from "@/lib/play/use-stop-flow";
@@ -34,6 +35,9 @@ interface PlayScreenProps {
  */
 export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps) {
   const { finds, currentIndex, completedFinds, huntMeta, delivery, navigationHelp, clueBoardOpen, setClueBoardOpen } = session;
+  const schedule = session.schedule ?? null;
+  // Countdowns run on the server's clock, re-read twice a minute.
+  const nowMs = useTicker(schedule ? 30_000 : null) + (session.clockOffsetMs ?? 0);
   const { step, hotCold, gpsStatus, userPos, locationConsent, error, setError, hints } = flow;
   const currentFind = finds[currentIndex];
   const stopNumber = currentIndex + 1;
@@ -47,8 +51,12 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
   // All clues at once: the player picks the active clue from a list, and the
   // last stop is whichever one finishes the set.
   const allAtOnce = delivery === "all_at_once";
-  const boardOpen = allAtOnce && clueBoardOpen;
-  const currentOpen = !!currentFind && !completedFinds.has(currentFind.id);
+  // Scheduled hunts: a stop that is not out yet can't be worked on, and once
+  // the hunt has ended nothing can. Both leave the player on the list.
+  const currentHeld = !!currentFind?.release_at;
+  const ended = schedule?.phase === "ended";
+  const boardOpen = allAtOnce && (clueBoardOpen || currentHeld || (ended && !completedFinds.has(currentFind?.id ?? "")));
+  const currentOpen = !!currentFind && !completedFinds.has(currentFind.id) && !currentHeld;
   const isLastStop = allAtOnce
     ? finds.every((f) => f.id === currentFind?.id || completedFinds.has(f.id))
     : currentIndex === finds.length - 1;
@@ -132,11 +140,15 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
           activeId={currentOpen ? currentFind?.id ?? null : null}
           onPick={pickClue}
           onClose={currentOpen ? () => setClueBoardOpen(false) : null}
+          schedule={schedule}
+          nowMs={nowMs}
+          onFinish={ended ? flow.handleFinishHunt : null}
+          finishing={flow.finishing}
         />
       )}
 
       {/* Every stop starts with "I'm ready": after its primer, or on a plain gate. */}
-      {step === "prime" && currentFind?.primers && (
+      {step === "prime" && currentFind?.primers && !currentHeld && (
         <PrimeStep
           stopNumber={stopNumber}
           primer={currentFind.primers}
@@ -145,7 +157,7 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
           errorSlot={sheetBanners}
         />
       )}
-      {step === "prime" && currentFind && !currentFind.primers && (
+      {step === "prime" && currentFind && !currentFind.primers && !currentHeld && (
         <ReadyGate
           stopNumber={stopNumber}
           open={currentFind.open}

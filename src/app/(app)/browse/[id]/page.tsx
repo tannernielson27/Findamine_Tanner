@@ -18,6 +18,7 @@ import { ClueDeliveryBadge } from "@/components/hunts/shuffle-badge";
 import { readClueDelivery } from "@/lib/play/clue-delivery";
 import { readNavigationHelp } from "@/lib/play/navigation-help";
 import { DifficultySummary } from "@/components/hunts/difficulty-badge";
+import { ScheduleSummary, huntScheduleView } from "@/components/hunts/schedule-summary";
 import { StartMapPreview } from "@/components/explore/start-map-preview";
 import { ChallengeChips, DetailSection, subjectLabel } from "@/components/explore/hunt-detail-parts";
 import { isPubliclyAvailable, isReviewer } from "@/lib/hunts/review";
@@ -84,6 +85,8 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
   const delivery = readClueDelivery(hunt.metadata as Record<string, unknown> | null);
   // How much help players get finding each stop: shown before they start.
   const difficulty = readNavigationHelp(hunt.metadata as Record<string, unknown> | null);
+  // Scheduled hunts (issue #14): the dates, and no Start outside the window.
+  const schedule = huntScheduleView(hunt);
   // Only the creator's fixed order has one starting stop for everyone.
   const shuffled = delivery !== "fixed_order";
   // A stop's location is released in play, when the player starts that stop,
@@ -186,6 +189,12 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
           </DetailSection>
         )}
 
+        {schedule && (
+          <DetailSection id="schedule-heading" title="Schedule">
+            <ScheduleSummary window={schedule.window} timeZone={schedule.timeZone} nowMs={schedule.nowMs} />
+          </DetailSection>
+        )}
+
         <DetailSection id="difficulty-heading" title="Difficulty">
           <DifficultySummary level={difficulty} />
         </DetailSection>
@@ -196,7 +205,9 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
             title={showsFirstStop ? "Where it starts" : "Where it takes place"}
             note={
               <p className="text-sm text-themed-muted">
-                {delivery === "all_at_once"
+                {schedule
+                  ? "Stops open on the hunt's schedule, and you choose which open one to work on."
+                  : delivery === "all_at_once"
                   ? "Every stop is open from the start, and you choose which one to work on."
                   : shuffled
                   ? "Stops come in a different order for different players and stay hidden until you reach them."
@@ -270,7 +281,7 @@ export default async function HuntDetailPage({ params }: HuntDetailProps) {
         </div>
       </div>
 
-      <DetailCtaBar huntId={hunt.id} status={hunt.status} playable={isPlayable} teamHunt={isTeamHunt} signedIn={!!viewer} ownerPreview={ownerPreview} />
+      <DetailCtaBar huntId={hunt.id} status={hunt.status} playable={isPlayable} teamHunt={isTeamHunt} signedIn={!!viewer} ownerPreview={ownerPreview} scheduleNote={schedule?.blockNote ?? null} />
     </main>
   );
 }

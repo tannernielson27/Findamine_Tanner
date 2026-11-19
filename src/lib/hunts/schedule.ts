@@ -184,10 +184,13 @@ export function fromWallTime(wall: WallTime, timeZone: string): number | null {
   return exact ?? candidates[candidates.length - 1];
 }
 
-/** "Mon, Nov 23, 9:00 AM" in the given zone. */
-export function formatInZone(ms: number, timeZone: string, locale = "en-US"): string {
+/**
+ * "Mon, Nov 23, 9:00 AM" in the given zone. With no zone, in the device's own
+ * (what a player sees); a zone that is not real falls back to the default.
+ */
+export function formatInZone(ms: number, timeZone?: string, locale = "en-US"): string {
   return new Intl.DateTimeFormat(locale, {
-    timeZone: isTimeZone(timeZone) ? timeZone : DEFAULT_SCHEDULE_TIMEZONE,
+    timeZone: timeZone === undefined ? undefined : isTimeZone(timeZone) ? timeZone : DEFAULT_SCHEDULE_TIMEZONE,
     weekday: "short",
     month: "short",
     day: "numeric",

@@ -10,6 +10,9 @@ import { PublishSafetyCheck } from "@/components/hunts/publish-safety-check";
 import { ReviewStatusNotice } from "@/components/hunts/review-status-notice";
 import { CoverImagePicker } from "@/components/hunts/cover-image-picker";
 import { ScoringSettings } from "@/components/hunts/scoring-settings";
+import { ScheduleSettings } from "@/components/hunts/schedule-settings";
+import { formatInZone, readHuntWindow, readScheduleTimeZone } from "@/lib/hunts/schedule";
+import type { ScheduleRequestBody } from "@/lib/hunts/schedule-form";
 import { SCORING_VERSION_LABELS, readScoringVersion, readSolveWindowMinutes } from "@/lib/hunts/scoring-version";
 import { ClueDeliveryBadge } from "@/components/hunts/shuffle-badge";
 import { ClueDeliverySettings } from "@/components/hunts/clue-delivery-settings";
@@ -46,11 +49,16 @@ interface HuntDetail {
   has_play_sessions?: boolean;
   /** Scoring version and solve window can no longer change: the hunt has been played. */
   scoring_locked?: boolean;
+  /** Scheduled hunts (issue #14): the window everyone shares. Null on a play-anytime hunt. */
+  starts_at?: string | null;
+  ends_at?: string | null;
   finds: FindItem[];
 }
 
 interface FindItem extends EditableFind {
   sort_order: number;
+  /** Scheduled hunts: when the stop is released; null means at the hunt's start. */
+  release_at?: string | null;
 }
 
 interface ApiResult {
@@ -126,6 +134,18 @@ export default function HuntDetailPage() {
 
   const succeed = (text: string) => setFeedback({ kind: "success", text });
   const fail = (what: string, reason: string) => setFeedback({ kind: "error", text: `${what}: ${reason}` });
+
+  /** Save (or, with null, remove) the hunt's schedule, report the outcome, and reload. */
+  const saveSchedule = async (body: ScheduleRequestBody | null): Promise<boolean> => {
+    if (!hunt) return false;
+    setActionLoading(true);
+    const result = await api(`/api/v1/hunts/${hunt.id}/schedule`, jsonBody("PUT", body ?? { clear: true }));
+    if (result.ok) succeed(body ? "Schedule saved." : "Schedule removed. This hunt can be played any time.");
+    else fail(body ? "Couldn't save the schedule" : "Couldn't remove the schedule", result.error);
+    await fetchHunt();
+    setActionLoading(false);
+    return result.ok;
+  };
 
   /** Save hunt-level fields, report the outcome, and reload. */
   const saveHunt = async (changes: Record<string, unknown>, successText: string): Promise<boolean> => {
@@ -287,6 +307,8 @@ export default function HuntDetailPage() {
   const unplacedCount = finds.filter((f) => f.metadata?.needs_placement === true).length;
   const delivery = readClueDelivery(hunt.metadata);
   const deliveryStops = finds.map((f, i) => ({ id: f.id, label: `${i + 1}. ${f.locations?.name || `Stop ${i + 1}`}` }));
+  const scheduleWindow = readHuntWindow(hunt);
+  const scheduleZone = readScheduleTimeZone(hunt.metadata);
   const deliveryKey = JSON.stringify([delivery, readClueOrders(hunt.metadata), deliveryStops, !!hunt.delivery_locked]);
   const difficulty = readNavigationHelp(hunt.metadata);
   const difficultyLocked = !isDraft || !!hunt.delivery_locked;
@@ -527,6 +549,28 @@ export default function HuntDetailPage() {
             played={!!hunt.scoring_locked}
             busy={actionLoading}
             onSave={(metadata, successText) => saveHunt({ metadata }, successText)}
+          />
+        </div>
+      </details>
+
+      {/* Schedule (multi-day hunts): read-only once the hunt is published or played */}
+      <details className="mb-4">
+        <summary className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer hover:text-gray-900">
+          Schedule
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-normal text-gray-600">
+            {scheduleWindow
+              ? `${formatInZone(scheduleWindow.startsAtMs, scheduleZone)} to ${formatInZone(scheduleWindow.endsAtMs, scheduleZone)}`
+              : "Play any time"}
+          </span>
+        </summary>
+        <div className="mt-2 rounded-lg border border-gray-200 p-3">
+          <ScheduleSettings
+            key={JSON.stringify([hunt.starts_at ?? null, hunt.ends_at ?? null, scheduleZone, finds.map((f) => [f.id, f.release_at ?? null]), isDraft, !!hunt.delivery_locked])}
+            hunt={hunt}
+            stops={deliveryStops.map((stop, i) => ({ ...stop, release_at: finds[i]?.release_at ?? null }))}
+            locked={!isDraft || !!hunt.delivery_locked}
+            busy={actionLoading}
+            onSave={saveSchedule}
           />
         </div>
       </details>

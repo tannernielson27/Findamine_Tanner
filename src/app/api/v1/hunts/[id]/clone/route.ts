@@ -13,6 +13,9 @@ import { remapClueOrders, withStudyFlagFor } from "@/lib/hunts/delivery-lock";
 import { fullDeliveryMetadata, saveClueOrders } from "@/lib/hunts/clue-orders-store";
 import { isReviewer } from "@/lib/hunts/review";
 import { withNewHuntScoring } from "@/lib/hunts/scoring-version";
+import { huntPhase, readHuntWindow, type HuntWindowSource } from "@/lib/hunts/schedule";
+
+const STILL_RUNNING_MESSAGE = "This hunt is running on a schedule. It can be copied once it has ended.";
 
 type Row = Record<string, unknown>;
 
@@ -69,6 +72,15 @@ export async function POST(
     // Someone else's draft, or a hunt not yet approved for the public
     // catalogue, is not visible to them, so it is not clonable.
     if (!(await canAccessHunt(supabase, source, user))) throw new ApiError(404, "Hunt not found");
+
+    // A copy hands its owner every stop. While a scheduled hunt is running
+    // (or yet to start) some of its stops are not released, so until it has
+    // ended only its owner and reviewers may copy it (issue #14).
+    const runsSource = source.created_by === user.id || isReviewer(user.role);
+    const sourceWindow = readHuntWindow(source as HuntWindowSource);
+    if (!runsSource && sourceWindow && huntPhase(sourceWindow, Date.now()) !== "ended") {
+      throw new ApiError(409, STILL_RUNNING_MESSAGE);
+    }
 
     const { finds, ...sourceHunt } = source as Row & { finds: Row[] | null };
     const huntData = omit(sourceHunt, [...SERVER_MANAGED, ...HUNT_GENERATED, ...HUNT_REVIEW, ...HUNT_MEDIA, ...HUNT_SCHEDULE]);

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { HttpError, safeFetch } from "@/lib/play/play-api";
 import type { CelebrationControls } from "@/lib/play/use-celebration-state";
-import type { Find, HuntMetadata, HuntSummaryData, StartOptions } from "@/lib/play/play-types";
+import type { Find, HuntMetadata, HuntSummaryData, PlaySchedule, StartOptions } from "@/lib/play/play-types";
 import { readClueDelivery, type ClueDelivery } from "@/lib/play/clue-delivery";
 import { mergeStops, withStartedStop } from "@/lib/play/stop-state";
 import { isNavigationHelp, readNavigationHelp, type NavigationHelp } from "@/lib/play/navigation-help";
@@ -33,6 +33,13 @@ export interface PlaySession {
    */
   navigationHelp: NavigationHelp;
   /** all_at_once: the list of open clues, where the player picks one. */
+  /**
+   * Scheduled hunts (issue #14): the hunt's window and next release, as of the
+   * last time the stops were loaded. Null on a play-anytime hunt.
+   */
+  schedule: PlaySchedule | null;
+  /** The server's clock minus this device's, in ms: add it to Date.now() for countdowns. */
+  clockOffsetMs: number;
   clueBoardOpen: boolean;
   setClueBoardOpen: Dispatch<SetStateAction<boolean>>;
   currentIndex: number;
@@ -64,15 +71,28 @@ interface StopsReply {
   stops: Find[];
   /** The hunt's navigation help level, or null from a server that doesn't send it. */
   navigationHelp: NavigationHelp | null;
+  /** The hunt's window on a scheduled hunt; null otherwise. */
+  schedule: PlaySchedule | null;
+  /** Server clock minus device clock when the reply arrived; 0 when the server sent no time. */
+  clockOffsetMs: number;
 }
+
+/** A release is fetched this long after it is due, so the server has passed it too. */
+const RELEASE_GRACE_MS = 1500;
+/** setTimeout's ceiling: a longer wait is cut short and simply scheduled again. */
+const MAX_TIMER_MS = 2 ** 31 - 1;
 
 /** The session's stops in play order (GET /api/v1/play/[huntId]/stops). */
 async function fetchStops(huntId: string | string[] | undefined): Promise<StopsReply> {
   const res = await safeFetch(`/api/v1/play/${huntId}/stops`);
-  const body = (await res.json()) as { stops?: Find[]; navigation_help?: unknown };
+  const body = (await res.json()) as { stops?: Find[]; navigation_help?: unknown; schedule?: PlaySchedule | null };
+  const schedule = body.schedule ?? null;
+  const serverMs = schedule ? Date.parse(schedule.server_time) : Number.NaN;
   return {
     stops: body.stops ?? [],
     navigationHelp: isNavigationHelp(body.navigation_help) ? body.navigation_help : null,
+    schedule,
+    clockOffsetMs: Number.isFinite(serverMs) ? serverMs - Date.now() : 0,
   };
 }
 
@@ -84,6 +104,8 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
   const [finds, setFinds] = useState<Find[]>([]);
   const [huntMeta, setHuntMeta] = useState<HuntMetadata>({});
   const [navigationHelp, setNavigationHelp] = useState<NavigationHelp | null>(null);
+  const [schedule, setSchedule] = useState<PlaySchedule | null>(null);
+  const [clockOffsetMs, setClockOffsetMs] = useState(0);
   const [clueBoardOpen, setClueBoardOpen] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [completedFinds, setCompletedFinds] = useState<Set<string>>(new Set());
@@ -188,17 +210,25 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
 
         setHuntMeta(meta);
         setNavigationHelp(stopsReply.navigationHelp);
+        setSchedule(stopsReply.schedule);
+        setClockOffsetMs(stopsReply.clockOffsetMs);
         setFinds(allFinds);
         setCompletedFinds(completed);
         setSessionScore(priorScore);
 
-        // Jump to first incomplete
-        const nextIdx = allFinds.findIndex((f: Find) => !completed.has(f.id));
+        // Jump to the first incomplete stop: on a scheduled hunt the first
+        // one that is out, and failing that the first still to come.
+        const playableIdx = allFinds.findIndex((f: Find) => !completed.has(f.id) && !f.release_at);
+        const nextIdx = playableIdx >= 0 ? playableIdx : allFinds.findIndex((f: Find) => !completed.has(f.id));
         if (nextIdx >= 0) {
           setCurrentIndex(nextIdx);
-          // All clues at once: start on the list of open clues when there is a choice.
+          // All clues at once: start on the list of open clues when there is a
+          // choice. A scheduled hunt always starts there: it is the hunt's
+          // home between visits (what is open, what is coming, when it ends).
           const openCount = allFinds.filter((f) => !completed.has(f.id)).length;
-          setClueBoardOpen(readClueDelivery(meta as Record<string, unknown>) === "all_at_once" && openCount > 1);
+          setClueBoardOpen(
+            readClueDelivery(meta as Record<string, unknown>) === "all_at_once" && (openCount > 1 || !!stopsReply.schedule)
+          );
         } else if (allFinds.length > 0) {
           // Every stop is done but the hunt was never finished (the page was
           // reloaded before "Finish Hunt"). Finish it now so the session is
@@ -234,7 +264,35 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
   const refreshStops = useCallback(async () => {
     const fresh = await fetchStops(huntId);
     setFinds((current) => mergeStops(current, fresh.stops));
+    setSchedule(fresh.schedule);
+    if (fresh.schedule) setClockOffsetMs(fresh.clockOffsetMs);
   }, [huntId]);
+
+  // Scheduled hunts: load the stops again when the next release is due, and
+  // whenever the player comes back to the app (a hunt runs for days, and a
+  // timer does not survive the phone sleeping). Failures are left alone: the
+  // next visit or release tries again.
+  const nextReleaseAt = schedule?.phase === "ended" ? null : schedule?.next_release_at ?? null;
+  const scheduled = !!schedule;
+  useEffect(() => {
+    if (!scheduled) return;
+    const reload = () => {
+      refreshStops().catch(() => undefined);
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") reload();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    if (nextReleaseAt) {
+      const wait = Date.parse(nextReleaseAt) - (Date.now() + clockOffsetMs) + RELEASE_GRACE_MS;
+      timer = setTimeout(reload, Math.min(Math.max(wait, RELEASE_GRACE_MS), MAX_TIMER_MS));
+    }
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      if (timer) clearTimeout(timer);
+    };
+  }, [scheduled, nextReleaseAt, clockOffsetMs, refreshStops]);
 
   const applyStartedStop = useCallback((stop: Find) => {
     setFinds((current) => withStartedStop(current, stop));
@@ -248,6 +306,8 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
     delivery: readClueDelivery(huntMeta as Record<string, unknown>),
     // The play API's answer first; the hunt's settings if it didn't say.
     navigationHelp: navigationHelp ?? readNavigationHelp(huntMeta as Record<string, unknown>),
+    schedule,
+    clockOffsetMs,
     clueBoardOpen,
     setClueBoardOpen,
     currentIndex,
