@@ -7,7 +7,7 @@ import { Medal, Star, Trophy } from "lucide-react";
 import { LazyMotion, m } from "framer-motion";
 import { SPRING_SNAPPY } from "@/lib/motion";
 import {
-  competitionRanks,
+  displayRanks,
   summarizeViewerStanding,
   standingCaption,
   type ServerMe,
@@ -16,6 +16,8 @@ import {
 interface LeaderboardEntry {
   user_id: string;
   score: number;
+  /** Rank worked out by the server (hunt boards). */
+  rank?: number;
   display_name: string | null;
   avatar_url: string | null;
   codename?: string | null;
@@ -112,7 +114,9 @@ export default function Leaderboard({ huntId }: LeaderboardProps) {
 
   const entries = board?.entries ?? [];
   const viewerId = board?.viewerId ?? null;
-  const ranks = competitionRanks(entries);
+  // The server's ranks where it sends them (hunt boards: version 2 hunts break
+  // ties); otherwise players on the same score share a rank.
+  const ranks = displayRanks(entries);
   const { standing, pinned } = summarizeViewerStanding(entries, viewerId, board?.me);
   const caption = standingCaption(standing);
   // Signed in, board has scores, but none of them are the viewer's.

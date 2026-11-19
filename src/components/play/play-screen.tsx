@@ -5,6 +5,7 @@ import { MapPinned } from "lucide-react";
 import { useGoogleMaps } from "@/components/maps/use-google-maps";
 import { PlayMap } from "@/components/play/play-map";
 import { PlayHud } from "@/components/play/play-hud";
+import { HINT_COSTS, readScoringVersion } from "@/lib/hunts/scoring-version";
 import { ProximityPanel } from "@/components/play/proximity-panel";
 import { ErrorBanner, GpsBanners, OfflineBanner, PlayBanner } from "@/components/play/play-banners";
 import { ThumbZone } from "@/components/play/thumb-zone";
@@ -87,6 +88,7 @@ export function PlayScreen({ huntId, session, flow, overlays }: PlayScreenProps)
           delivery={delivery}
           onShowClues={allAtOnce ? () => setClueBoardOpen(true) : null}
           hint={hudHint}
+          hintCost={HINT_COSTS[readScoringVersion(huntMeta as Record<string, unknown>)].clue}
           more={{
             onPrevious,
             reportTargetId: currentFind?.id || String(huntId),

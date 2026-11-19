@@ -116,8 +116,11 @@ export interface ScoringV2Input {
   solveWindowMs?: number | null;
 }
 
-/** Points per component. They add up to the total exactly. */
-export interface ScoringV2Breakdown {
+/**
+ * Points per component. They add up to the total exactly. A type alias (not
+ * an interface) so it can be passed where a plain record of numbers is wanted.
+ */
+export type ScoringV2Breakdown = {
   correctness: number;
   firstAttemptBonus: number;
   completion: number;
@@ -129,7 +132,7 @@ export interface ScoringV2Breakdown {
   hintPenalty: number;
   /** Points added to bring the attempt up to the floor. */
   effortCredit: number;
-}
+};
 
 /** What each time layer was computed from, kept for research exports. */
 export interface ScoringV2Timing {
