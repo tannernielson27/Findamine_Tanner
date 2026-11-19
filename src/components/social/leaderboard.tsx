@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import Link from "next/link";
-import { Eye, Medal, Star, Trophy } from "lucide-react";
+import { ArrowUp, Eye, Medal, Star, Trophy } from "lucide-react";
 import { LazyMotion, m } from "framer-motion";
 import { SPRING_SNAPPY } from "@/lib/motion";
 import {
@@ -91,6 +91,15 @@ async function loadBoard(huntId: string | undefined, realNames: boolean): Promis
 
 const loadLayoutFeatures = () => import("@/lib/themes/motion-features-max").then((mod) => mod.default);
 
+/** Past this many rows the board scrolls inside its card instead of growing the page. */
+const SCROLL_AFTER_ROWS = 10;
+
+/** Scroll `container` to `top`. Instant when the viewer asked for reduced motion. */
+function scrollWithin(container: HTMLElement, top: number): void {
+  const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+  container.scrollTo({ top: Math.max(0, top), behavior: reduce ? "auto" : "smooth" });
+}
+
 export default function Leaderboard({ huntId, canShowRealNames = false }: LeaderboardProps) {
   const topic = leaderboardTopic(huntId);
   // Real names (issue #13) are off every time a board is opened and are never
@@ -102,6 +111,8 @@ export default function Leaderboard({ huntId, canShowRealNames = false }: Leader
   if (realNamesFor !== null && realNamesFor !== topic) setRealNamesFor(null);
   const realNamesOn = canShowRealNames && realNamesFor === topic;
   const realNamesSwitch = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLOListElement>(null);
+  const viewerRowRef = useRef<HTMLLIElement>(null);
 
   // Live updates: the server pings this board's own channel when standings
   // change and the board refetches from the API; a poll covers missed pings.
@@ -130,6 +141,17 @@ export default function Leaderboard({ huntId, canShowRealNames = false }: Leader
   const caption = standingCaption(standing);
   // Signed in, board has scores, but none of them are the viewer's.
   const unranked = viewerId != null && !standing && entries.length > 0;
+  // Every player is listed, so a long board scrolls inside the card.
+  const scrollable = entries.length > SCROLL_AFTER_ROWS;
+  const viewerListed = viewerId != null && entries.some((e) => e.user_id === viewerId);
+  const jumpToMe = () => {
+    const list = listRef.current;
+    const row = viewerRowRef.current;
+    if (list && row) scrollWithin(list, row.offsetTop - (list.clientHeight - row.offsetHeight) / 2);
+  };
+  const backToTop = () => {
+    if (listRef.current) scrollWithin(listRef.current, 0);
+  };
 
   return (
     <LazyMotion features={loadLayoutFeatures}>
@@ -240,7 +262,18 @@ export default function Leaderboard({ huntId, canShowRealNames = false }: Leader
           <p className="font-[family-name:var(--font-handwritten)] text-lg text-themed-muted">Be the first explorer!</p>
         </div>
       ) : (
-        <ol className="divide-y divide-themed-border">
+        <>
+        <ol
+          ref={listRef}
+          // Focusable so keyboard users can scroll the board with the arrow keys.
+          tabIndex={scrollable ? 0 : undefined}
+          aria-label={scrollable ? `Leaderboard, ${entries.length} players` : undefined}
+          className={`relative divide-y divide-themed-border ${
+            scrollable
+              ? "max-h-[min(65vh,36rem)] overflow-y-auto overscroll-contain focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand"
+              : ""
+          }`}
+        >
           {entries.map((entry, i) => {
             const isViewer = viewerId != null && entry.user_id === viewerId;
             const rank = ranks[i];
@@ -251,6 +284,7 @@ export default function Leaderboard({ huntId, canShowRealNames = false }: Leader
               // slide to their new rank instead of jumping.
               <m.li
                 key={entry.user_id}
+                ref={isViewer ? viewerRowRef : undefined}
                 layout="position"
                 transition={SPRING_SNAPPY}
                 className={`flex min-h-14 items-center gap-3 px-4 py-2.5 transition-colors ${
@@ -368,6 +402,34 @@ export default function Leaderboard({ huntId, canShowRealNames = false }: Leader
             </li>
           )}
         </ol>
+        {scrollable && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-themed-border px-4 py-1.5">
+            <p className="text-sm tabular-nums text-themed-muted">
+              {entries.length} players
+            </p>
+            <div className="flex items-center gap-1">
+              {viewerListed && (
+                <button
+                  type="button"
+                  onClick={jumpToMe}
+                  className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-link hover:text-link-dark hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                >
+                  <Star className="h-4 w-4" aria-hidden="true" />
+                  Jump to me
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={backToTop}
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-link hover:text-link-dark hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+              >
+                <ArrowUp className="h-4 w-4" aria-hidden="true" />
+                Back to top
+              </button>
+            </div>
+          </div>
+        )}
+        </>
       )}
     </div>
     </LazyMotion>
