@@ -37,20 +37,32 @@ export interface ReleaseNotice {
   stopCount: number;
 }
 
+export interface ReleaseNoticeOptions {
+  lookbackMs?: number;
+  /**
+   * Count only stops released after this moment: the player's last release
+   * notice, or when they joined. Without it a run that looks back further
+   * than the gap between runs would announce the same stop twice.
+   */
+  afterMs?: number | null;
+}
+
 /**
- * The release notice due for a hunt right now, or null. Only while the hunt
- * is open. Stops that open with the hunt count as a release at its start.
+ * The release notice due right now, or null. Only while the hunt is open.
+ * Stops that open with the hunt count as a release at its start. With
+ * `afterMs` it is one player's notice: what opened since they were last told.
  */
 export function dueReleaseNotice(
   window: HuntWindow,
   releases: ReadonlyArray<string | null | undefined>,
   nowMs: number,
-  lookbackMs: number = RELEASE_LOOKBACK_MS
+  options: ReleaseNoticeOptions = {}
 ): ReleaseNotice | null {
   if (nowMs < window.startsAtMs || nowMs >= window.endsAtMs) return null;
+  const floor = Math.max(nowMs - (options.lookbackMs ?? RELEASE_LOOKBACK_MS), options.afterMs ?? -Infinity);
   const due = releases
     .map((r) => stopReleaseMs(window, r))
-    .filter((ms): ms is number => ms !== null && ms <= nowMs && ms > nowMs - lookbackMs);
+    .filter((ms): ms is number => ms !== null && ms <= nowMs && ms > floor);
   return due.length > 0 ? { dueAtMs: Math.max(...due), stopCount: due.length } : null;
 }
 

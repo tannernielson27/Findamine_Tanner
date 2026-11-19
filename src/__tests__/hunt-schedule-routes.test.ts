@@ -47,7 +47,11 @@ import { POST as arrive } from "@/app/api/v1/play/[huntId]/arrive/route";
 import { POST as answer } from "@/app/api/v1/play/[huntId]/answer/route";
 import { POST as clueHint } from "@/app/api/v1/play/[huntId]/clue-hint/route";
 import { PUT as saveSchedule } from "@/app/api/v1/hunts/[id]/schedule/route";
-import { PUT as updateHunt } from "@/app/api/v1/hunts/[id]/route";
+import { GET as getHunt, PUT as updateHunt } from "@/app/api/v1/hunts/[id]/route";
+import { POST as addStop } from "@/app/api/v1/hunts/[id]/finds/route";
+import { DELETE as removeStop, PUT as updateStop } from "@/app/api/v1/hunts/[id]/finds/[findId]/route";
+import { POST as capture } from "@/app/api/v1/play/[huntId]/capture/route";
+import { SCHEDULED_STOPS_LOCKED_MESSAGE } from "@/lib/hunts/delivery-lock";
 import { GET as leaderboard } from "@/app/api/v1/leaderboard/route";
 import {
   HUNT_ENDED_MESSAGE,
@@ -74,6 +78,7 @@ const PLACE = "Centennial Bell Tower";
 const SECRETS = [PLACE, "Look for the carillon", "Count the bells", "How many bells?", "Before you go", "40.25", "111.65"];
 
 const EMBEDS = {
+  hunts: { finds: { table: "finds", localKey: "id", foreignKey: "hunt_id", many: true } },
   finds: {
     locations: { table: "locations", localKey: "location_id" },
     tasks: { table: "tasks", localKey: "task_id" },
@@ -447,6 +452,7 @@ describe("PUT /hunts/[id]/schedule", () => {
       [{ ...schedule, releases: [...schedule.releases.slice(0, 2), { find_id: "f2", release_at: ENDS }] }, /before the hunt ends/],
       [{ ...schedule, releases: [...schedule.releases.slice(0, 2), { find_id: "elsewhere", release_at: null }] }, /not in this hunt/],
       [{ ...schedule, releases: "all at nine" }, /list/],
+      [{ ...schedule, starts_at: "2031-11-23T16:00:00.000Z", ends_at: "2031-12-05T04:00:00.000Z", releases: schedule.releases.map((r) => ({ ...r, release_at: null })) }, /two years/],
       [{ ...schedule, starts_at: "2026-11-01T16:00:00.000Z", ends_at: "2026-11-10T16:00:00.000Z", releases: schedule.releases.map((r) => ({ ...r, release_at: null })) }, /already passed/],
     ];
     for (const [body, message] of bad) {
@@ -485,6 +491,75 @@ describe("PUT /hunts/[id]/schedule", () => {
   });
 });
 
+describe("a scheduled hunt's stops once it is published or played", () => {
+  const stopParams = (findId: string) => ({ params: Promise.resolve({ id: HUNT, findId }) });
+  const add = () => addStop(req("POST", `/hunts/${HUNT}/finds`, { clue_text: "A new clue" }), huntParams);
+  const remove = (findId: string) => removeStop(req("DELETE", `/hunts/${HUNT}/finds/${findId}`), stopParams(findId));
+  const move = (findId: string, sort_order: number) =>
+    updateStop(req("PUT", `/hunts/${HUNT}/finds/${findId}`, { sort_order }), stopParams(findId));
+
+  beforeEach(() => {
+    h.user = { id: "creator", role: "teacher" };
+  });
+
+  it("can't be added, removed or reordered: a new stop would have no release time and open at once", async () => {
+    for (const opts of [{ status: "published", sessions: [] }, { status: "draft" }] as SeedOptions[]) {
+      const db = seed(opts);
+      for (const res of [await add(), await remove("f2"), await move("f2", 0)]) {
+        expect(res.status).toBe(409);
+        expect((await res.json()).error).toBe(SCHEDULED_STOPS_LOCKED_MESSAGE);
+      }
+      expect(db.table("finds")).toHaveLength(3);
+      expect(db.table("finds").every((f) => f.deleted_at === null)).toBe(true);
+    }
+  });
+
+  it("can still have their wording edited", async () => {
+    seed();
+    const res = await updateStop(req("PUT", `/hunts/${HUNT}/finds/f2`, { clue_text: "A clearer clue" }), stopParams("f2"));
+    expect(res.status).toBe(200);
+  });
+
+  it("the editor is told the stops are frozen", async () => {
+    seed();
+    const body = await (await getHunt(req("GET", `/hunts/${HUNT}`), huntParams)).json();
+    expect(body.hunt.stops_frozen).toBe(true);
+    seed({ scheduled: false });
+    expect((await (await getHunt(req("GET", `/hunts/${HUNT}`), huntParams)).json()).hunt.stops_frozen).toBe(false);
+  });
+
+  it("stay editable on a scheduled draft nobody has played, and on hunts with no schedule", async () => {
+    seed({ status: "draft", sessions: [] });
+    expect((await remove("f2")).status).not.toBe(409);
+    seed({ scheduled: false });
+    expect((await remove("f2")).status).not.toBe(409);
+  });
+});
+
+describe("uploads follow the hunt's window", () => {
+  const photo = (findId: string) => {
+    const form = new FormData();
+    form.append("find_id", findId);
+    form.append("file", new File([new Uint8Array([1, 2, 3])], "photo.jpg", { type: "image/jpeg" }));
+    return capture(new NextRequest("http://localhost:3000/x", { method: "POST", body: form }), playParams);
+  };
+
+  it("no photo for an unfinished stop once the hunt has ended", async () => {
+    seed({ completions: [completion("f0", { started_at: STARTS, arrived_at: STARTS })] });
+    now(at(ENDS));
+    const res = await photo("f0");
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe(HUNT_ENDED_MESSAGE);
+  });
+
+  it("none for a stop that is not released", async () => {
+    seed({ completions: [completion("f1", { started_at: STARTS, arrived_at: STARTS })] });
+    const res = await photo("f1");
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe(STOP_NOT_RELEASED_MESSAGE);
+  });
+});
+
 describe("GET /leaderboard?hunt_id on a scheduled hunt", () => {
   const session = (user: string, status: string, total_score: number): Row => ({
     id: `s-${user}`, hunt_id: HUNT, user_id: user, status, total_score, total_solve_ms: null,
@@ -508,6 +583,20 @@ describe("GET /leaderboard?hunt_id on a scheduled hunt", () => {
     const body = await board();
     expect(body.entries.map((e: Row) => e.user_id)).toEqual(["a", "b", "c"]);
     expect(body.me).toMatchObject({ rank: 3, score: 900 });
+  });
+
+  it("lists a player once they have points, and once: not on pressing Start, and not twice for a replay", async () => {
+    h.user = { id: "owner", role: "hunt_creator" };
+    const db = seedBoard(true);
+    db.table("play_sessions").push(
+      { id: "s-new", hunt_id: HUNT, user_id: "d", status: "active", total_score: 0, total_solve_ms: null, completed_at: null, codename: "d" },
+      // b finished with 2100 and is replaying, on 300 so far.
+      { id: "s-b2", hunt_id: HUNT, user_id: "b", status: "active", total_score: 300, total_solve_ms: null, completed_at: null, codename: "b" }
+    );
+    db.table("users").push({ id: "d", display_name: "d", avatar_url: null, role: "adult", profile_visibility: {} });
+    const body = await board();
+    expect(body.entries.map((e: Row) => e.user_id)).toEqual(["a", "b", "c"]);
+    expect(body.entries.map((e: Row) => e.score)).toEqual([2600, 2100, 900]);
   });
 
   it("a hunt with no window still lists finished sessions only", async () => {

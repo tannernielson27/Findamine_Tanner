@@ -11,6 +11,7 @@ import {
 } from "@/lib/hunts/delivery-lock";
 import { fullDeliveryMetadata } from "@/lib/hunts/clue-orders-store";
 import { checkScoringEdit, inheritScoringSettings, scoringSettingsChanged } from "@/lib/hunts/scoring-version";
+import { isScheduledHunt } from "@/lib/hunts/schedule";
 
 /**
  * Hunt-editing routes' side of the clue delivery lock (lib/hunts/delivery-lock.ts).
@@ -102,17 +103,22 @@ async function settleScoringSettings(
 
 /**
  * 409 when stops can no longer be added, removed or reordered: a locked study
- * hunt, or a locked hunt with assigned orders. Other hunts never freeze, so
- * they skip the lock lookup entirely.
+ * hunt, a locked hunt with assigned orders, or a locked scheduled hunt. Other
+ * hunts never freeze, so they skip the lock lookup entirely.
  */
 export async function assertStopSetEditable(
   supabase: SupabaseClient,
-  input: { hunt: { id: string; status: string; metadata?: unknown }; route: string }
+  input: {
+    hunt: { id: string; status: string; metadata?: unknown; starts_at?: string | null; ends_at?: string | null };
+    route: string;
+  }
 ): Promise<void> {
   const { hunt, route } = input;
   const metadata = (hunt.metadata as Meta) ?? null;
-  if (!freezesStops(metadata)) return;
+  // A scheduled hunt freezes its stops once locked as well (issue #14).
+  const scheduled = isScheduledHunt(hunt);
+  if (!freezesStops(metadata) && !scheduled) return;
   const locked = await deliveryLocked(supabase, hunt, route);
-  const result = checkStopSetChange({ locked, metadata });
+  const result = checkStopSetChange({ locked, metadata, scheduled });
   if (!result.ok) throw new ApiError(409, result.error);
 }

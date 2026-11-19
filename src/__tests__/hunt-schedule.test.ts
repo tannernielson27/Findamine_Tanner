@@ -132,6 +132,12 @@ describe("time zones", () => {
     expect(fromWallTime({ date: "2026-11-01", time: "01:30" }, DENVER)).toBe(iso("2026-11-01T07:30:00.000Z"));
     // 8 March 2026, 02:30 does not exist in Denver.
     expect(fromWallTime({ date: "2026-03-08", time: "02:30" }, DENVER)).toBe(iso("2026-03-08T09:30:00.000Z"));
+    // East of UTC the same rules hold: 25 October 2026, 02:30 happens twice in
+    // Berlin (00:30Z in summer time, then 01:30Z), and 29 March, 02:30 not at all.
+    expect(fromWallTime({ date: "2026-10-25", time: "02:30" }, "Europe/Berlin")).toBe(iso("2026-10-25T00:30:00.000Z"));
+    expect(fromWallTime({ date: "2026-03-29", time: "02:30" }, "Europe/Berlin")).toBe(iso("2026-03-29T01:30:00.000Z"));
+    // And south of the equator, where the clocks go the other way (Sydney: 4 April 2027, 02:30 twice).
+    expect(fromWallTime({ date: "2027-04-04", time: "02:30" }, "Australia/Sydney")).toBe(iso("2027-04-03T15:30:00.000Z"));
     // Either side of the change is exact.
     expect(fromWallTime({ date: "2026-03-08", time: "01:30" }, DENVER)).toBe(iso("2026-03-08T08:30:00.000Z"));
     expect(fromWallTime({ date: "2026-03-08", time: "03:30" }, DENVER)).toBe(iso("2026-03-08T09:30:00.000Z"));

@@ -14,6 +14,8 @@ import {
 } from "@/lib/hunts/schedule";
 
 const ROUTE = "/api/v1/hunts/[id]/schedule";
+const CHECK_VIOLATION = "23514";
+const MAX_START_AHEAD_MS = 2 * 365 * 24 * 60 * 60 * 1000;
 
 type Meta = Record<string, unknown> | null;
 
@@ -88,9 +90,11 @@ export async function PUT(
     const metadata = (hunt.metadata as Meta) ?? null;
 
     if (body.clear === true) {
-      await saveReleases(supabase, id, findIds.map((findId) => ({ findId, releaseAt: null })));
+      // The window first: if the second write fails, the hunt is already a
+      // play-anytime hunt and the release times left behind are never read.
       const cleared = withoutScheduleTimeZone(metadata);
       await saveWindow(supabase, id, { starts_at: null, ends_at: null, metadata: cleared });
+      await saveReleases(supabase, id, findIds.map((findId) => ({ findId, releaseAt: null })));
       logger.info("hunt.schedule_cleared", { userId: user.id, huntId: id });
       return Response.json({ schedule: null, metadata: cleared });
     }
@@ -107,6 +111,9 @@ export async function PUT(
     if (Date.parse(input.endsAt) <= Date.now()) {
       throw new ApiError(400, "The hunt's end has already passed. Choose an end in the future.");
     }
+    if (Date.parse(input.startsAt) > Date.now() + MAX_START_AHEAD_MS) {
+      throw new ApiError(400, "The hunt's start is more than two years away. Choose an earlier date.");
+    }
 
     const startsAt = new Date(input.startsAt).toISOString();
     const endsAt = new Date(input.endsAt).toISOString();
@@ -117,6 +124,8 @@ export async function PUT(
     // Every released clue is open at once on a scheduled hunt.
     const nextMetadata = withScheduleTimeZone(withClueDelivery(metadata, "all_at_once"), input.timeZone);
 
+    // Releases first: if the window write fails, the hunt is still a
+    // play-anytime hunt and the release times just written are never read.
     await saveReleases(supabase, id, releases);
     await saveWindow(supabase, id, { starts_at: startsAt, ends_at: endsAt, metadata: nextMetadata });
     logger.info("hunt.schedule_saved", { userId: user.id, huntId: id, startsAt, endsAt, stops: releases.length });
@@ -148,7 +157,15 @@ async function saveReleases(
     )
   );
   const failed = results.find((r) => r.error);
-  if (failed?.error) throw internalError(ROUTE, failed.error);
+  if (failed?.error) throw lockedOrInternal(failed.error);
+}
+
+/**
+ * The database's own lock (migration 087) fired: the hunt was published or
+ * played between this route's check and its write. Same answer as the check.
+ */
+function lockedOrInternal(error: { message?: string; code?: string }): ApiError {
+  return error.code === CHECK_VIOLATION ? new ApiError(409, SCHEDULE_LOCKED_MESSAGE) : internalError(ROUTE, error);
 }
 
 async function saveWindow(
@@ -157,5 +174,5 @@ async function saveWindow(
   values: { starts_at: string | null; ends_at: string | null; metadata: Record<string, unknown> }
 ): Promise<void> {
   const { error } = await supabase.from("hunts").update(values).eq("id", huntId);
-  if (error) throw internalError(ROUTE, error);
+  if (error) throw lockedOrInternal(error);
 }

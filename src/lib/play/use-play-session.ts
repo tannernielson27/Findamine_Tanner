@@ -268,11 +268,12 @@ export function usePlaySession(huntId: string | string[] | undefined, celebratio
     if (fresh.schedule) setClockOffsetMs(fresh.clockOffsetMs);
   }, [huntId]);
 
-  // Scheduled hunts: load the stops again when the next release is due, and
+  // Scheduled hunts: load the stops again when the next release is due, when
+  // the hunt ends (so a player mid-stop is told, not left with refusals), and
   // whenever the player comes back to the app (a hunt runs for days, and a
   // timer does not survive the phone sleeping). Failures are left alone: the
   // next visit or release tries again.
-  const nextReleaseAt = schedule?.phase === "ended" ? null : schedule?.next_release_at ?? null;
+  const nextReleaseAt = schedule?.phase === "ended" ? null : schedule?.next_release_at ?? schedule?.ends_at ?? null;
   const scheduled = !!schedule;
   useEffect(() => {
     if (!scheduled) return;

@@ -48,20 +48,32 @@ const at = (iso: string, plusMs = 0) => Date.parse(iso) + plusMs;
 
 describe("dueReleaseNotice", () => {
   const releases = [null, TUESDAY, TUESDAY, WEDNESDAY];
+  const hourBack = { lookbackMs: HOUR };
 
   it("is due from the moment of a release, for the stops it opened", () => {
-    expect(dueReleaseNotice(window, releases, at(TUESDAY) - 1, HOUR)).toBeNull();
-    expect(dueReleaseNotice(window, releases, at(TUESDAY), HOUR)).toEqual({ dueAtMs: at(TUESDAY), stopCount: 2 });
-    expect(dueReleaseNotice(window, releases, at(TUESDAY, 30 * 60_000), HOUR)).toEqual({ dueAtMs: at(TUESDAY), stopCount: 2 });
+    expect(dueReleaseNotice(window, releases, at(TUESDAY) - 1, hourBack)).toBeNull();
+    expect(dueReleaseNotice(window, releases, at(TUESDAY), hourBack)).toEqual({ dueAtMs: at(TUESDAY), stopCount: 2 });
+    expect(dueReleaseNotice(window, releases, at(TUESDAY, 30 * 60_000), hourBack)).toEqual({ dueAtMs: at(TUESDAY), stopCount: 2 });
   });
 
   it("covers the hunt's start: stops with no time of their own open then", () => {
-    expect(dueReleaseNotice(window, releases, at(STARTS), HOUR)).toEqual({ dueAtMs: at(STARTS), stopCount: 1 });
+    expect(dueReleaseNotice(window, releases, at(STARTS), hourBack)).toEqual({ dueAtMs: at(STARTS), stopCount: 1 });
   });
 
-  it("a job that runs once a day announces everything since, in one notice keyed by the latest release", () => {
-    expect(dueReleaseNotice(window, releases, at(WEDNESDAY, 5 * 60_000))).toEqual({ dueAtMs: at(WEDNESDAY), stopCount: 3 });
+  it("looks back more than a day, so a job that runs once a day misses nothing", () => {
     expect(RELEASE_LOOKBACK_MS).toBeGreaterThan(DAY);
+    expect(dueReleaseNotice(window, releases, at(WEDNESDAY, 5 * 60_000))).toEqual({ dueAtMs: at(WEDNESDAY), stopCount: 3 });
+  });
+
+  it("for one player, counts only what opened since they were last told", () => {
+    // Told about Tuesday's release; a day later only Wednesday's stop is new.
+    const afterTuesday = { afterMs: at(TUESDAY) };
+    expect(dueReleaseNotice(window, releases, at(WEDNESDAY, 5 * 60_000), afterTuesday)).toEqual({ dueAtMs: at(WEDNESDAY), stopCount: 1 });
+    // Told about Wednesday's: nothing is new.
+    expect(dueReleaseNotice(window, releases, at(WEDNESDAY, 5 * 60_000), { afterMs: at(WEDNESDAY) })).toBeNull();
+    // Never told, or joined long ago: everything within the lookback.
+    expect(dueReleaseNotice(window, releases, at(WEDNESDAY, 5 * 60_000), { afterMs: null })?.stopCount).toBe(3);
+    expect(dueReleaseNotice(window, releases, at(WEDNESDAY, 5 * 60_000), { afterMs: -Infinity })?.stopCount).toBe(3);
   });
 
   it("is quiet once a release is older than the lookback, before the hunt starts and after it ends", () => {
@@ -131,6 +143,9 @@ describe("GET /api/cron/hunt-releases", () => {
   const HUNT = "hunt-1";
   const run = (secret: string | null = "s3cret") =>
     runJob(new NextRequest("http://localhost:3000/api/cron/hunt-releases", { headers: secret ? { authorization: `Bearer ${secret}` } : {} }));
+  const playing = (user: string, startedAt: string = STARTS, extra: Row = {}): Row => ({
+    id: `s-${user}`, hunt_id: HUNT, user_id: user, status: "active", started_at: startedAt, ...extra,
+  });
 
   function seed(over: { hunts?: Row[]; prefs?: Row[]; sessions?: Row[] } = {}): SupabaseDouble {
     return installDouble(
@@ -144,10 +159,10 @@ describe("GET /api/cron/hunt-releases", () => {
           { id: "f2", hunt_id: HUNT, deleted_at: null, release_at: WEDNESDAY },
         ],
         play_sessions: over.sessions ?? [
-          { id: "s1", hunt_id: HUNT, user_id: "ada", status: "active" },
-          { id: "s2", hunt_id: HUNT, user_id: "bo", status: "active" },
-          { id: "s3", hunt_id: HUNT, user_id: "cy", status: "completed" },
-          { id: "s4", hunt_id: "another-hunt", user_id: "dee", status: "active" },
+          playing("ada"),
+          playing("bo"),
+          playing("cy", STARTS, { status: "completed" }),
+          playing("dee", STARTS, { hunt_id: "another-hunt" }),
         ],
         users: ["ada", "bo", "cy", "dee"].map((id) => ({ id, email: `${id}@example.test` })),
         notification_preferences: over.prefs ?? [],
@@ -157,6 +172,8 @@ describe("GET /api/cron/hunt-releases", () => {
       { unique: { hunt_schedule_notices: [["hunt_id", "user_id", "kind", "due_at"]] } }
     );
   }
+  const titles = (db: SupabaseDouble, user: string) =>
+    db.table("notifications").filter((n) => n.user_id === user).map((n) => n.title);
 
   beforeEach(() => {
     process.env.CRON_SECRET = "s3cret";
@@ -178,17 +195,17 @@ describe("GET /api/cron/hunt-releases", () => {
     expect(db.table("notifications")).toHaveLength(0);
   });
 
-  it("tells everyone playing the hunt that stops have opened, linking to the hunt", async () => {
+  it("tells everyone playing the hunt that a stop has opened, linking to the hunt", async () => {
     const db = seed();
     const body = await (await run()).json();
-    expect(body).toMatchObject({ hunts_open: 1, notices_due: 1, sent: 2, failed: 0 });
+    expect(body).toMatchObject({ hunts_open: 1, sent: 2, failed: 0, stopped_early: false });
     const sent = db.table("notifications");
     // The players in this hunt; not one who finished, nor one in another hunt.
     expect(sent.map((n) => n.user_id).sort()).toEqual(["ada", "bo"]);
+    // They joined at the start and saw the first stop then: Tuesday's is the new one.
     expect(sent[0]).toMatchObject({
       type: HUNT_RELEASE_TYPE,
-      // Tuesday's stop, and the one that opened with the hunt a day earlier.
-      title: "2 new stops are open in Two weeks of clues",
+      title: "A new stop is open in Two weeks of clues",
       entity_type: "hunt",
       entity_id: HUNT,
     });
@@ -197,13 +214,41 @@ describe("GET /api/cron/hunt-releases", () => {
   it("sends each notice once, however often it runs", async () => {
     const db = seed();
     await run();
-    const second = await (await run()).json();
-    expect(second).toMatchObject({ sent: 0, already: 2 });
+    expect(await (await run()).json()).toMatchObject({ sent: 0, already: 2 });
     expect(db.table("notifications")).toHaveLength(2);
     // The next release is a new notice.
     vi.setSystemTime(at(WEDNESDAY, 60_000));
     expect(await (await run()).json()).toMatchObject({ sent: 2 });
     expect(db.table("notifications")).toHaveLength(4);
+  });
+
+  it("run once a day, it counts each stop once: a stop announced yesterday is not new today", async () => {
+    const db = seed();
+    // Tuesday's run, five minutes after Tuesday's release.
+    vi.setSystemTime(at(TUESDAY, 5 * 60_000));
+    await run();
+    // Wednesday's run, five minutes after Wednesday's: Tuesday's stop is 24 h 05 min old, inside the lookback.
+    vi.setSystemTime(at(WEDNESDAY, 5 * 60_000));
+    await run();
+    expect(titles(db, "ada")).toEqual(["A new stop is open in Two weeks of clues", "A new stop is open in Two weeks of clues"]);
+  });
+
+  it("a missed day is made up in one notice", async () => {
+    const db = seed({ sessions: [playing("ada", new Date(at(TUESDAY) - HOUR).toISOString())] });
+    vi.setSystemTime(at(WEDNESDAY, 5 * 60_000));
+    await run();
+    expect(titles(db, "ada")).toEqual(["2 new stops are open in Two weeks of clues"]);
+  });
+
+  it("someone who joins after a release is not told about stops that were already open when they joined", async () => {
+    const db = seed({ sessions: [playing("ada"), playing("bo", new Date(at(TUESDAY, 60_000)).toISOString())] });
+    await run();
+    expect(titles(db, "ada")).toHaveLength(1);
+    expect(titles(db, "bo")).toEqual([]);
+    // The next release is news to both.
+    vi.setSystemTime(at(WEDNESDAY, 60_000));
+    await run();
+    expect(titles(db, "bo")).toEqual(["A new stop is open in Two weeks of clues"]);
   });
 
   it("respects each player's own settings, and emails only those who asked", async () => {
@@ -216,15 +261,48 @@ describe("GET /api/cron/hunt-releases", () => {
     expect(await (await run()).json()).toMatchObject({ sent: 1, muted: 1 });
     expect(db.table("notifications").map((n) => n.user_id)).toEqual(["ada"]);
     expect(h.sendEmail).toHaveBeenCalledTimes(1);
-    expect(h.sendEmail.mock.calls[0][0]).toMatchObject({ to: "ada@example.test", subject: "2 new stops are open in Two weeks of clues" });
+    expect(h.sendEmail.mock.calls[0][0]).toMatchObject({ to: "ada@example.test", subject: "A new stop is open in Two weeks of clues" });
     // A muted player is not marked as told, so unmuting works for the next release.
     expect(db.table("hunt_schedule_notices").map((n) => n.user_id)).toEqual(["ada"]);
+  });
+
+  it("sends nothing for a hunt when the players' settings can't be read: a mute is never overridden", async () => {
+    const db = seed({ prefs: [{ user_id: "bo", push_enabled: false }] });
+    const realFrom = db.client.from;
+    db.client.from = ((table: string) => {
+      if (table === "notification_preferences") throw new Error("connection reset");
+      return realFrom(table);
+    }) as typeof db.client.from;
+    const body = await (await run()).json();
+    expect(body).toMatchObject({ sent: 0, failed: 1 });
+    expect(db.table("notifications")).toHaveLength(0);
+    // Nothing was recorded either, so the next run sends it.
+    expect(db.table("hunt_schedule_notices")).toHaveLength(0);
+    db.client.from = realFrom;
+    expect(await (await run()).json()).toMatchObject({ sent: 1, muted: 1 });
+  });
+
+  it("takes the record back when the notification can't be written, so a later run sends it", async () => {
+    const db = seed();
+    const realFrom = db.client.from;
+    let fail = true;
+    db.client.from = ((table: string) => {
+      const query = realFrom(table);
+      if (table === "notifications" && fail) {
+        query.insert = (() => Promise.resolve({ data: null, error: { message: "boom" } })) as unknown as typeof query.insert;
+      }
+      return query;
+    }) as typeof db.client.from;
+    expect(await (await run()).json()).toMatchObject({ sent: 0, failed: 2 });
+    expect(db.table("hunt_schedule_notices")).toHaveLength(0);
+    fail = false;
+    expect(await (await run()).json()).toMatchObject({ sent: 2, failed: 0 });
   });
 
   it("warns once in the hunt's last day", async () => {
     const db = seed();
     vi.setSystemTime(at(ENDS) - 20 * HOUR);
-    expect(await (await run()).json()).toMatchObject({ notices_due: 1, sent: 2 });
+    expect(await (await run()).json()).toMatchObject({ sent: 2 });
     expect(db.table("notifications")[0]).toMatchObject({ type: HUNT_ENDING_TYPE, title: "Two weeks of clues ends soon" });
     expect(await (await run()).json()).toMatchObject({ sent: 0, already: 2 });
   });
@@ -239,7 +317,7 @@ describe("GET /api/cron/hunt-releases", () => {
         { ...base, id: "gone", deleted_at: TUESDAY },
         { ...base, id: "anytime", starts_at: null, ends_at: null },
       ],
-      sessions: ["later", "over", "draft", "gone", "anytime"].map((id) => ({ id: `s-${id}`, hunt_id: id, user_id: "ada", status: "active" })),
+      sessions: ["later", "over", "draft", "gone", "anytime"].map((id) => ({ id: `s-${id}`, hunt_id: id, user_id: "ada", status: "active", started_at: STARTS })),
     });
     expect(await (await run()).json()).toMatchObject({ hunts_open: 0, sent: 0 });
     expect(db.table("notifications")).toHaveLength(0);

@@ -67,10 +67,24 @@ const RUNNING_TOTAL: ReadonlyArray<string> = ["active", "completed"];
  * Which sessions a hunt's board lists. A play-anytime hunt lists finished
  * sessions, as it always has. A scheduled hunt (issue #14) runs for days, so
  * its board is a running total: sessions still in progress are listed too,
- * with the points they have so far.
+ * with the points they have so far. Only once they have points: a session
+ * with none says nothing but "this person just pressed Start".
  */
 function boardStatuses(hunt: HuntWindowSource | null): ReadonlyArray<string> {
   return isScheduledHunt(hunt) ? RUNNING_TOTAL : FINISHED_ONLY;
+}
+
+/** The first row for each player, in the order given (best first), up to `limit` rows. Never mutates. */
+function bestPerPlayer<T extends { user_id?: unknown }>(rows: ReadonlyArray<T>, limit: number): T[] {
+  const seen = new Set<unknown>();
+  const best: T[] = [];
+  for (const row of rows) {
+    if (seen.has(row.user_id)) continue;
+    seen.add(row.user_id);
+    best.push(row);
+    if (best.length === limit) break;
+  }
+  return best;
 }
 
 /** What a completed session is ordered by on a board. */
@@ -148,7 +162,10 @@ export async function GET(request: NextRequest) {
         .eq("id", huntId)
         .single();
       const statuses = boardStatuses(hunt as HuntWindowSource | null);
-      const [user, { data }, mySessionResult] = await Promise.all([
+      const runningTotal = statuses.length > 1;
+      // A running total lists scores above zero; a finished-only board lists every finished session.
+      const minScore = runningTotal ? 0 : -1;
+      const [user, { data: boardRows }, mySessionResult] = await Promise.all([
         authPromise,
         // Hunt-specific: join play_sessions for codenames. Ordered by score,
         // then total solve time, then finish time (issue #11).
@@ -159,10 +176,12 @@ export async function GET(request: NextRequest) {
           )
           .eq("hunt_id", huntId)
           .in("status", statuses)
+          .gt("total_score", minScore)
           .order("total_score", { ascending: false })
           .order("total_solve_ms", { ascending: true, nullsFirst: false })
           .order("completed_at", { ascending: true, nullsFirst: false })
-          .limit(limit),
+          // Room for a player's second session (a replay) to be dropped below.
+          .limit(runningTotal ? limit * 2 : limit),
         authPromise.then((u) =>
           u
             ? supabase
@@ -179,6 +198,9 @@ export async function GET(request: NextRequest) {
         ),
       ]);
       currentUser = user;
+      // A running total can hold two sessions for one player (a finished run
+      // and a replay in progress): the best one stands, once.
+      const data = runningTotal ? bestPerPlayer(boardRows ?? [], limit) : boardRows;
 
       const identityMode = hunt?.identity_mode || "codename_assigned";
       // Version 2 hunts break ties, so equal scores get separate ranks.

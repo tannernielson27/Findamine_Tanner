@@ -166,17 +166,18 @@ export function fromWallTime(wall: WallTime, timeZone: string): number | null {
   // Reject dates that roll over (31 February).
   if (new Date(asUtc).getUTCDate() !== d) return null;
 
-  // The zone's offset at a guess, then once more at the corrected instant
-  // (the offset can differ across a clock change).
+  // The zone's offset near the answer. Around a clock change it has two
+  // values, so take it a few hours either side of a first guess as well: each
+  // offset gives a candidate instant.
   const offsetAt = (ms: number): number => {
     const p = wallParts(ms, timeZone);
     return Date.UTC(p.y, p.mo - 1, p.d, p.h, p.mi) - ms;
   };
-  const first = asUtc - offsetAt(asUtc);
-  const second = asUtc - offsetAt(first);
-  // Two candidates when the offsets disagree: keep the one that reads back as
-  // the wall time asked for, earliest first; otherwise (a skipped time) the later.
-  const candidates = [...new Set([first, second])].sort((a, b) => a - b);
+  const guess = asUtc - offsetAt(asUtc);
+  const offsets = [guess - 3 * 60 * MINUTE_MS, guess, guess + 3 * 60 * MINUTE_MS].map(offsetAt);
+  // Keep the candidate that reads back as the wall time asked for, earliest
+  // first (a repeated time); when none does (a skipped time), the latest.
+  const candidates = [...new Set(offsets.map((offset) => asUtc - offset))].sort((a, b) => a - b);
   const exact = candidates.find((ms) => {
     const p = wallParts(ms, timeZone);
     return p.y === y && p.mo === mo && p.d === d && p.h === h && p.mi === mi;

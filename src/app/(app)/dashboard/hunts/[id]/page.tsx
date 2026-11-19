@@ -682,7 +682,7 @@ export default function HuntDetailPage() {
 
         {isDraft && stopsFrozen && (
           <p className="text-xs text-gray-500 mb-3" role="note">
-            This {studyHunt ? "study hunt" : "hunt uses assigned orders and"} has been played, so its stops are locked in
+            This {studyHunt ? "study hunt" : scheduleWindow ? "hunt runs on a schedule and" : "hunt uses assigned orders and"} has been played, so its stops are locked in
             place: you can edit a stop&apos;s content, but not add, remove or reorder stops. Clone the hunt to change its
             stops.
           </p>

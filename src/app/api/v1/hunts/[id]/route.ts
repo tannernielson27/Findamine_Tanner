@@ -91,7 +91,8 @@ export async function GET(
         has_play_sessions,
         // Scoring version and solve window can change only before the first play session.
         scoring_locked: has_play_sessions,
-        stops_frozen: stopsFrozen({ locked: delivery_locked, metadata }),
+        // A locked scheduled hunt freezes its stops too (issue #14).
+        stops_frozen: stopsFrozen({ locked: delivery_locked, metadata }) || (delivery_locked && isScheduledHunt(hunt as HuntWindowSource)),
         viewer_can_set_study_hunt: isReviewer(user.role),
       },
     });
