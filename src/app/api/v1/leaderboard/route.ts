@@ -67,28 +67,23 @@ function joinedUser(row: Record<string, unknown>): LeaderboardUser | null {
 }
 
 /**
- * For the real-names view of a hunt board: the name each row shows a player
- * with no team or class tie to that person, worked out by the same rules that
- * build such a player's board (their visibility settings, then redactEntry).
- * null means their settings leave them off that player's board altogether.
+ * For the real-names view of a hunt board: the name each row shows other
+ * players under the hunt's identity mode (the codename on a codename hunt; the
+ * display name, or initials for a child or teen, on a real-name hunt).
+ *
+ * Deliberately NOT adjusted for each player's own privacy settings. A player
+ * who restricted their name or score is shown to some viewers as "Anonymous"
+ * or left off their board; saying so here would tell the person running the
+ * event who chose to restrict what, which the board has never revealed.
  */
-async function namesOtherPlayersSee(
+function namesOtherPlayersSee(
   rows: Record<string, unknown>[],
   identityMode: string
-): Promise<Map<string, string | null>> {
-  const vis = await resolveLeaderboardVisibility(null, rows.map((row) => row.user_id as string));
+): Map<string, string> {
   return new Map(
-    rows.map((row): [string, string | null] => {
-      const userId = row.user_id as string;
-      if (vis.drop.has(userId)) return [userId, null];
-      const nameAllowed = vis.nameAllowed.get(userId) ?? false;
-      const shown = redactEntry(
-        joinedUser(row),
-        row.codename as string | null,
-        nameAllowed ? identityMode : "codename_assigned",
-        nameAllowed
-      );
-      return [userId, shown.display_name ?? "Anonymous"];
+    rows.map((row): [string, string] => {
+      const shown = redactEntry(joinedUser(row), row.codename as string | null, identityMode, true);
+      return [row.user_id as string, shown.display_name ?? "Anonymous"];
     })
   );
 }
@@ -255,7 +250,7 @@ export async function GET(request: NextRequest) {
         const named = await boardWithRealNames(supabase, board, {
           viewer: currentUser,
           huntId,
-          shownAs: await namesOtherPlayersSee(data || [], identityMode),
+          shownAs: namesOtherPlayersSee(data || [], identityMode),
         });
         return Response.json(named, { headers: REAL_NAMES_RESPONSE_HEADERS });
       }

@@ -349,26 +349,48 @@ describe("GET /api/v1/leaderboard?real_names=1: who is allowed", () => {
     expect(res.headers.get("cache-control")).toContain("no-store");
   });
 
-  it("says what other players see on a codename hunt", async () => {
+  it("says what other players see on a codename hunt: the codename", async () => {
     as(CREATOR);
     const rows = byId(await fetchBoard(`?hunt_id=${HUNT}&real_names=1`));
     expect(rows[ADA].shown_as).toBe("Swift Fox");
     expect(rows[BO].shown_as).toBe("Quiet Owl");
-    // Hank restricted his score, so other players' boards leave him out.
-    expect(rows[HANK].shown_as).toBeNull();
+    expect(rows[KID].shown_as).toBe("Brave Otter");
   });
 
-  it("says what other players see on a real-name hunt, matching a signed-out viewer's board", async () => {
-    as(null);
-    const publicRows = byId(await fetchBoard(`?hunt_id=${NAMED_HUNT}`));
+  it("says what other players see on a real-name hunt: the display name, or initials for a minor", async () => {
     as(CREATOR);
     const rows = byId(await fetchBoard(`?hunt_id=${NAMED_HUNT}&real_names=1`));
     expect(rows[ADA].shown_as).toBe("ada_l");
-    expect(rows[BO].shown_as).toBe("Anonymous");
     expect(rows[KID].shown_as).toBe("K");
-    expect(rows[HANK].shown_as).toBeNull();
-    for (const player of [ADA, BO, KID]) expect(rows[player].shown_as).toBe(publicRows[player].display_name);
-    expect(publicRows[HANK]).toBeUndefined();
+  });
+
+  it("does not reveal which players restricted their name or score", async () => {
+    // Bo hides his display name and Hank his score. Other players see Bo as
+    // "Anonymous" and don't see Hank at all, but the board has never told the
+    // person running the event who chose that, and real names must not either.
+    for (const viewer of [CREATOR, ADMIN, RESEARCHER]) {
+      as(viewer);
+      const coded = byId(await fetchBoard(`?hunt_id=${HUNT}&real_names=1`));
+      expect(coded[HANK].shown_as).toBe("Sly Lynx");
+      const named = byId(await fetchBoard(`?hunt_id=${NAMED_HUNT}&real_names=1`));
+      expect(named[BO].shown_as).toBe("bo");
+      expect(named[HANK].shown_as).toBe("hank");
+      for (const row of [...Object.values(coded), ...Object.values(named)]) {
+        expect(row.shown_as).toBeTruthy();
+        expect(row.shown_as).not.toBe("Anonymous");
+      }
+    }
+  });
+
+  it("withholds the real name when the stored age band is below adult", async () => {
+    db.table("user_profiles").push({ user_id: ADA, effective_band: "teen" }, { user_id: PLAYER, effective_band: "adult" });
+    as(ADMIN);
+    const raw = await fetchRaw(`?hunt_id=${HUNT}&real_names=1`);
+    const rows = byId(JSON.parse(raw) as Body);
+    expect(rows[ADA]).toMatchObject({ real_name: null, real_name_status: "withheld_minor" });
+    expect(rows[PLAYER]).toMatchObject({ real_name: "Pat Player", real_name_status: "on_file" });
+    expect(raw).not.toContain("Ada Lovelace");
+    expect(raw).not.toContain("effective_band");
   });
 
   it("admins and researchers get real names on the overall board, with the same rows as before", async () => {

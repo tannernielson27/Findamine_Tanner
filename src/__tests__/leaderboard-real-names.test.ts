@@ -112,6 +112,19 @@ describe("resolveRealName", () => {
     expect(resolveRealName({ role: "teacher", date_of_birth: null, metadata: meta }, NOW).real_name).toBe("Young Adult");
   });
 
+  it("withholds it when the stored age band is below adult, whatever the role says", () => {
+    const meta = { real_name: "Banded Player" };
+    for (const band of ["primary", "intermediate", "teen"]) {
+      expect(resolveRealName({ role: "adult", effective_band: band, metadata: meta }, NOW)).toEqual({
+        real_name: null,
+        real_name_status: "withheld_minor",
+      });
+    }
+    for (const band of ["adult", null, undefined]) {
+      expect(resolveRealName({ role: "adult", effective_band: band, metadata: meta }, NOW).real_name).toBe("Banded Player");
+    }
+  });
+
   it("says a minor's name is withheld even when none is on file", () => {
     expect(resolveRealName({ role: "child", metadata: {} }, NOW).real_name_status).toBe("withheld_minor");
   });
@@ -131,7 +144,7 @@ describe("withRealNames", () => {
   const names = new Map<string, RealNameFields>([["a", { real_name: "Ada Lovelace", real_name_status: "on_file" }]]);
 
   it("adds the real-name fields to each row without changing the rest", () => {
-    const shownAs = new Map<string, string | null>([["a", "Swift Fox"], ["b", null]]);
+    const shownAs = new Map<string, string>([["a", "Swift Fox"]]);
     expect(withRealNames(entries, names, shownAs)).toEqual([
       { user_id: "a", score: 10, display_name: "ada_l", real_name: "Ada Lovelace", real_name_status: "on_file", shown_as: "Swift Fox" },
       { user_id: "b", score: 5, display_name: "bo", real_name: null, real_name_status: "not_on_file", shown_as: null },
@@ -151,13 +164,11 @@ describe("otherPlayersNote", () => {
     expect(otherPlayersNote("bo", "Anonymous")).toBe("Players see: Anonymous");
   });
 
-  it("adds nothing when the row already shows that name", () => {
+  it("adds nothing when the row already shows that name, or there is none to give", () => {
     expect(otherPlayersNote("ada_l", "ada_l")).toBeNull();
     expect(otherPlayersNote("ada_l", undefined)).toBeNull();
-  });
-
-  it("says when a player's settings keep them off other players' boards", () => {
-    expect(otherPlayersNote("hank", null)).toBe("Hidden from other players' boards");
+    expect(otherPlayersNote("ada_l", null)).toBeNull();
+    expect(otherPlayersNote("ada_l", "")).toBeNull();
   });
 });
 

@@ -34,8 +34,8 @@ export const REAL_NAMES_AUDIT_WINDOW_MS = 10 * 60 * 1000;
 
 /**
  * Real names for these players, keyed by user id. Reads only what decides a
- * real name (role, date of birth, profile metadata, deleted flag): never email.
- * A failed read yields no names rather than failing the board.
+ * real name (role, date of birth, age band, profile metadata, deleted flag):
+ * never email. A failed read yields no names rather than failing the board.
  */
 export async function loadRealNames(
   supabase: ServiceClient,
@@ -46,17 +46,24 @@ export async function loadRealNames(
   const ids = [...new Set(userIds)].filter(Boolean);
   if (ids.length === 0) return names;
 
-  const { data, error } = await supabase
-    .from("users")
-    .select("id, role, date_of_birth, metadata, deleted_at")
-    .in("id", ids);
-  if (error) {
-    logger.error("leaderboard.real_names.read_failed", { error: error.message });
+  const [users, profiles] = await Promise.all([
+    supabase.from("users").select("id, role, date_of_birth, metadata, deleted_at").in("id", ids),
+    // The stored age band is one of the three under-18 signals (see isMinor).
+    supabase.from("user_profiles").select("user_id, effective_band").in("user_id", ids),
+  ]);
+  // Without both reads an under-18 player could be missed: return no names.
+  const failed = users.error ?? profiles.error;
+  if (failed) {
+    logger.error("leaderboard.real_names.read_failed", { error: failed.message });
     return names;
   }
 
-  for (const row of data || []) {
-    names.set(row.id as string, resolveRealName(row as RealNameSubject, now));
+  const bands = new Map<string, string | null>(
+    (profiles.data || []).map((p) => [p.user_id as string, (p.effective_band as string | null) ?? null])
+  );
+  for (const row of users.data || []) {
+    const subject: RealNameSubject = { ...(row as RealNameSubject), effective_band: bands.get(row.id as string) ?? null };
+    names.set(row.id as string, resolveRealName(subject, now));
   }
   return names;
 }
@@ -76,7 +83,7 @@ export interface RealNamesBoardRequest {
   /** The hunt whose board this is; null for the overall board. */
   huntId: string | null;
   /** Per player: the name other players see (see WithRealName.shown_as). */
-  shownAs: ReadonlyMap<string, string | null>;
+  shownAs: ReadonlyMap<string, string>;
 }
 
 /**
@@ -123,7 +130,14 @@ export async function recordRealNamesViewed(
       .eq("user_id", viewer.id)
       .eq("entity_type", REAL_NAMES_AUDIT_ENTITY)
       .gte("created_at", since);
-    const { data: already } = await (huntId ? mine.eq("entity_id", huntId) : mine.is("entity_id", null)).limit(1);
+    const { data: already, error: lookupError } = await (
+      huntId ? mine.eq("entity_id", huntId) : mine.is("entity_id", null)
+    ).limit(1);
+    if (lookupError) {
+      // Can't tell whether this view is already on record: record it again
+      // rather than risk leaving it out.
+      logger.warn("leaderboard.real_names.audit_lookup_failed", { viewerId: viewer.id, huntId, error: lookupError.message });
+    }
     if (already && already.length > 0) return;
 
     const basis = isRealNameStaff(viewer.role) ? "staff" : "hunt_creator";

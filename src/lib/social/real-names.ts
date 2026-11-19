@@ -24,9 +24,11 @@ const REAL_NAME_STAFF_ROLES: readonly string[] = ["admin", "researcher"];
 
 /**
  * Accounts whose real name is never returned: children and teens (the roles the
- * leaderboard already protects), and anyone whose date of birth says under 18.
+ * leaderboard already protects), anyone whose date of birth says under 18, and
+ * anyone whose stored age band is below adult. Any one of the three is enough.
  */
 const MINOR_ROLES: readonly string[] = ["child", "teen"];
+const MINOR_BANDS: readonly string[] = ["primary", "intermediate", "teen"];
 const ADULT_AGE = 18;
 
 export interface RealNameViewer {
@@ -83,6 +85,8 @@ export interface RealNameSubject {
   /** users.metadata; the real name is its `real_name` key (set on the profile page). */
   metadata?: unknown;
   deleted_at?: string | null;
+  /** user_profiles.effective_band, when the player has a profile row. */
+  effective_band?: string | null;
 }
 
 const NOT_ON_FILE: RealNameFields = { real_name: null, real_name_status: "not_on_file" };
@@ -90,6 +94,7 @@ const WITHHELD_MINOR: RealNameFields = { real_name: null, real_name_status: "wit
 
 function isMinor(subject: RealNameSubject, now: number): boolean {
   if (typeof subject.role === "string" && MINOR_ROLES.includes(subject.role)) return true;
+  if (typeof subject.effective_band === "string" && MINOR_BANDS.includes(subject.effective_band)) return true;
   if (!subject.date_of_birth) return false;
   // NaN (an unreadable date) fails the comparison, so it counts as under 18.
   return !(ageInYears(subject.date_of_birth, now) >= ADULT_AGE);
@@ -118,8 +123,9 @@ export function resolveRealName(
 
 export type WithRealName<T> = T & RealNameFields & {
   /**
-   * The name this row shows a player with no team or class tie to them, or
-   * null when their privacy settings leave them off such a player's board.
+   * The name the board shows other players for this row (a codename, a display
+   * name, or initials). It says nothing about the player's own privacy
+   * settings, which can hide that name from some viewers.
    */
   shown_as: string | null;
 };
@@ -131,7 +137,7 @@ export type WithRealName<T> = T & RealNameFields & {
 export function withRealNames<T extends { user_id: string }>(
   entries: readonly T[],
   names: ReadonlyMap<string, RealNameFields>,
-  shownAs: ReadonlyMap<string, string | null>
+  shownAs: ReadonlyMap<string, string>
 ): WithRealName<T>[] {
   return entries.map((entry) => ({
     ...entry,
@@ -146,9 +152,8 @@ export function withRealNames<T extends { user_id: string }>(
  * there is nothing to add.
  */
 export function otherPlayersNote(rowName: string, shownAs: string | null | undefined): string | null {
-  if (shownAs === undefined) return null;
-  if (shownAs === null) return "Hidden from other players' boards";
-  return shownAs === rowName ? null : `Players see: ${shownAs}`;
+  if (!shownAs || shownAs === rowName) return null;
+  return `Players see: ${shownAs}`;
 }
 
 /** What the board prints in the real-name slot: the name, or why there isn't one. */
