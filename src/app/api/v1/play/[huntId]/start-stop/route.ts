@@ -49,7 +49,7 @@ export async function POST(
     if (!session) throw new ApiError(404, "No active play session");
 
     // Clue delivery: only the player's current stop (any stop in all-at-once mode).
-    await assertStopOpen(supabase, { huntId, userId: user.id, session, findId, route: ROUTE });
+    const { navigationHelp } = await assertStopOpen(supabase, { huntId, userId: user.id, session, findId, route: ROUTE });
 
     const { data: find, error: findError } = await supabase
       .from("finds")
@@ -72,7 +72,14 @@ export async function POST(
         completion_id: started.completion.id,
         started_at: started.startedAt,
         already_started: started.alreadyStarted,
-        stop: startedStopView(source, started.startedAt),
+        // Medium and Hard hunts: no place name or coordinates before the stop
+        // is completed, and no challenge before the player has arrived. The
+        // screen calls this again on arrival to collect the challenge.
+        stop: startedStopView(source, started.startedAt, {
+          navigationHelp,
+          arrived: !!started.completion.arrived_at,
+          completed: !!started.completion.completed_at,
+        }),
       },
       { status: started.alreadyStarted ? 200 : 201, headers: NO_STORE }
     );

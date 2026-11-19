@@ -23,6 +23,7 @@ vi.mock("@/lib/utils/api-auth", async (importOriginal) => ({
 }));
 vi.mock("@/lib/utils/rate-limit", () => ({
   playLimiter: { check: async () => {} },
+  checkInLimiter: { check: async () => {} },
   aiLimiter: { check: async () => {} },
   generalLimiter: { check: async () => {} },
 }));

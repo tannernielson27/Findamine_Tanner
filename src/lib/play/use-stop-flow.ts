@@ -12,6 +12,7 @@ import type { CelebrationControls } from "@/lib/play/use-celebration-state";
 import type { PlaySession } from "@/lib/play/use-play-session";
 import type { PrivacyNotice } from "@/lib/services/privacy-notice";
 import { initialStep, stepAfterStart } from "@/lib/play/stop-state";
+import { navigationAids } from "@/lib/play/navigation-help";
 import type { AnswerFeedback, Find, HotCold, LocationConsent, StopStep } from "@/lib/play/play-types";
 
 export interface StopFlow extends GeoTracking, CheckIn {
@@ -40,6 +41,8 @@ export interface StopFlow extends GeoTracking, CheckIn {
   starting: boolean;
   /** "I'm ready": starts the stop on the server, which then releases its details. */
   handleReady: () => Promise<void>;
+  /** Fetches a challenge the server held back until arrival (Medium and Hard hunts). */
+  loadChallenge: () => Promise<void>;
   handleReadingCheckPassed: () => void;
   handleClueRead: () => void;
   handleSubmitAnswer: () => Promise<void>;
@@ -92,6 +95,8 @@ export function useStopFlow(
   const resetForFindRef = useRef<string | null>(null);
   const refreshedForRef = useRef<string | null>(null);
   const startingRef = useRef(false);
+  const challengeLoadingRef = useRef(false);
+  const challengeRequestedForRef = useRef<string | null>(null);
   const [starting, setStarting] = useState(false);
 
   const setError = useCallback((message: string | null) => setErrorState(message), []);
@@ -108,7 +113,9 @@ export function useStopFlow(
     setStep("challenge");
   }, [arrivedCelebrated, celebrate]);
 
-  const geo = useGeoTracking({ huntId, step, currentFind, locationConsent, onHotCold: setHotCold, onArrived });
+  // Hard hunts have no meter and no automatic arrival: no fixes go to the server.
+  const sendFixes = navigationAids(session.navigationHelp).meter;
+  const geo = useGeoTracking({ huntId, step, currentFind, locationConsent, sendFixes, onHotCold: setHotCold, onArrived });
   const { setGpsStatus, userPos } = geo;
 
   // ── Reset step state when changing finds ────────────
@@ -169,6 +176,32 @@ export function useStopFlow(
       setStarting(false);
     }
   }, [currentFind, huntId, refreshStops, applyStartedStop]);
+
+  // Medium and Hard hunts keep the challenge on the server until the player
+  // has arrived. start-stop returns the stop again, now with it; nothing is
+  // restarted (the start time is set once).
+  const loadChallenge = useCallback(async () => {
+    if (!currentFind?.challenge_pending || challengeLoadingRef.current) return;
+    const findId = currentFind.id;
+    challengeLoadingRef.current = true;
+    setErrorState(null);
+    try {
+      const data = await postJsonStrict<{ stop: Find }>(`/api/v1/play/${huntId}/start-stop`, { find_id: findId });
+      applyStartedStop(data.stop);
+    } catch (err) {
+      setErrorState(errorMessage(err, "Couldn't load the challenge. Check your connection and try again."));
+    } finally {
+      challengeLoadingRef.current = false;
+    }
+  }, [currentFind, huntId, applyStartedStop]);
+
+  // Once per arrival; "Try again" on the challenge sheet calls loadChallenge after a failure.
+  useEffect(() => {
+    if (step !== "challenge" || !currentFind?.challenge_pending) return;
+    if (challengeRequestedForRef.current === currentFind.id) return;
+    challengeRequestedForRef.current = currentFind.id;
+    void loadChallenge();
+  }, [step, currentFind, loadChallenge]);
 
   const handleReadingCheckPassed = useCallback(() => setStep("clue"), []);
   const handleClueRead = useCallback(() => setStep("navigate"), []);
@@ -312,6 +345,7 @@ export function useStopFlow(
     hints,
     starting,
     handleReady,
+    loadChallenge,
     handleReadingCheckPassed,
     handleClueRead,
     handleSubmitAnswer,

@@ -8,6 +8,9 @@ import type { AgeBand } from "@/lib/themes/tokens";
 import { bandForUser } from "@/lib/utils/age-band";
 import { canSeeAnswerKeys } from "../../hunts/redact-finds";
 import { assertStopStarted } from "../../play/_lib/stop-start";
+import { assertPlaceHelpReleased, clampHintLevel } from "../../play/_lib/challenge-access";
+import { readNavigationHelp } from "@/lib/play/navigation-help";
+import { internalError } from "@/lib/utils/internal-error";
 
 export const POST = withLogging("POST /api/v1/ai/hints", async (request: NextRequest) => {
   const user = await getAuthUser(request);
@@ -18,7 +21,7 @@ export const POST = withLogging("POST /api/v1/ai/hints", async (request: NextReq
   const { find_id, level } = body;
   if (typeof find_id !== "string" || !find_id) throw new ApiError(400, "find_id required");
 
-  const hintLevel = Math.max(1, Math.min(4, level || 1));
+  const hintLevel = clampHintLevel(level);
   const supabase = await createSupabaseServiceClient();
 
   const { data: find } = await supabase
@@ -86,15 +89,28 @@ export const POST = withLogging("POST /api/v1/ai/hints", async (request: NextReq
   return Response.json({ hint, level: hintLevel, source: "ai" });
 });
 
-/** 404 unless the caller edits the hunt or is playing it; 409 until they have started the stop. */
+/**
+ * 404 unless the caller edits the hunt or is playing it; 409 until they have
+ * started the stop. On a hunt whose difficulty hides the place (Medium, Hard:
+ * lib/play/navigation-help) the hint, which may name the place, also waits
+ * until the player has arrived, and a photo check-in nobody has confirmed
+ * does not count (play/_lib/challenge-access.ts).
+ */
 async function assertMayReadStop(
   supabase: Awaited<ReturnType<typeof createSupabaseServiceClient>>,
   user: { id: string; role: string },
   huntId: string,
   findId: string
 ): Promise<void> {
-  const { data: hunt } = await supabase.from("hunts").select("created_by").eq("id", huntId).maybeSingle();
-  if (hunt && canSeeAnswerKeys(user, hunt.created_by as string | null)) return;
+  const { data: hunt, error: huntError } = await supabase
+    .from("hunts")
+    .select("created_by, metadata")
+    .eq("id", huntId)
+    .maybeSingle();
+  // Without the hunt there is no difficulty to apply: refuse, don't assume Easy.
+  if (huntError) throw internalError("/api/v1/ai/hints", huntError);
+  if (!hunt) throw new ApiError(404, "Find not found");
+  if (canSeeAnswerKeys(user, hunt.created_by as string | null)) return;
 
   const { data: session } = await supabase
     .from("play_sessions")
@@ -104,7 +120,8 @@ async function assertMayReadStop(
     .eq("status", "active")
     .maybeSingle();
   if (!session) throw new ApiError(404, "Find not found");
-  await assertStopStarted(supabase, session.id as string, findId);
+  const completion = await assertStopStarted(supabase, session.id as string, findId);
+  assertPlaceHelpReleased(readNavigationHelp(hunt.metadata as Record<string, unknown> | null), completion);
 }
 
 export const maxDuration = 30;

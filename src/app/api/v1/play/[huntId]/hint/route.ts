@@ -4,6 +4,7 @@ import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
 import { playLimiter } from "@/lib/utils/rate-limit";
 import { assertStopOpen } from "../../_lib/stop-access";
 import { assertStopStarted } from "../../_lib/stop-start";
+import { assertChallengeReleased, clampHintLevel } from "../../_lib/challenge-access";
 
 /**
  * 4-level hint system:
@@ -26,7 +27,7 @@ export async function POST(
     const { find_id, level } = body;
 
     if (!find_id) throw new ApiError(400, "find_id required");
-    const hintLevel = Math.max(1, Math.min(4, level || 1));
+    const hintLevel = clampHintLevel(level);
 
     const supabase = await createSupabaseServiceClient();
 
@@ -42,9 +43,10 @@ export async function POST(
     if (!session) throw new ApiError(404, "No active play session");
 
     // Clue delivery: only the player's current stop (any stop in all-at-once mode).
-    await assertStopOpen(supabase, { huntId, userId: user.id, session, findId: find_id, route: "/api/v1/play/[huntId]/hint" });
-    // Challenge hints describe the stop: none before the stop is started.
-    await assertStopStarted(supabase, session.id, find_id);
+    const { navigationHelp } = await assertStopOpen(supabase, { huntId, userId: user.id, session, findId: find_id, route: "/api/v1/play/[huntId]/hint" });
+    // Challenge hints describe the stop: none before the stop is started, and
+    // on Medium and Hard hunts none before the player has arrived.
+    assertChallengeReleased(navigationHelp, await assertStopStarted(supabase, session.id, find_id));
 
     // Get task content for this find
     const { data: find } = await supabase

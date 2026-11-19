@@ -20,6 +20,7 @@ import {
 import { firstFlagged } from "@/lib/hunts/text-filter";
 import { logger } from "@/lib/utils/logger";
 import { huntHasPlaySessions, prepareMetadataUpdate } from "../delivery-guard";
+import { settleNavigationHelp } from "../navigation-help-guard";
 import { isDeliveryLocked, stopsFrozen } from "@/lib/hunts/delivery-lock";
 import { fullDeliveryMetadata, saveClueOrders, storedMetadata } from "@/lib/hunts/clue-orders-store";
 import { withoutClueOrders } from "@/lib/play/clue-delivery";
@@ -163,6 +164,15 @@ export async function PUT(
         canSetStudyFlag: isReviewer(user.role),
         route: ROUTE,
       });
+      // Difficulty (navigation help) shares that lock: it can't change once
+      // the hunt is published or played.
+      const settled = await settleNavigationHelp(supabase, {
+        hunt: { id, status: existing.status },
+        before: delivery.before,
+        after: delivery.after,
+        route: ROUTE,
+      });
+      delivery = { before: delivery.before, after: settled };
       updates.metadata = storedMetadata(delivery.after);
     }
 

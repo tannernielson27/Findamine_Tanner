@@ -10,6 +10,7 @@ import {
   sessionStopOrder,
   type ClueDelivery,
 } from "@/lib/play/clue-delivery";
+import { readNavigationHelp, type NavigationHelp } from "@/lib/play/navigation-help";
 
 /**
  * Server-side clue delivery (lib/play/clue-delivery.ts) for the play routes
@@ -51,6 +52,8 @@ export interface StopProgress {
 
 export interface SessionStops<F extends StopRow> {
   mode: ClueDelivery;
+  /** How much navigation help the hunt gives (lib/play/navigation-help). */
+  navigationHelp: NavigationHelp;
   /** The hunt's live stops in the order this session plays them. */
   ordered: F[];
   progress: Map<string, StopProgress>;
@@ -118,6 +121,7 @@ export async function loadSessionStops<F extends StopRow = StopRow>(
 
   return {
     mode,
+    navigationHelp: readNavigationHelp(huntMetadata),
     ordered,
     progress,
     completedIds,
@@ -125,11 +129,16 @@ export async function loadSessionStops<F extends StopRow = StopRow>(
   };
 }
 
+/** What a route learns about the hunt while checking that a stop is open. */
+export interface OpenStop {
+  navigationHelp: NavigationHelp;
+}
+
 /** Throws 404 for a stop outside the hunt, 409 for one out of order. */
-export async function assertStopOpen(supabase: SupabaseClient, input: StopAccessInput): Promise<void> {
-  const { mode, ordered, completedIds } = await loadSessionStops(supabase, input);
+export async function assertStopOpen(supabase: SupabaseClient, input: StopAccessInput): Promise<OpenStop> {
+  const { mode, navigationHelp, ordered, completedIds } = await loadSessionStops(supabase, input);
   const access = checkStopAccess({ mode, orderedIds: ordered.map((f) => f.id), completedIds, findId: input.findId });
-  if (access.ok) return;
+  if (access.ok) return { navigationHelp };
   if (access.reason === "not_in_hunt") throw new ApiError(404, "Find not found");
   throw new ApiError(409, OUT_OF_ORDER_MESSAGE);
 }

@@ -11,6 +11,7 @@ import {
   PLAY_SESSION_HEADERS,
   playSessionRows,
   sessionDeliveryColumns,
+  sessionNavigationHelpColumn,
 } from "@/lib/services/play-sessions-export";
 import { serialize } from "@/lib/services/research-export";
 
@@ -40,9 +41,29 @@ describe("sessionDeliveryColumns", () => {
   });
 });
 
+describe("sessionNavigationHelpColumn", () => {
+  it("reads the difficulty the session was played at", () => {
+    expect(sessionNavigationHelpColumn({ clue_delivery: "fixed_order", navigation_help: "hard" })).toBe("hard");
+    expect(sessionNavigationHelpColumn({ navigation_help: "easy" })).toBe("easy");
+  });
+
+  it("is blank for sessions from before the setting, and for anything unknown", () => {
+    expect(sessionNavigationHelpColumn({ clue_delivery: "fixed_order" })).toBe("");
+    expect(sessionNavigationHelpColumn({ navigation_help: "=HYPERLINK(\"x\")" })).toBe("");
+    expect(sessionNavigationHelpColumn({ navigation_help: 3 })).toBe("");
+    expect(sessionNavigationHelpColumn(null)).toBe("");
+  });
+});
+
 describe("playSessionRows", () => {
   it("keys each session by Study ID with the clue delivery columns", () => {
-    const rows = playSessionRows([enrollment], [session(), session({ id: "s3", hunt_id: "h2" })], new Set(["h1"]), new Set(["h2"]));
+    const medium = { clue_delivery: "fixed_order", navigation_help: "medium" };
+    const rows = playSessionRows(
+      [enrollment],
+      [session(), session({ id: "s3", hunt_id: "h2", metadata: medium })],
+      new Set(["h1"]),
+      new Set(["h2"])
+    );
     expect(PLAY_SESSION_HEADERS).toEqual([
       "participant_id",
       "session_id",
@@ -54,11 +75,12 @@ describe("playSessionRows", () => {
       "clue_delivery",
       "clue_order_index",
       "study_hunt",
+      "navigation_help",
       "scoring_version",
     ]);
     expect(rows).toEqual([
-      ["FM-ABC234", "s1", "h1", "completed", "2026-11-02T00:00:00.000Z", "2026-11-02T01:00:00.000Z", "1.0000", "assigned_order", "2", "1", "1"],
-      ["FM-ABC234", "s3", "h2", "completed", "2026-11-02T00:00:00.000Z", "2026-11-02T01:00:00.000Z", "1.0000", "assigned_order", "2", "0", "2"],
+      ["FM-ABC234", "s1", "h1", "completed", "2026-11-02T00:00:00.000Z", "2026-11-02T01:00:00.000Z", "1.0000", "assigned_order", "2", "1", "", "1"],
+      ["FM-ABC234", "s3", "h2", "completed", "2026-11-02T00:00:00.000Z", "2026-11-02T01:00:00.000Z", "1.0000", "fixed_order", "", "0", "medium", "2"],
     ]);
   });
 
@@ -96,7 +118,7 @@ describe("generatePlaySessionsExport", () => {
     expect(lines[0]).toBe(PLAY_SESSION_HEADERS.join(","));
     expect(lines).toHaveLength(2);
     expect(lines[1]).toContain("FM-ABC234,s1,h1");
-    expect(lines[1].endsWith(",assigned_order,2,1,2")).toBe(true);
+    expect(lines[1].endsWith(",assigned_order,2,1,,2")).toBe(true);
     // Only the study flag and the scoring version are read from hunt metadata.
     expect(csv).not.toContain("777");
     expect(csv).not.toContain("scoring_solve_window_min");

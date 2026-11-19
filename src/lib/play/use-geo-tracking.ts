@@ -19,6 +19,12 @@ interface GeoTrackingInput {
   step: StopStep;
   currentFind: Find | undefined;
   locationConsent: LocationConsent;
+  /**
+   * False on Hard hunts (lib/play/navigation-help): the position is still
+   * watched, so GPS status and "I'm here" work, but no fix is sent to the
+   * server. There is no meter to feed, and arrival is by tapping "I'm here".
+   */
+  sendFixes?: boolean;
   /** A hot/cold reading came back from the arrive endpoint. */
   onHotCold: (hotCold: HotCold) => void;
   /** The server says the player is inside the stop's radius. */
@@ -41,6 +47,7 @@ export function useGeoTracking({
   step,
   currentFind,
   locationConsent,
+  sendFixes = true,
   onHotCold,
   onArrived,
 }: GeoTrackingInput): GeoTracking {
@@ -135,7 +142,7 @@ export function useGeoTracking({
         if (!isMeaningfulFix(lastAccepted, fix)) return;
         lastAccepted = fix;
         setUserPos({ lat: fix.lat, lng: fix.lng, accuracy: fix.accuracy });
-        schedule(fix);
+        if (sendFixes) schedule(fix);
       },
       (kind) => {
         if (active) setGpsStatus(kind);
@@ -149,7 +156,7 @@ export function useGeoTracking({
       if (timer) clearTimeout(timer);
       stopWatching();
     };
-  }, [step, currentFind, huntId, locationConsent]);
+  }, [step, currentFind, huntId, locationConsent, sendFixes]);
 
   return { gpsStatus, setGpsStatus, userPos };
 }

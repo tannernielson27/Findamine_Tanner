@@ -15,6 +15,11 @@ const NO_STORE = { "Cache-Control": "private, no-store" };
  * them. A stop's clue, place and challenge are included only once the player
  * has started it (POST ../start-stop); before that the stop is a neutral
  * placeholder, with its primer if the clue order has reached it (issue #16).
+ *
+ * `navigation_help` is the hunt's level (issue #15). On Medium and Hard hunts
+ * a started stop comes without its place name and coordinates until the
+ * player has completed it, and without its challenge until they have arrived
+ * (see _lib/stop-view.ts).
  */
 export async function GET(
   request: NextRequest,
@@ -37,18 +42,21 @@ export async function GET(
       .maybeSingle();
     if (!session) throw new ApiError(404, "No active play session");
 
-    const { ordered, progress, isOpen } = await loadSessionStops<StopSource>(
+    const { ordered, progress, isOpen, navigationHelp } = await loadSessionStops<StopSource>(
       supabase,
       { huntId, userId: user.id, session, route: ROUTE },
       STOP_SOURCE_COLUMNS
     );
 
     const stops = ordered.map((find) => {
-      const startedAt = stopStartedAt(progress.get(find.id));
-      return startedAt ? startedStopView(find, startedAt) : lockedStopView(find, isOpen(find.id));
+      const row = progress.get(find.id);
+      const startedAt = stopStartedAt(row);
+      return startedAt
+        ? startedStopView(find, startedAt, { navigationHelp, arrived: !!row?.arrived_at, completed: !!row?.completed_at })
+        : lockedStopView(find, isOpen(find.id));
     });
 
-    return Response.json({ stops }, { headers: NO_STORE });
+    return Response.json({ stops, navigation_help: navigationHelp }, { headers: NO_STORE });
   } catch (error) {
     return errorResponse(error);
   }

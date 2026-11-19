@@ -28,6 +28,8 @@ export interface EmbedSpec {
   localKey: string;
   /** Column on the embedded table matched against localKey (default "id"). */
   foreignKey?: string;
+  /** One-to-many: embed every matching row as an array, as PostgREST does. */
+  many?: boolean;
 }
 
 export interface DoubleOptions {
@@ -282,14 +284,18 @@ class Query implements PromiseLike<Result> {
       }
       if (!spec) throw new Unsupported(`embed ${this.table}.${head} (register it in DoubleOptions.embeds)`);
       const fk = spec.foreignKey ?? "id";
-      const target = this.db.table(spec.table).find((t) => eq(t[fk], row[spec!.localKey]));
-      if (!target) {
-        out[alias] = null;
+      const pick = (target: Row): Row => {
+        if (inner.trim() === "*") return { ...target };
+        const sub: Row = {};
+        for (const c of splitTop(inner)) sub[c] = c === "*" ? undefined : target[c];
+        return sub;
+      };
+      if (spec.many) {
+        out[alias] = this.db.table(spec.table).filter((t) => eq(t[fk], row[spec!.localKey])).map(pick);
         continue;
       }
-      const sub: Row = {};
-      for (const c of splitTop(inner)) sub[c] = c === "*" ? undefined : target[c];
-      out[alias] = inner.trim() === "*" ? { ...target } : sub;
+      const target = this.db.table(spec.table).find((t) => eq(t[fk], row[spec!.localKey]));
+      out[alias] = target ? pick(target) : null;
     }
     return out;
   }

@@ -6,12 +6,16 @@
  * /play/start in play_sessions.metadata (see lib/play/clue-delivery.ts):
  *   clue_delivery     all_at_once | fixed_order | assigned_order | random_order
  *   clue_order_index  assigned_order only: the 0-based order group
+ *   navigation_help   easy | medium | hard: the hunt's difficulty, i.e. how
+ *                     much navigation help the player had (see
+ *                     lib/play/navigation-help.ts). Blank for sessions started
+ *                     before the setting existed, which were all played as easy.
  * and whether the hunt is a study hunt (hunt metadata `study_hunt`, "1"/"0"),
  * and which scoring version scored it (hunt metadata `scoring_version`, "1" or
  * "2"; see lib/hunts/scoring-version.ts). A stop is out of 100 on version 1 and
  * out of 1000 on version 2, so scores from the two must not be pooled as they
  * are. The version cannot change once a hunt has been played.
- * Only those two allowlisted values leave the metadata, and only when they are
+ * Only those allowlisted values leave the metadata, and only when they are
  * well-formed. Sessions from before a person's enrollment (pre-consent) and
  * withdrawn people are left out, matching the other datasets. Cells go through
  * the shared serializer, so the spreadsheet formula guard applies.
@@ -20,6 +24,7 @@
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { fetchAllByIds } from "@/lib/utils/paginate";
 import { isClueDelivery, SESSION_ORDER_INDEX_KEY, CLUE_DELIVERY_KEY } from "@/lib/play/clue-delivery";
+import { isNavigationHelp, NAVIGATION_HELP_KEY } from "@/lib/play/navigation-help";
 import { readStudyHunt } from "@/lib/hunts/delivery-lock";
 import { readScoringVersion } from "@/lib/hunts/scoring-version";
 import { serialize, type ExportConfig } from "@/lib/services/research-export";
@@ -36,6 +41,8 @@ export const PLAY_SESSION_HEADERS = [
   "clue_delivery",
   "clue_order_index",
   "study_hunt",
+  // New columns go last, so the columns before them keep their positions.
+  "navigation_help",
   "scoring_version",
 ];
 
@@ -65,6 +72,12 @@ export function sessionDeliveryColumns(metadata: Readonly<Record<string, unknown
   ];
 }
 
+/** navigation_help from session metadata; "" when absent or malformed. Pure. */
+export function sessionNavigationHelpColumn(metadata: Readonly<Record<string, unknown>> | null | undefined): string {
+  const level = metadata?.[NAVIGATION_HELP_KEY];
+  return isNavigationHelp(level) ? level : "";
+}
+
 /** Rows for enrolled people's sessions started on or after their enrollment. Pure. */
 export function playSessionRows(
   enrollments: ReadonlyArray<EnrollmentKey>,
@@ -87,6 +100,7 @@ export function playSessionRows(
       daysBetween(e.enrolled_at, s.started_at),
       ...sessionDeliveryColumns(s.metadata),
       studyHuntIds.has(s.hunt_id) ? "1" : "0",
+      sessionNavigationHelpColumn(s.metadata),
       v2HuntIds.has(s.hunt_id) ? "2" : "1",
     ]];
   });

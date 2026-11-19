@@ -1,6 +1,7 @@
 import { NextRequest, after } from "next/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/server";
 import { getAuthUser, errorResponse, ApiError } from "@/lib/utils/api-auth";
+import { checkInLimiter } from "@/lib/utils/rate-limit";
 import { haversineDistance } from "@/lib/services/hot-cold";
 import { coordinatesForStorage, parseCoordinate } from "@/lib/utils/location-storage";
 import { checkArrival, MAX_USABLE_ACCURACY_M } from "@/lib/play/arrival-check";
@@ -35,6 +36,8 @@ export async function POST(
     const { huntId } = await params;
     const user = await getAuthUser(request);
     if (!user) throw new ApiError(401, "Not authenticated");
+    // Shares the "I'm here" limit: a photo check-in is not location-checked.
+    await checkInLimiter.check(request, user.id);
     const isChild = user.role === "child";
 
     const formData = await request.formData();
