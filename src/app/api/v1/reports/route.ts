@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createSupabaseServiceClient();
     const target = reportTargetFor(target_type);
-    const resolved = await resolveReportTarget(supabase, target, target_id);
+    const resolved = await resolveReportTarget(supabase, target, target_id, { id: user.id, role: user.role });
     if (!resolved.found) throw new ApiError(404, "We couldn't find what you're reporting. It may already be gone.");
     if (resolved.reportedUserId === user.id) throw new ApiError(400, "You can't report your own content.");
 

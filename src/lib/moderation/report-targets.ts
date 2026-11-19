@@ -23,7 +23,13 @@ export interface ReportTarget {
    * For a target whose author is not a column on its own row (a hunt stop is
    * written by the hunt's creator): resolve it here instead of via `source`.
    */
-  resolve?: (supabase: ServiceClient, targetId: string) => Promise<ResolvedTarget>;
+  resolve?: (supabase: ServiceClient, targetId: string, reporter: Reporter) => Promise<ResolvedTarget>;
+}
+
+/** Who is making the report. */
+export interface Reporter {
+  id: string;
+  role: string;
 }
 
 const MESSAGE: ReportTarget = {
@@ -97,9 +103,10 @@ const SNAPSHOT_MAX = 1000;
 export async function resolveReportTarget(
   supabase: ServiceClient,
   target: ReportTarget,
-  targetId: string
+  targetId: string,
+  reporter: Reporter
 ): Promise<ResolvedTarget> {
-  if (target.resolve) return target.resolve(supabase, targetId);
+  if (target.resolve) return target.resolve(supabase, targetId, reporter);
   if (!target.source) return { found: true, reportedUserId: null, snapshot: null };
   const { table, author, text } = target.source;
   const { data, error } = await supabase
@@ -118,23 +125,68 @@ export async function resolveReportTarget(
   return { found: true, reportedUserId: authorId, snapshot: body };
 }
 
-/** A hunt stop: its clue text, written by the hunt's creator. */
-async function resolveFind(supabase: ServiceClient, findId: string): Promise<ResolvedTarget> {
+const NOT_FOUND: ResolvedTarget = { found: false, reportedUserId: null, snapshot: null };
+const REVIEWER_ROLES: readonly string[] = ["admin", "researcher"];
+
+/**
+ * A hunt stop: its clue text, written by the hunt's creator.
+ *
+ * The clue is kept with the report, and a reporter can read their own reports
+ * back. So the clue is kept only for someone who has been given it: a player
+ * who has started the stop, the hunt's creator, or a reviewer. A player who is
+ * in the hunt but has not started the stop (the play screen offers "Report a
+ * problem" on the "I'm ready" step too) can still report it; that report is
+ * stored without the clue. For anyone else the stop resolves as not found, as
+ * a made-up id does.
+ */
+async function resolveFind(supabase: ServiceClient, findId: string, reporter: Reporter): Promise<ResolvedTarget> {
   const { data, error } = await supabase
     .from("finds")
-    .select("id, clue_text, hunts(created_by)")
+    .select("id, hunt_id, clue_text, hunts(created_by)")
     .eq("id", findId)
     .maybeSingle();
   if (error) {
     console.error(`Failed to resolve reported finds: ${error.message}`);
-    return { found: true, reportedUserId: null, snapshot: null };
+    return NOT_FOUND;
   }
-  if (!data) return { found: false, reportedUserId: null, snapshot: null };
-  const row = data as unknown as { clue_text?: unknown; hunts?: unknown };
+  if (!data) return NOT_FOUND;
+  const row = data as unknown as { hunt_id?: unknown; clue_text?: unknown; hunts?: unknown };
   const hunt = (Array.isArray(row.hunts) ? row.hunts[0] : row.hunts) as { created_by?: unknown } | null | undefined;
+  const creatorId = typeof hunt?.created_by === "string" ? hunt.created_by : null;
+
+  const insider = creatorId === reporter.id || REVIEWER_ROLES.includes(reporter.role);
+  const standing = insider ? "started" : await playerStanding(supabase, reporter.id, String(row.hunt_id ?? ""), findId);
+  if (standing === "outside") return NOT_FOUND;
+
   return {
     found: true,
-    reportedUserId: typeof hunt?.created_by === "string" ? hunt.created_by : null,
-    snapshot: typeof row.clue_text === "string" ? row.clue_text.slice(0, SNAPSHOT_MAX) : null,
+    reportedUserId: creatorId,
+    snapshot: standing === "started" && typeof row.clue_text === "string" ? row.clue_text.slice(0, SNAPSHOT_MAX) : null,
   };
+}
+
+/**
+ * Where a player stands with a stop: they have started it in one of their
+ * sessions on its hunt, they are in the hunt but have not started it, or they
+ * are not in the hunt at all. A failed read counts as the more cautious answer.
+ */
+async function playerStanding(
+  supabase: ServiceClient,
+  userId: string,
+  huntId: string,
+  findId: string
+): Promise<"started" | "in_hunt" | "outside"> {
+  const { data: sessions, error: sessionsError } = await supabase
+    .from("play_sessions")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("hunt_id", huntId);
+  if (sessionsError || !sessions || sessions.length === 0) return "outside";
+  const { data: started, error } = await supabase
+    .from("find_completions")
+    .select("id")
+    .eq("find_id", findId)
+    .in("play_session_id", sessions.map((s) => s.id as string))
+    .limit(1);
+  return !error && !!started && started.length > 0 ? "started" : "in_hunt";
 }

@@ -10,6 +10,7 @@ import { parseCoordinates, parseRadius } from "../validation";
 import { normalizeSafetyNotes } from "@/lib/play/safety";
 import { assertCleanFields } from "@/lib/utils/crud-helpers";
 import { internalError } from "@/lib/utils/internal-error";
+import { mayReadContentRow, parseLibraryFlag } from "@/lib/hunts/content-access";
 
 /** Location text players see at a stop; screened like other hunt content. */
 const LOCATION_TEXT_FIELDS = ["name", "description", "address", "safety_notes"];
@@ -54,7 +55,10 @@ export async function GET(
       .is("deleted_at", null)
       .single();
 
-    if (error || !data) throw new ApiError(404, "Location not found");
+    // Another creator's place that is not in the library reads as missing.
+    if (error || !data || !mayReadContentRow(user, data as Record<string, unknown>)) {
+      throw new ApiError(404, "Location not found");
+    }
 
     return Response.json({ location: data });
   } catch (error) {
@@ -84,6 +88,9 @@ export async function PUT(
     for (const field of allowedFields) {
       if (body[field] !== undefined) updates[field] = body[field];
     }
+
+    // Only admins and researchers put a place in the shared library.
+    if (updates.is_library !== undefined) updates.is_library = parseLibraryFlag(updates.is_library, user.role);
 
     if (updates.safety_notes !== undefined) {
       updates.safety_notes = normalizeSafetyNotes(updates.safety_notes);

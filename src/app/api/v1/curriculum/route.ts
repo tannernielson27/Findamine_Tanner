@@ -9,6 +9,8 @@ const PUBLIC_CACHE = { "Cache-Control": "public, s-maxage=60, stale-while-revali
 
 /** Roles that may create hunts (POST /api/v1/hunts), and so copy library answer keys. */
 const HUNT_AUTHOR_ROLES = ["teacher", "hunt_creator", "admin", "researcher"];
+/** Most rows one request returns (the standards pages ask for up to 300). */
+const MAX_LIMIT = 500;
 
 type TaskRow = { content?: Record<string, unknown> | null } & Record<string, unknown>;
 
@@ -46,7 +48,7 @@ export async function GET(request: NextRequest) {
     const standardCode = searchParams.get("standard"); // filter by education standard code
     const frameworkCode = searchParams.get("framework"); // filter by framework code
     const type = searchParams.get("type") || "tasks"; // tasks, primers, standards, or frameworks
-    const limit = parseInt(searchParams.get("limit") || "50");
+    const limit = Math.min(Math.max(parseInt(searchParams.get("limit") || "50") || 50, 1), MAX_LIMIT);
 
     const supabase = await createSupabaseServiceClient();
 
@@ -125,14 +127,18 @@ export async function GET(request: NextRequest) {
         .from("task_standard_alignments")
         .select("task_id, alignment_strength, tasks(*)")
         .eq("standard_id", std.id)
-        .limit(limit);
+        // Read past the page: only library challenges are returned, and the
+        // page is cut after that filter, not before it.
+        .limit(MAX_LIMIT);
 
       const shape = await taskShaper(request);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const tasks = (alignments || []).map((a: any) => {
+      // This is the curriculum library, like the listing below: a standard
+      // can also be aligned to a hunt's own challenge, which is not part of it.
+      const tasks = ((alignments || []) as { tasks?: TaskRow | TaskRow[] | null; alignment_strength?: unknown }[]).flatMap((a) => {
         const taskData = Array.isArray(a.tasks) ? a.tasks[0] : a.tasks;
-        return { ...shape(taskData ?? {}), alignment_strength: a.alignment_strength };
-      });
+        if (!taskData || taskData.is_library !== true || taskData.deleted_at) return [];
+        return [{ ...shape(taskData), alignment_strength: a.alignment_strength }];
+      }).slice(0, limit);
 
       return Response.json({ tasks, standard: standardCode });
     }

@@ -8,6 +8,13 @@
     { "path": "/api/cron/reengagement", "schedule": "0 23 * * *" },
     { "path": "/api/cron/hunt-releases", "schedule": "5 16 * * *" }
   ],
+  "schedules": {
+    "hunt-releases": {
+      "schedule": "*/15 * * * *",
+      "path": "/api/cron/hunt-releases",
+      "requestMethod": "GET"
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",

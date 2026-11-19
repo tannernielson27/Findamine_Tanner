@@ -151,6 +151,8 @@ describe("GET /hunts/{id}", () => {
 describe("POST /hunts/{id}/clone", () => {
   const source = {
     id: HUNT_ID, title: "Campus Walk", status: "published", is_public: true, review_status: "approved",
+    // Shared as a template by its owner, so another builder may copy it.
+    is_template: true,
     created_by: "someone-else", created_at: "x", updated_at: "y", deleted_at: null,
     search_vector: "'campus':1 'walk':2", metadata: { scoring_mode: "binary" },
     finds: [
@@ -160,6 +162,7 @@ describe("POST /hunts/{id}/clone", () => {
   };
 
   it("does not re-insert the generated search_vector column, and skips removed stops", async () => {
+    h.user = { id: "someone-else", role: "teacher" };
     const made = install({ hunts: [ok(source), ok({ id: "new-hunt", title: "Campus Walk (Copy)" })] });
 
     const res = await cloneHunt(req("POST", `/api/v1/hunts/${HUNT_ID}/clone`), huntParams);
@@ -171,7 +174,9 @@ describe("POST /hunts/{id}/clone", () => {
     expect(huntInsert).not.toHaveProperty("finds");
     expect(huntInsert).toMatchObject({
       title: "Campus Walk (Copy)", status: "draft", is_public: false,
-      created_by: "teacher-1", source_template_id: HUNT_ID, metadata: { scoring_mode: "binary" },
+      // A copy is not itself a template until its owner says so.
+      is_template: false,
+      created_by: "someone-else", source_template_id: HUNT_ID, metadata: { scoring_mode: "binary" },
     });
 
     expect(made.finds).toHaveLength(1);
@@ -181,7 +186,21 @@ describe("POST /hunts/{id}/clone", () => {
     expect(findInsert).not.toHaveProperty("locations");
   });
 
+  it("someone else's copy of a template gets its own places and challenges, not the owner's", async () => {
+    const made = install({
+      hunts: [ok(source), ok({ id: "new-hunt", title: "Campus Walk (Copy)" })],
+      locations: [ok({ id: "copied-place" })],
+      tasks: [ok({ id: "copied-task" })],
+    });
+    const res = await cloneHunt(req("POST", `/api/v1/hunts/${HUNT_ID}/clone`), huntParams);
+    expect(res.status).toBe(201);
+    expect((await res.json()).deep).toBe(true);
+    expect(made.locations[0].insert.mock.calls[0][0]).toMatchObject({ created_by: "teacher-1", is_library: false });
+    expect(made.finds[0].insert.mock.calls[0][0]).toMatchObject({ location_id: "copied-place", task_id: "copied-task" });
+  });
+
   it("reports a failed stop copy and removes the half-made hunt", async () => {
+    h.user = { id: "someone-else", role: "teacher" };
     const made = install({
       hunts: [ok(source), ok({ id: "new-hunt" }), ok(null)],
       finds: [{ data: null, error: { message: "boom" } }],
@@ -195,6 +214,26 @@ describe("POST /hunts/{id}/clone", () => {
     expect(error).not.toMatch(/boom/);
     expect(made.hunts[2].delete).toHaveBeenCalled();
     expect(made.hunts[2].eq).toHaveBeenCalledWith("id", "new-hunt");
+  });
+
+  it("will not copy someone else's hunt unless its owner shared it as a template", async () => {
+    // Being able to see and play a public hunt is not enough: a copy carries
+    // every stop's place, clue and answer key.
+    const made = install({ hunts: [ok({ ...source, is_template: false })] });
+    const res = await cloneHunt(req("POST", `/api/v1/hunts/${HUNT_ID}/clone`), huntParams);
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toMatch(/Only this hunt's creator can copy it/);
+    expect(made.hunts).toHaveLength(1);
+    expect(made.finds).toBeUndefined();
+  });
+
+  it("lets the owner and reviewers copy a hunt that is not a template", async () => {
+    for (const user of [{ id: "someone-else", role: "teacher" }, { id: "adm", role: "admin" }, { id: "res", role: "researcher" }]) {
+      h.user = user;
+      install({ hunts: [ok({ ...source, is_template: false }), ok({ id: "new-hunt", title: "Campus Walk (Copy)" })] });
+      const res = await cloneHunt(req("POST", `/api/v1/hunts/${HUNT_ID}/clone`), huntParams);
+      expect(res.status).toBe(201);
+    }
   });
 
   it("will not clone someone else's unpublished draft", async () => {
@@ -238,7 +277,11 @@ describe("POST /hunts/{id}/clone", () => {
     });
 
     it("can be copied by anyone who can see it once it has ended", async () => {
-      install({ hunts: [ok(scheduled(-20, -1)), ok({ id: "new-hunt", title: "Campus Walk (Copy)" })] });
+      install({
+        hunts: [ok(scheduled(-20, -1)), ok({ id: "new-hunt", title: "Campus Walk (Copy)" })],
+        locations: [ok({ id: "copied-place" })],
+        tasks: [ok({ id: "copied-task" })],
+      });
       const res = await cloneHunt(req("POST", `/api/v1/hunts/${HUNT_ID}/clone`), huntParams);
       expect(res.status).toBe(201);
     });
@@ -251,11 +294,14 @@ describe("POST /hunts/{id}/finds", () => {
       hunts: [ok({ created_by: "teacher-1", status: "draft" })],
       // Two live stops remain after a delete, but the last one sits at sort_order 5.
       finds: [ok([{ sort_order: 5 }]), ok({ id: "new-find" })],
+      // The place and the challenge the stop points at are the builder's own.
+      locations: [ok({ id: "aaaaaaaa-1111-4111-8111-111111111111", created_by: "teacher-1", is_library: false })],
+      tasks: [ok({ id: "bbbbbbbb-1111-4111-8111-111111111111", created_by: "teacher-1", is_library: false })],
     });
 
     const res = await addFind(
       req("POST", `/api/v1/hunts/${HUNT_ID}/finds`, {
-        location_id: "l1", task_id: "t1", clue_text: "Go", scaffolding_level: "high", clue_hints: ["h1"],
+        location_id: "aaaaaaaa-1111-4111-8111-111111111111", task_id: "bbbbbbbb-1111-4111-8111-111111111111", clue_text: "Go", scaffolding_level: "high", clue_hints: ["h1"],
       }),
       huntParams
     );
